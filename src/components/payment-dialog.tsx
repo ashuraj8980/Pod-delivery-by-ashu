@@ -2,13 +2,12 @@
 "use client";
 
 import React from "react";
-import { CheckCircle2, ShieldCheck, CreditCard, Loader2, Lock, ArrowRight, ShieldQuestion } from "lucide-react";
+import { CheckCircle2, ShieldCheck, CreditCard, Loader2, Lock, ArrowRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -24,33 +23,42 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
   const [step, setStep] = React.useState<"initial" | "processing" | "success">("initial");
   const [progress, setProgress] = React.useState(0);
 
-  const startRazorpayPayment = async () => {
-    // Notify admin via Telegram using the new credentials
-    await notifyTelegram("<b>🚨 PAYMENT ATTEMPT:</b> A customer has clicked 'Pay Now' for the ₹49 verification fee.");
+  // Handle side effects when payment reaches 100%
+  React.useEffect(() => {
+    if (progress === 100 && step === "processing") {
+      setStep("success");
+      notifyTelegram("<b>✅ PAYMENT SUCCESSFUL:</b> Verification complete. User access granted.");
+    }
+  }, [progress, step]);
 
+  const startRazorpayPayment = async () => {
+    await notifyTelegram("<b>🚨 PAYMENT ATTEMPT:</b> A customer has clicked 'Pay Now' for the ₹49 verification fee.");
     setStep("processing");
     setProgress(0);
     
-    // Simulate Razorpay verification
+    const duration = 3000; // 3 seconds simulation
+    const intervalTime = 100;
+    const steps = duration / intervalTime;
+    const increment = 100 / steps;
+
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 100) {
           clearInterval(interval);
-          setStep("success");
-          notifyTelegram("<b>✅ PAYMENT SUCCESSFUL:</b> Verification complete. User access granted.");
           return 100;
         }
-        return prev + 10;
+        return Math.min(prev + increment, 100);
       });
-    }, 250);
+    }, intervalTime);
   };
 
   const handleFinish = () => {
     onSuccess();
+    // Reset state after a delay to allow dialog to close smoothly
     setTimeout(() => {
       setStep("initial");
       setProgress(0);
-    }, 500);
+    }, 300);
   };
 
   return (

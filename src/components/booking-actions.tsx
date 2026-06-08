@@ -2,7 +2,7 @@
 "use client";
 
 import React from "react";
-import { Phone, MessageSquare, Send, ArrowRight, Zap } from "lucide-react";
+import { Phone, MessageSquare, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PaymentDialog } from "@/components/payment-dialog";
 import { notifyTelegram } from "@/app/actions/telegram";
@@ -75,9 +75,8 @@ export function BookingActions({ paymentConfirmed, onPaymentSuccess }: BookingAc
         onSuccess={() => {
           onPaymentSuccess();
           setShowPayment(false);
-          if (pendingAction) {
-            handleActionClick(pendingAction);
-          }
+          // If there was an action pending, we don't trigger it immediately to avoid popups during render.
+          // The user can now click the unlocked buttons.
         }}
       />
     </div>
