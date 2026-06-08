@@ -2,13 +2,11 @@
 "use client";
 
 import React from "react";
-import { ShieldCheck, Heart, Flower2, Star, Zap, UserCheck, MessageCircle, Crown, ShieldAlert, Sparkles, CheckCircle2, ArrowRight, Settings } from "lucide-react";
+import { ShieldCheck, Heart, Flower2, Star, UserCheck, MessageCircle, Crown, ShieldAlert, Sparkles, CheckCircle2, ArrowRight, Settings } from "lucide-react";
 import { BookingActions } from "@/components/booking-actions";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { setupBotWebhook } from "@/app/actions/telegram";
-import { toast } from "@/hooks/use-toast";
 
 export default function Home() {
   const [paymentConfirmed, setPaymentConfirmed] = React.useState(false);
