@@ -1,14 +1,14 @@
+
 "use client";
 
 import React from "react";
-import { Send, User, Bot, Loader2, Sparkles } from "lucide-react";
+import { Send, User, Bot, Loader2, Sparkles, MessageCircle, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { autonomousBookingAssistant } from "@/ai/flows/autonomous-booking-assistant-flow";
-import { PlaceHolderImages } from "@/lib/placeholder-images";
 import { cn } from "@/lib/utils";
 
 interface Message {
@@ -18,13 +18,11 @@ interface Message {
 
 interface ChatbotProps {
   paymentConfirmed: boolean;
-  onShowPayment?: () => void;
-  onShowSlots?: (slots: any[]) => void;
 }
 
-export function Chatbot({ paymentConfirmed, onShowPayment, onShowSlots }: ChatbotProps) {
+export function Chatbot({ paymentConfirmed }: ChatbotProps) {
   const [messages, setMessages] = React.useState<Message[]>([
-    { role: "bot", content: "Welcome to Real Meet Booking Portal! I'm your coordinator. How can I help you book a luxury spa session with our professional staff today?" }
+    { role: "bot", content: "Hello! I am your VIP Concierge. How can I assist you with your professional real meet booking today?" }
   ]);
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -32,9 +30,12 @@ export function Chatbot({ paymentConfirmed, onShowPayment, onShowSlots }: Chatbo
 
   React.useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTo(0, scrollRef.current.scrollHeight);
+      const scrollContainer = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (scrollContainer) {
+        scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
+      }
     }
-  }, [messages]);
+  }, [messages, loading]);
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -56,56 +57,45 @@ export function Chatbot({ paymentConfirmed, onShowPayment, onShowSlots }: Chatbo
       });
 
       setMessages(prev => [...prev, { role: "bot", content: result.response }]);
-
-      if (result.suggestedAction) {
-        if (result.suggestedAction.type === 'showPaymentLink') {
-          onShowPayment?.();
-        } else if (result.suggestedAction.type === 'showBookingSlots') {
-          onShowSlots?.(result.suggestedAction.data as any[]);
-        }
-      }
     } catch (error) {
       console.error("Chat error:", error);
-      setMessages(prev => [...prev, { role: "bot", content: "Apologies, our coordination system is busy. Please try again or use direct booking buttons above." }]);
+      setMessages(prev => [...prev, { role: "bot", content: "I'm sorry, I'm experiencing a brief connection issue. Please use our direct buttons above." }]);
     } finally {
       setLoading(false);
     }
   };
 
-  const assistantAvatar = PlaceHolderImages.find(img => img.id === "spa-therapist")?.imageUrl;
-
   return (
-    <Card className="w-full flex flex-col h-[500px] border-border bg-card shadow-lg rounded-3xl overflow-hidden">
-      <div className="p-4 border-b border-border bg-primary/5 flex items-center gap-3">
-        <Avatar className="w-10 h-10 border-2 border-primary/20">
-          <AvatarImage src={assistantAvatar} alt="Spa Coordinator" />
-          <AvatarFallback className="bg-primary text-primary-foreground"><Bot className="w-5 h-5" /></AvatarFallback>
-        </Avatar>
-        <div>
-          <h3 className="text-sm font-bold font-headline">Portal Coordinator</h3>
-          <p className="text-[10px] text-green-600 font-bold flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            READY TO ASSIST
-          </p>
+    <Card className="w-full flex flex-col h-[400px] border-none bg-slate-50 shadow-inner rounded-[2.5rem] overflow-hidden">
+      <div className="p-4 border-b border-slate-200 bg-white/50 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white">
+            <Crown className="w-4 h-4" />
+          </div>
+          <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Instant Concierge</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-[9px] font-black text-green-600">LIVE</span>
         </div>
       </div>
 
-      <ScrollArea className="flex-1 p-4 bg-muted/20" ref={scrollRef}>
+      <ScrollArea className="flex-1 p-5" ref={scrollRef}>
         <div className="space-y-4">
           {messages.map((msg, idx) => (
             <div
               key={idx}
               className={cn(
-                "flex items-start gap-2 max-w-[90%]",
+                "flex items-start gap-2 max-w-[85%]",
                 msg.role === "user" ? "ml-auto flex-row-reverse" : ""
               )}
             >
               <div
                 className={cn(
-                  "p-3 px-4 rounded-2xl text-sm shadow-sm",
+                  "p-3.5 px-5 rounded-[1.5rem] text-[12px] font-bold leading-relaxed shadow-sm",
                   msg.role === "user" 
-                    ? "bg-primary text-primary-foreground rounded-tr-none" 
-                    : "bg-white text-foreground border border-border rounded-tl-none"
+                    ? "bg-primary text-white rounded-tr-none" 
+                    : "bg-white text-slate-700 border border-slate-100 rounded-tl-none"
                 )}
               >
                 {msg.content}
@@ -114,23 +104,24 @@ export function Chatbot({ paymentConfirmed, onShowPayment, onShowSlots }: Chatbo
           ))}
           {loading && (
             <div className="flex items-start gap-2">
-              <div className="bg-white border border-border p-3 rounded-2xl rounded-tl-none shadow-sm">
-                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              <div className="bg-white border border-slate-100 p-3 px-5 rounded-[1.5rem] rounded-tl-none shadow-sm flex items-center gap-2">
+                <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                <span className="text-[10px] font-black text-slate-400">TYPING...</span>
               </div>
             </div>
           )}
         </div>
       </ScrollArea>
 
-      <div className="p-4 bg-white border-t border-border flex gap-2">
+      <div className="p-4 bg-white border-t border-slate-100 flex gap-2">
         <Input
-          placeholder="Ask about spa services or staff..."
+          placeholder="Type your question..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          className="rounded-full bg-muted/50 border-transparent focus-visible:ring-primary h-11"
+          className="rounded-full bg-slate-50 border-transparent focus-visible:ring-primary h-12 text-sm font-bold px-6"
         />
-        <Button size="icon" onClick={handleSend} disabled={loading} className="rounded-full w-11 h-11 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg">
+        <Button size="icon" onClick={handleSend} disabled={loading} className="rounded-full w-12 h-12 bg-primary hover:bg-primary/90 text-white shadow-xl">
           <Send className="w-4 h-4" />
         </Button>
       </div>
