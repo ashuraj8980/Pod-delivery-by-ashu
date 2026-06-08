@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Send, User, Bot, Loader2 } from "lucide-react";
+import { Send, User, Bot, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -24,7 +24,7 @@ interface ChatbotProps {
 
 export function Chatbot({ paymentConfirmed, onShowPayment, onShowSlots }: ChatbotProps) {
   const [messages, setMessages] = React.useState<Message[]>([
-    { role: "bot", content: "Hi! I'm InstantConnect Assistant. How can I help you book your session today?" }
+    { role: "bot", content: "Welcome to Real Meet Booking Portal! I'm your coordinator. How can I help you book a luxury spa session with our professional staff today?" }
   ]);
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -57,7 +57,6 @@ export function Chatbot({ paymentConfirmed, onShowPayment, onShowSlots }: Chatbo
 
       setMessages(prev => [...prev, { role: "bot", content: result.response }]);
 
-      // Handle suggested actions from the AI
       if (result.suggestedAction) {
         if (result.suggestedAction.type === 'showPaymentLink') {
           onShowPayment?.();
@@ -67,51 +66,46 @@ export function Chatbot({ paymentConfirmed, onShowPayment, onShowSlots }: Chatbo
       }
     } catch (error) {
       console.error("Chat error:", error);
-      setMessages(prev => [...prev, { role: "bot", content: "Sorry, I encountered an error. Please try again." }]);
+      setMessages(prev => [...prev, { role: "bot", content: "Apologies, our coordination system is busy. Please try again or use direct booking buttons above." }]);
     } finally {
       setLoading(false);
     }
   };
 
-  const assistantAvatar = PlaceHolderImages.find(img => img.id === "assistant-avatar")?.imageUrl;
+  const assistantAvatar = PlaceHolderImages.find(img => img.id === "spa-therapist")?.imageUrl;
 
   return (
-    <Card className="w-full flex flex-col h-[500px] border-border bg-card/30 backdrop-blur-md">
-      <div className="p-4 border-b border-border flex items-center gap-3">
-        <Avatar className="w-8 h-8 border border-primary/50">
-          <AvatarImage src={assistantAvatar} alt="Bot" />
-          <AvatarFallback><Bot className="w-4 h-4" /></AvatarFallback>
+    <Card className="w-full flex flex-col h-[500px] border-border bg-card shadow-lg rounded-3xl overflow-hidden">
+      <div className="p-4 border-b border-border bg-primary/5 flex items-center gap-3">
+        <Avatar className="w-10 h-10 border-2 border-primary/20">
+          <AvatarImage src={assistantAvatar} alt="Spa Coordinator" />
+          <AvatarFallback className="bg-primary text-primary-foreground"><Bot className="w-5 h-5" /></AvatarFallback>
         </Avatar>
         <div>
-          <h3 className="text-sm font-semibold font-headline">InstantConnect Assistant</h3>
-          <p className="text-[10px] text-primary flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-            Active 24/7
+          <h3 className="text-sm font-bold font-headline">Portal Coordinator</h3>
+          <p className="text-[10px] text-green-600 font-bold flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            READY TO ASSIST
           </p>
         </div>
       </div>
 
-      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+      <ScrollArea className="flex-1 p-4 bg-muted/20" ref={scrollRef}>
         <div className="space-y-4">
           {messages.map((msg, idx) => (
             <div
               key={idx}
               className={cn(
-                "flex items-start gap-2 max-w-[85%]",
+                "flex items-start gap-2 max-w-[90%]",
                 msg.role === "user" ? "ml-auto flex-row-reverse" : ""
               )}
             >
-              <Avatar className="w-6 h-6 mt-1 flex-shrink-0">
-                <AvatarFallback className={cn("text-[10px]", msg.role === "user" ? "bg-muted" : "bg-primary")}>
-                  {msg.role === "user" ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3 text-primary-foreground" />}
-                </AvatarFallback>
-              </Avatar>
               <div
                 className={cn(
-                  "p-3 rounded-2xl text-sm",
+                  "p-3 px-4 rounded-2xl text-sm shadow-sm",
                   msg.role === "user" 
                     ? "bg-primary text-primary-foreground rounded-tr-none" 
-                    : "bg-muted text-foreground rounded-tl-none"
+                    : "bg-white text-foreground border border-border rounded-tl-none"
                 )}
               >
                 {msg.content}
@@ -120,10 +114,7 @@ export function Chatbot({ paymentConfirmed, onShowPayment, onShowSlots }: Chatbo
           ))}
           {loading && (
             <div className="flex items-start gap-2">
-              <Avatar className="w-6 h-6 mt-1">
-                <AvatarFallback className="bg-primary"><Bot className="w-3 h-3 text-primary-foreground" /></AvatarFallback>
-              </Avatar>
-              <div className="bg-muted p-3 rounded-2xl rounded-tl-none">
+              <div className="bg-white border border-border p-3 rounded-2xl rounded-tl-none shadow-sm">
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
               </div>
             </div>
@@ -131,15 +122,15 @@ export function Chatbot({ paymentConfirmed, onShowPayment, onShowSlots }: Chatbo
         </div>
       </ScrollArea>
 
-      <div className="p-4 border-t border-border flex gap-2">
+      <div className="p-4 bg-white border-t border-border flex gap-2">
         <Input
-          placeholder="Type your question..."
+          placeholder="Ask about spa services or staff..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          className="bg-muted/50 border-border focus-visible:ring-primary"
+          className="rounded-full bg-muted/50 border-transparent focus-visible:ring-primary h-11"
         />
-        <Button size="icon" onClick={handleSend} disabled={loading} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+        <Button size="icon" onClick={handleSend} disabled={loading} className="rounded-full w-11 h-11 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg">
           <Send className="w-4 h-4" />
         </Button>
       </div>

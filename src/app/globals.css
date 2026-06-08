@@ -4,26 +4,46 @@
 
 @layer base {
   :root {
-    --background: 252 10% 10%;
-    --foreground: 0 0% 98%;
-    --card: 252 10% 12%;
-    --card-foreground: 0 0% 98%;
-    --popover: 252 10% 12%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 230 76% 78%;
-    --primary-foreground: 252 10% 10%;
-    --secondary: 225 77% 74%;
-    --secondary-foreground: 252 10% 10%;
-    --muted: 252 10% 20%;
-    --muted-foreground: 0 0% 70%;
-    --accent: 225 77% 74%;
-    --accent-foreground: 252 10% 10%;
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 142 71% 45%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 210 40% 94%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 48 96% 53%;
+    --accent-foreground: 222 47% 11%;
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 252 10% 20%;
-    --input: 252 10% 20%;
-    --ring: 230 76% 78%;
-    --radius: 0.75rem;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 142 70% 45%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 48 96% 53%;
+    --accent-foreground: 222 47% 11%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 224 76% 48%;
   }
 }
 
@@ -41,20 +61,20 @@
 }
 
 .glass-effect {
-  @apply bg-card/50 backdrop-blur-md border border-white/10;
+  @apply bg-white/70 backdrop-blur-lg border border-white/20 shadow-xl;
 }
 
 @keyframes pulse-custom {
   0%, 100% {
     transform: scale(1);
-    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4);
   }
   50% {
-    transform: scale(1.05);
-    opacity: 0.9;
+    transform: scale(1.02);
+    box-shadow: 0 0 20px 5px rgba(37, 99, 235, 0.2);
   }
 }
 
 .animate-cta-pulse {
-  animation: pulse-custom 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: pulse-custom 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
