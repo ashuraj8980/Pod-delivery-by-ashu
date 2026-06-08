@@ -2,7 +2,7 @@
 "use client";
 
 import React from "react";
-import { ShieldCheck, Heart, Flower2, Star, Zap, UserCheck, MessageCircle, Crown, ShieldAlert } from "lucide-react";
+import { ShieldCheck, Heart, Flower2, Star, Zap, UserCheck, MessageCircle, Crown, ShieldAlert, Sparkles } from "lucide-react";
 import { BookingActions } from "@/components/booking-actions";
 import { BookingSlots } from "@/components/booking-slots";
 import { Badge } from "@/components/ui/badge";
@@ -12,67 +12,73 @@ export default function Home() {
   const [paymentConfirmed, setPaymentConfirmed] = React.useState(false);
 
   return (
-    <main className="min-h-screen bg-slate-50 flex flex-col items-center pb-12 selection:bg-primary selection:text-white">
-      {/* Top Banner */}
-      <div className="w-full bg-slate-900 text-white py-2 px-4 text-center overflow-hidden">
-        <p className="text-[10px] font-black tracking-[0.3em] uppercase animate-pulse flex items-center justify-center gap-2">
-          <Crown className="w-3 h-3 text-accent" /> 
+    <main className="min-h-screen bg-white flex flex-col items-center pb-12 selection:bg-primary selection:text-white">
+      {/* Top Professional Banner */}
+      <div className="w-full bg-primary text-white py-2.5 px-4 text-center overflow-hidden border-b-4 border-primary-foreground/10">
+        <p className="text-[10px] font-black tracking-[0.3em] uppercase flex items-center justify-center gap-3">
+          <Crown className="w-3.5 h-3.5 text-accent" /> 
           Verified Real Meet Spa Booking Portal 
-          <Crown className="w-3 h-3 text-accent" />
+          <Crown className="w-3.5 h-3.5 text-accent" />
         </p>
       </div>
       
-      <div className="w-full max-w-md px-6 flex flex-col space-y-8 mt-6">
+      <div className="w-full max-w-md px-6 flex flex-col space-y-8 mt-8">
         {/* Brand Header */}
-        <header className="flex flex-col items-center space-y-5">
+        <header className="flex flex-col items-center space-y-6">
           <div className="relative">
-            <div className="w-20 h-20 bg-primary rounded-[2rem] flex items-center justify-center text-white shadow-2xl shadow-primary/30 transform -rotate-3 border-4 border-white">
-              <Flower2 className="w-12 h-12" />
+            <div className="w-24 h-24 bg-primary rounded-[2.5rem] flex items-center justify-center text-white shadow-[0_20px_50px_rgba(37,99,235,0.3)] transform -rotate-3 border-4 border-white">
+              <Flower2 className="w-14 h-14" />
             </div>
-            <div className="absolute -bottom-2 -right-2 bg-secondary text-white p-1.5 rounded-full shadow-lg border-2 border-white">
-              <ShieldCheck className="w-4 h-4" />
+            <div className="absolute -bottom-2 -right-2 bg-secondary text-white p-2 rounded-full shadow-xl border-4 border-white">
+              <ShieldCheck className="w-5 h-5" />
             </div>
           </div>
           
-          <div className="text-center space-y-1">
+          <div className="text-center space-y-2">
             <h1 className="text-4xl font-black font-headline tracking-tighter text-slate-900 leading-none">
               REAL MEET <span className="text-primary italic font-serif">PORTAL</span>
             </h1>
-            <p className="text-[11px] font-bold text-slate-400 tracking-[0.25em] uppercase">
-              LUXURY WELLNESS • CERTIFIED STAFF
+            <p className="text-[11px] font-bold text-slate-400 tracking-[0.3em] uppercase">
+              PREMIUM WELLNESS • PROFESSIONAL STAFF
             </p>
           </div>
 
           <div className="flex gap-2">
-            <Badge variant="outline" className="border-secondary/20 bg-secondary/10 text-secondary font-black px-4 py-1.5 rounded-xl">
+            <Badge variant="outline" className="border-secondary/20 bg-secondary/10 text-secondary font-black px-5 py-2 rounded-xl text-[10px]">
               100% SECURE
             </Badge>
-            <Badge variant="outline" className="border-accent/20 bg-accent/10 text-accent-foreground font-black px-4 py-1.5 rounded-xl">
-              VIP ONLY
+            <Badge variant="outline" className="border-accent/20 bg-accent/10 text-accent-foreground font-black px-5 py-2 rounded-xl text-[10px]">
+              CERTIFIED STAFF
             </Badge>
           </div>
         </header>
 
         {/* Main Content Card */}
-        <Card className="border-none shadow-[0_32px_64px_-12px_rgba(0,0,0,0.1)] rounded-[3rem] bg-white overflow-hidden relative">
-          {/* Decorative element */}
-          <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl" />
-          
+        <Card className="border-none shadow-[0_40px_80px_-15px_rgba(0,0,0,0.1)] rounded-[3rem] bg-slate-50 overflow-hidden relative border-t-8 border-primary/10">
           <div className="p-8 space-y-8 relative z-10">
-            <div className="space-y-3">
-              <h2 className="text-2xl font-black font-headline leading-tight text-slate-900">
-                Premium Real Meet Services with Female Staff
-              </h2>
-              <p className="text-sm text-slate-500 leading-relaxed font-medium">
-                Our portal features only <span className="text-secondary font-bold">verified profiles</span> of professional female spa therapists.
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-accent" />
+                <h2 className="text-2xl font-black font-headline leading-tight text-slate-900">
+                  Premium Spa Sessions
+                </h2>
+              </div>
+              <p className="text-sm text-slate-500 leading-relaxed font-bold">
+                Experience high-end relaxation with our highly trained <span className="text-primary">female therapists</span>.
               </p>
               
               {!paymentConfirmed && (
-                <div className="bg-slate-50 border border-slate-100 p-4 rounded-[1.5rem] flex items-start gap-3">
-                  <ShieldAlert className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
-                    A security verification fee of <span className="text-primary">₹49</span> is mandatory to filter spam and protect staff privacy.
-                  </p>
+                <div className="bg-white border-2 border-slate-100 p-5 rounded-[2rem] space-y-3 shadow-sm">
+                   <div className="flex items-start gap-3">
+                      <ShieldAlert className="w-6 h-6 text-primary shrink-0 mt-0.5" />
+                      <p className="text-[12px] text-slate-700 font-black leading-tight">
+                        Direct call and WhatsApp verification requires a ₹49 portal fee.
+                      </p>
+                   </div>
+                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-[10px] font-black text-secondary uppercase tracking-widest">Free Option Available</span>
+                      <Zap className="w-4 h-4 text-secondary fill-secondary" />
+                   </div>
                 </div>
               )}
             </div>
@@ -82,14 +88,14 @@ export default function Home() {
               onPaymentSuccess={() => setPaymentConfirmed(true)} 
             />
 
-            <div className="grid grid-cols-3 gap-6 pt-6 border-t border-slate-50">
+            <div className="grid grid-cols-3 gap-6 pt-8 border-t border-slate-200">
               <div className="text-center">
                 <div className="text-xl font-black text-primary italic">24/7</div>
-                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Support</div>
+                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Booking</div>
               </div>
-              <div className="text-center border-x border-slate-100 px-4">
-                <div className="text-xl font-black text-secondary italic">GOLD</div>
-                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Profiles</div>
+              <div className="text-center border-x border-slate-200 px-4">
+                <div className="text-xl font-black text-secondary italic">VIP</div>
+                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Bot</div>
               </div>
               <div className="text-center">
                 <div className="text-xl font-black text-accent-foreground italic">SAFE</div>
@@ -99,71 +105,48 @@ export default function Home() {
           </div>
         </Card>
 
-        {/* Post-Payment Layout */}
+        {/* Dashboard for Paid Users */}
         {paymentConfirmed && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
             <div className="flex items-center justify-between px-2">
-              <h3 className="text-xl font-black font-headline text-slate-900">VIP Dashboard</h3>
-              <Badge className="bg-green-500 text-white border-none px-3 py-1 font-black animate-pulse">LIVE ACCESS</Badge>
+              <h3 className="text-xl font-black font-headline text-slate-900">Elite Access</h3>
+              <Badge className="bg-green-500 text-white border-none px-4 py-1.5 font-black text-[10px]">VERIFIED</Badge>
             </div>
             
             <BookingSlots 
               slots={[
-                { id: '1', time: '17:00', display: 'Elite Wellness Session (5:00 PM)' },
-                { id: '2', time: '19:30', display: 'Premium Spa Therapy (7:30 PM)' },
-                { id: '3', time: '21:00', display: 'Luxury Real Meet (9:00 PM)' },
+                { id: '1', time: '17:00', display: 'Elite Wellness Session' },
+                { id: '2', time: '19:30', display: 'Premium Spa Therapy' },
+                { id: '3', time: '21:00', display: 'Luxury Real Meet' },
               ]} 
-              onSelect={(slot) => console.log('Booking Slot Selected:', slot)}
+              onSelect={(slot) => console.log('Slot Reserved:', slot)}
             />
-
-            <Card className="bg-slate-900 text-white p-8 rounded-[2.5rem] border-none shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-primary/30 transition-colors" />
-              <div className="space-y-6 relative z-10">
-                <div className="flex items-center gap-4">
-                  <div className="bg-primary p-4 rounded-[1.25rem] shadow-lg shadow-primary/20">
-                    <MessageCircle className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-black tracking-tight">VIP COORDINATOR</h4>
-                    <p className="text-xs text-slate-400 font-bold">Connected to @Reallmeetbot</p>
-                  </div>
-                </div>
-                <p className="text-sm text-slate-300 font-medium leading-relaxed">
-                  Our manager is ready to handle your staff preferences and location details directly on Telegram.
-                </p>
-                <button 
-                  onClick={() => window.open('https://t.me/Reallmeetbot', '_blank')}
-                  className="w-full bg-white text-slate-900 font-black h-14 rounded-2xl text-sm flex items-center justify-center gap-2 hover:bg-slate-100 transition-all shadow-xl active:scale-95"
-                >
-                  CHAT ON TELEGRAM <Zap className="w-4 h-4 fill-primary text-primary" />
-                </button>
-              </div>
-            </Card>
           </div>
         )}
 
-        {/* Privacy Section */}
-        {!paymentConfirmed && (
-          <div className="space-y-6 pt-4">
-            <div className="flex items-center justify-center gap-6">
-               <div className="flex flex-col items-center gap-2 opacity-60">
-                 <ShieldCheck className="w-6 h-6 text-slate-400" />
-                 <span className="text-[9px] font-black text-slate-400 uppercase">Secure</span>
-               </div>
-               <div className="flex flex-col items-center gap-2 opacity-60">
-                 <Heart className="w-6 h-6 text-slate-400" />
-                 <span className="text-[9px] font-black text-slate-400 uppercase">Professional</span>
-               </div>
-               <div className="flex flex-col items-center gap-2 opacity-60">
-                 <UserCheck className="w-6 h-6 text-slate-400" />
-                 <span className="text-[9px] font-black text-slate-400 uppercase">Verified</span>
-               </div>
-            </div>
+        {/* Benefits Section */}
+        <div className="space-y-6 pt-4">
+          <div className="flex items-center justify-center gap-8">
+             <div className="flex flex-col items-center gap-2">
+               <ShieldCheck className="w-7 h-7 text-primary opacity-40" />
+               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Secure</span>
+             </div>
+             <div className="flex flex-col items-center gap-2">
+               <Heart className="w-7 h-7 text-primary opacity-40" />
+               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Privacy</span>
+             </div>
+             <div className="flex flex-col items-center gap-2">
+               <UserCheck className="w-7 h-7 text-primary opacity-40" />
+               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Verified</span>
+             </div>
           </div>
-        )}
+          <p className="text-center text-[10px] text-slate-400 font-bold max-w-[200px] mx-auto leading-relaxed">
+            All therapists are certified professionals. We value your relaxation and privacy above all.
+          </p>
+        </div>
 
-        <footer className="pt-12 pb-8 text-center space-y-4">
-          <p className="text-[10px] text-slate-400 font-black tracking-[0.4em] uppercase">
+        <footer className="pt-12 pb-8 text-center">
+          <p className="text-[10px] text-slate-300 font-black tracking-[0.5em] uppercase">
             © 2024 Real Meet Booking Portal
           </p>
         </footer>
