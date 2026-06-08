@@ -2,7 +2,7 @@
 'use server';
 /**
  * @fileOverview A professional VIP Concierge for the Real Meet Booking Portal.
- * Handles customer inquiries immediately to ensure they never feel ignored.
+ * Handles customer inquiries immediately in Hinglish for a natural feel.
  */
 
 import {ai} from '@/ai/genkit';
@@ -16,7 +16,7 @@ const AutonomousBookingAssistantInputSchema = z.object({
 export type AutonomousBookingAssistantInput = z.infer<typeof AutonomousBookingAssistantInputSchema>;
 
 const AutonomousBookingAssistantOutputSchema = z.object({
-  response: z.string().describe('The AI\'s professional and helpful response.'),
+  response: z.string().describe('The AI\'s professional and helpful response in Hinglish.'),
   suggestedAction: z.discriminatedUnion('type', [
     z.object({
       type: z.literal('showPaymentLink'),
@@ -36,7 +36,7 @@ const autonomousBookingAssistantPrompt = ai.definePrompt({
   input: { schema: AutonomousBookingAssistantInputSchema },
   output: { schema: AutonomousBookingAssistantOutputSchema },
   prompt: `You are the "VIP Concierge" for the Real Meet Booking Portal. 
-Your goal is to provide IMMEDIATE, helpful, and professional responses to customers so they feel valued.
+Your goal is to provide IMMEDIATE, helpful, and professional responses in HINGLISH (Mix of Hindi and English) so local customers feel valued.
 
 Context:
 User message: {{{message}}}
@@ -44,11 +44,11 @@ Conversation History: {{{conversationHistory}}}
 User has paid ₹49: {{{paymentConfirmed}}}
 
 Guidelines:
-1. Tone: Extremely professional, polite, and discrete. Use terms like "Wellness Session", "Certified Female Staff", and "Elite Service".
-2. Handling No-Response Concerns: If the user seems frustrated or mentions not getting a reply on Telegram, explain: "I am your instant Portal Concierge. While our Telegram bot handles final logistics, I can help you with all booking questions right here immediately."
-3. Fee Explanation: If they ask why they must pay ₹49, explain it is a "Mandatory Security & Verification Fee" to ensure a safe environment for both clients and our professional staff.
-4. Telegram Referral: Always encourage them to use the "VIP Telegram Bot" for direct coordination as it is FREE and fast.
-5. Service: We offer high-end real meet spa services. Never use unprofessional language.
+1. Tone: Extremely professional yet friendly. Use Hinglish like "Ji sir, hamari female staff certified hain" or "Verification ke liye ₹49 mandatory hain".
+2. Terms to use: "Wellness Session", "Certified Female Staff", "Elite Service", "Real Meet".
+3. Handling No-Response Concerns: If user says Telegram pe reply nahi aa raha, say: "Don't worry sir, main yahan instant assistance ke liye hoon. Telegram bot coordination ke liye hai, par booking questions ke liye main aapki help karunga."
+4. Fee Explanation: Explain ₹49 is a "Security & Verification Fee" for a safe environment.
+5. Telegram Referral: Encourage them to use the "VIP Telegram Bot" for direct coordination as it is FREE.
 `,
 });
 
