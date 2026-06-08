@@ -2,12 +2,12 @@
 "use client";
 
 import React from "react";
-import { ShieldCheck, Heart, Flower2, Star, Zap, UserCheck, MessageCircle, Crown, ShieldAlert, Sparkles, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, Heart, Flower2, Star, Zap, UserCheck, MessageCircle, Crown, ShieldAlert, Sparkles, CheckCircle2, ArrowRight } from "lucide-react";
 import { BookingActions } from "@/components/booking-actions";
 import { BookingSlots } from "@/components/booking-slots";
-import { Chatbot } from "@/components/chatbot";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export default function Home() {
   const [paymentConfirmed, setPaymentConfirmed] = React.useState(false);
@@ -56,6 +56,29 @@ export default function Home() {
           </div>
         </header>
 
+        {/* Telegram Direct Entry - PROMOTED AS THE MAIN CHANNEL */}
+        <div className="bg-secondary/5 border-2 border-secondary/20 p-6 rounded-[2.5rem] space-y-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-secondary rounded-xl text-white">
+              <MessageCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-black text-slate-900 uppercase">VIP Telegram Concierge</p>
+              <p className="text-[10px] font-bold text-secondary">FREE INSTANT REPLIES</p>
+            </div>
+          </div>
+          <p className="text-xs text-slate-600 font-bold leading-relaxed">
+            Ji sir, hamara AI bot Telegram pe 24/7 active hai. Direct booking aur certified profiles ke liye humare bot se baat karein.
+          </p>
+          <Button 
+            onClick={() => window.open("https://t.me/Reallmeetbot", "_blank")}
+            className="w-full bg-secondary hover:bg-secondary/90 text-white h-14 rounded-2xl font-black text-sm gap-2"
+          >
+            START FREE CHAT ON BOT
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+        </div>
+
         {/* Main Service Card */}
         <Card className="border-none shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] rounded-[3rem] bg-slate-50 overflow-hidden relative border-t-8 border-primary">
           <div className="p-8 space-y-8 relative z-10">
@@ -63,11 +86,11 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <Sparkles className="w-6 h-6 text-accent" />
                 <h2 className="text-2xl font-black font-headline leading-tight text-slate-900">
-                  Elite Spa Experience
+                  Direct Verification
                 </h2>
               </div>
               <p className="text-sm text-slate-500 leading-relaxed font-bold">
-                Book premium real meet sessions with our highly trained <span className="text-primary">female staff</span> in your city.
+                Agar aapko direct call ya WhatsApp pe certified <span className="text-primary">female staff</span> ki details chahiye, toh verification mandatory hai.
               </p>
               
               {!paymentConfirmed && (
@@ -75,9 +98,9 @@ export default function Home() {
                    <div className="flex items-start gap-3">
                       <ShieldAlert className="w-6 h-6 text-primary shrink-0 mt-0.5" />
                       <div className="space-y-1">
-                        <p className="text-[12px] text-slate-900 font-black leading-tight uppercase">Security Verification Required</p>
+                        <p className="text-[12px] text-slate-900 font-black leading-tight uppercase">Security Verification</p>
                         <p className="text-[11px] text-slate-500 font-bold leading-tight">
-                          Pay ₹49 one-time portal fee to unlock direct calls and WhatsApp verification.
+                          Pay ₹49 verification fee for direct manager calls.
                         </p>
                       </div>
                    </div>
@@ -91,35 +114,6 @@ export default function Home() {
             />
           </div>
         </Card>
-
-        {/* AI Portal Assistant - ENSURES USER GETS A REPLY */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-3 px-2">
-            <MessageCircle className="w-5 h-5 text-primary" />
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Portal Assistant</h3>
-            <Badge className="ml-auto bg-green-500 text-[9px] font-black">ONLINE</Badge>
-          </div>
-          <Chatbot paymentConfirmed={paymentConfirmed} />
-        </div>
-
-        {/* VIP Dashboard for Paid Users */}
-        {paymentConfirmed && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
-            <div className="flex items-center justify-between px-2">
-              <h3 className="text-xl font-black font-headline text-slate-900">Elite Access Unlocked</h3>
-              <Badge className="bg-secondary text-white border-none px-4 py-1.5 font-black text-[10px]">VERIFIED USER</Badge>
-            </div>
-            
-            <BookingSlots 
-              slots={[
-                { id: '1', time: '17:00', display: 'Premium Wellness Session' },
-                { id: '2', time: '19:30', display: 'Luxury Relaxation Therapy' },
-                { id: '3', time: '21:00', display: 'VIP Real Meet Service' },
-              ]} 
-              onSelect={(slot) => console.log('Slot Reserved:', slot)}
-            />
-          </div>
-        )}
 
         {/* Professional Trust Markers */}
         <div className="grid grid-cols-3 gap-4 pt-4">

