@@ -13,30 +13,33 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Check if it's a standard text message
+    // Telegram sends the message inside body.message
     if (body.message && body.message.text) {
       const chatId = body.message.chat.id;
       const userText = body.message.text;
-      const username = body.message.from.username || body.message.from.first_name || 'Guest';
+      const firstName = body.message.from.first_name || 'Sir';
+      const username = body.message.from.username ? `@${body.message.from.username}` : firstName;
 
-      // 1. Log the activity for the owner
-      await notifyOwner(`<b>💬 New Bot Message</b>\nUser: @${username}\nMessage: ${userText}`);
+      // 1. Log the activity for the owner (you)
+      // We don't await this to keep the response fast for the user
+      notifyOwner(`<b>💬 Message from ${firstName} (${username})</b>\nText: ${userText}`);
 
       // 2. Get AI Response in Hinglish
-      // We pass paymentConfirmed as false by default for unknown users
       const aiResponse = await autonomousBookingAssistant({
         message: userText,
-        conversationHistory: '', // We could implement session tracking here if needed
-        paymentConfirmed: false,
+        conversationHistory: `User Name: ${firstName}`, // Basic context
+        paymentConfirmed: false, // Webhook users are usually fresh inquiries
       });
 
       // 3. Send AI response back to the user on Telegram
       await sendMessageToUser(chatId, aiResponse.response);
     }
 
+    // Always return 200 OK to Telegram so it doesn't keep retrying
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Webhook Error:', error);
-    return NextResponse.json({ ok: false }, { status: 500 });
+    // Even on error, return 200 to Telegram unless it's a critical infrastructure failure
+    return NextResponse.json({ ok: true });
   }
 }

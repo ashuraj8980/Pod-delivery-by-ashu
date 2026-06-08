@@ -2,25 +2,45 @@
 "use client";
 
 import React from "react";
-import { ShieldCheck, Heart, Flower2, Star, Zap, UserCheck, MessageCircle, Crown, ShieldAlert, Sparkles, CheckCircle2, ArrowRight } from "lucide-react";
+import { ShieldCheck, Heart, Flower2, Star, Zap, UserCheck, MessageCircle, Crown, ShieldAlert, Sparkles, CheckCircle2, ArrowRight, Settings } from "lucide-react";
 import { BookingActions } from "@/components/booking-actions";
-import { BookingSlots } from "@/components/booking-slots";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { setupBotWebhook } from "@/app/actions/telegram";
+import { toast } from "@/hooks/use-toast";
 
 export default function Home() {
   const [paymentConfirmed, setPaymentConfirmed] = React.useState(false);
 
+  // Hidden helper to activate the bot webhook once live
+  const handleActivateBot = async () => {
+    const publicUrl = window.location.origin;
+    const res = await setupBotWebhook(publicUrl);
+    if (res.success) {
+      alert(`✅ Bot Activated! Ab @Reallmeetbot AI replies dega. URL: ${publicUrl}`);
+    } else {
+      alert(`❌ Error: ${res.description || 'Check console'}`);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-white flex flex-col items-center pb-12 selection:bg-primary selection:text-white">
       {/* Premium Header Banner */}
-      <div className="w-full bg-slate-900 text-white py-3 px-4 text-center overflow-hidden border-b-4 border-primary">
+      <div className="w-full bg-slate-900 text-white py-3 px-4 text-center overflow-hidden border-b-4 border-primary relative">
         <p className="text-[10px] font-black tracking-[0.4em] uppercase flex items-center justify-center gap-3">
           <Crown className="w-4 h-4 text-accent animate-pulse" /> 
           OFFICIAL REAL MEET VIP BOOKING PORTAL 
           <Crown className="w-4 h-4 text-accent animate-pulse" />
         </p>
+        {/* Hidden Setup Button for the owner */}
+        <button 
+          onClick={handleActivateBot}
+          className="absolute right-2 top-1/2 -translate-y-1/2 opacity-20 hover:opacity-100 transition-opacity"
+          title="Setup Bot Webhook"
+        >
+          <Settings className="w-3 h-3" />
+        </button>
       </div>
       
       <div className="w-full max-w-md px-5 flex flex-col space-y-8 mt-6">
@@ -56,7 +76,7 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Telegram Direct Entry - PROMOTED AS THE MAIN CHANNEL */}
+        {/* Telegram Direct Entry - FREE VIP CHANNEL */}
         <div className="bg-secondary/5 border-2 border-secondary/20 p-6 rounded-[2.5rem] space-y-4 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-secondary rounded-xl text-white">
@@ -64,11 +84,11 @@ export default function Home() {
             </div>
             <div>
               <p className="text-xs font-black text-slate-900 uppercase">VIP Telegram Concierge</p>
-              <p className="text-[10px] font-bold text-secondary">FREE INSTANT REPLIES</p>
+              <p className="text-[10px] font-bold text-secondary">FREE INSTANT AI REPLIES</p>
             </div>
           </div>
           <p className="text-xs text-slate-600 font-bold leading-relaxed">
-            Ji sir, hamara AI bot Telegram pe 24/7 active hai. Direct booking aur certified profiles ke liye humare bot se baat karein.
+            Ji sir, hamara AI bot Telegram pe 24/7 active hai. Direct booking aur certified profiles ke liye humare bot se baat karein. Yeh bilkul FREE hai.
           </p>
           <Button 
             onClick={() => window.open("https://t.me/Reallmeetbot", "_blank")}
@@ -86,11 +106,11 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <Sparkles className="w-6 h-6 text-accent" />
                 <h2 className="text-2xl font-black font-headline leading-tight text-slate-900">
-                  Direct Verification
+                  Manager Verification
                 </h2>
               </div>
               <p className="text-sm text-slate-500 leading-relaxed font-bold">
-                Agar aapko direct call ya WhatsApp pe certified <span className="text-primary">female staff</span> ki details chahiye, toh verification mandatory hai.
+                Agar aapko direct call ya WhatsApp pe certified <span className="text-primary">female staff</span> ki details chahiye, toh security verification mandatory hai.
               </p>
               
               {!paymentConfirmed && (
