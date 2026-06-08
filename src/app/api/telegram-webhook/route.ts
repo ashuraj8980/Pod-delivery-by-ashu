@@ -21,25 +21,24 @@ export async function POST(req: NextRequest) {
       const username = body.message.from.username ? `@${body.message.from.username}` : firstName;
 
       // 1. Log the activity for the owner (you)
-      // We don't await this to keep the response fast for the user
-      notifyOwner(`<b>💬 Message from ${firstName} (${username})</b>\nText: ${userText}`);
+      // This tells the owner what the user is saying to the bot
+      notifyOwner(`<b>💬 New Chat on Bot</b>\n<b>User:</b> ${firstName} (${username})\n<b>Message:</b> ${userText}`);
 
       // 2. Get AI Response in Hinglish
       const aiResponse = await autonomousBookingAssistant({
         message: userText,
         conversationHistory: `User Name: ${firstName}`, // Basic context
-        paymentConfirmed: false, // Webhook users are usually fresh inquiries
+        paymentConfirmed: false, // Webhook users usually need verification
       });
 
       // 3. Send AI response back to the user on Telegram
       await sendMessageToUser(chatId, aiResponse.response);
     }
 
-    // Always return 200 OK to Telegram so it doesn't keep retrying
+    // Always return 200 OK to Telegram
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Webhook Error:', error);
-    // Even on error, return 200 to Telegram unless it's a critical infrastructure failure
     return NextResponse.json({ ok: true });
   }
 }

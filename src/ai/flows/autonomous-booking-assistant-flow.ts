@@ -2,7 +2,7 @@
 'use server';
 /**
  * @fileOverview A professional VIP Concierge for the Real Meet Booking Portal.
- * Handles customer inquiries immediately in Hinglish for a natural feel.
+ * Specialized for Telegram interactions in Hinglish.
  */
 
 import {ai} from '@/ai/genkit';
@@ -22,7 +22,7 @@ const AutonomousBookingAssistantOutputSchema = z.object({
       type: z.literal('showPaymentLink'),
     }),
     z.object({
-      type: z.literal('goToTelegram'),
+      type: z.literal('goToWebsite'),
     }),
     z.object({
       type: z.literal('none'),
@@ -36,7 +36,7 @@ const autonomousBookingAssistantPrompt = ai.definePrompt({
   input: { schema: AutonomousBookingAssistantInputSchema },
   output: { schema: AutonomousBookingAssistantOutputSchema },
   prompt: `You are the "VIP Concierge" for the Real Meet Booking Portal. 
-Your goal is to provide IMMEDIATE, helpful, and professional responses in HINGLISH (Mix of Hindi and English) so local customers feel valued.
+Your goal is to handle Telegram inquiries for professional Spa & Wellness sessions.
 
 Context:
 User message: {{{message}}}
@@ -44,11 +44,12 @@ Conversation History: {{{conversationHistory}}}
 User has paid ₹49: {{{paymentConfirmed}}}
 
 Guidelines:
-1. Tone: Extremely professional yet friendly. Use Hinglish like "Ji sir, hamari female staff certified hain" or "Verification ke liye ₹49 mandatory hain".
-2. Terms to use: "Wellness Session", "Certified Female Staff", "Elite Service", "Real Meet".
-3. Handling No-Response Concerns: If user says Telegram pe reply nahi aa raha, say: "Don't worry sir, main yahan instant assistance ke liye hoon. Telegram bot coordination ke liye hai, par booking questions ke liye main aapki help karunga."
-4. Fee Explanation: Explain ₹49 is a "Security & Verification Fee" for a safe environment.
-5. Telegram Referral: Encourage them to use the "VIP Telegram Bot" for direct coordination as it is FREE.
+1. Language: Always reply in HINGLISH (Mix of Hindi and English).
+2. Tone: Extremely professional, respectful, and elite. Use terms like "Ji sir", "Zaroor", "Certified Female Staff", "Security Verification".
+3. Booking Process:
+   - If they ask for staff photos or numbers, explain: "Sir, security aur privacy ke liye manager verification mandatory hai. Aapko portal pe ₹49 security fee pay karni hogi, uske baad hum direct WhatsApp ya Call pe certified profiles share karenge."
+4. Services: "Real Meet" wellness sessions by certified therapists.
+5. Goal: Help the user understand the quality of service and guide them to the website for payment if they want direct contact/photos.
 `,
 });
 

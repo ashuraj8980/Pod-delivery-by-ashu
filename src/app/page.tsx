@@ -2,7 +2,7 @@
 "use client";
 
 import React from "react";
-import { ShieldCheck, Heart, Flower2, Star, UserCheck, MessageCircle, Crown, ShieldAlert, Sparkles, CheckCircle2, ArrowRight, Settings } from "lucide-react";
+import { ShieldCheck, Heart, Flower2, Star, UserCheck, MessageCircle, Crown, ShieldAlert, Sparkles, CheckCircle2, ArrowRight, Settings, Zap } from "lucide-react";
 import { BookingActions } from "@/components/booking-actions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,15 +10,18 @@ import { setupBotWebhook } from "@/app/actions/telegram";
 
 export default function Home() {
   const [paymentConfirmed, setPaymentConfirmed] = React.useState(false);
+  const [botStatus, setBotStatus] = React.useState<"idle" | "loading" | "active">("idle");
 
-  // Hidden helper to activate the bot webhook once live
   const handleActivateBot = async () => {
+    setBotStatus("loading");
     const publicUrl = window.location.origin;
     const res = await setupBotWebhook(publicUrl);
     if (res.success) {
-      alert(`✅ Bot Activated! Ab @Reallmeetbot AI replies dega. URL: ${publicUrl}`);
+      setBotStatus("active");
+      alert(`✅ BOT ACTIVATED!\nAb @Reallmeetbot AI replies bhejega.\nURL: ${publicUrl}`);
     } else {
-      alert(`❌ Error: ${res.description || 'Check console'}`);
+      setBotStatus("idle");
+      alert(`❌ Error: ${res.description || 'Connection failed'}`);
     }
   };
 
@@ -31,13 +34,14 @@ export default function Home() {
           OFFICIAL REAL MEET VIP BOOKING PORTAL 
           <Crown className="w-4 h-4 text-accent animate-pulse" />
         </p>
-        {/* Hidden Setup Button for the owner */}
+        
+        {/* Important: Webhook Activation Button */}
         <button 
           onClick={handleActivateBot}
-          className="absolute right-2 top-1/2 -translate-y-1/2 opacity-20 hover:opacity-100 transition-opacity"
-          title="Setup Bot Webhook"
+          className={`absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all ${botStatus === 'active' ? 'bg-green-500' : 'bg-primary/20 hover:bg-primary animate-pulse'}`}
+          title={botStatus === 'active' ? 'Bot is Active' : 'Click to Activate Bot Brain'}
         >
-          <Settings className="w-3 h-3" />
+          {botStatus === 'loading' ? <Zap className="w-4 h-4 animate-spin" /> : <Settings className="w-4 h-4" />}
         </button>
       </div>
       
@@ -82,17 +86,17 @@ export default function Home() {
             </div>
             <div>
               <p className="text-xs font-black text-slate-900 uppercase">VIP Telegram Concierge</p>
-              <p className="text-[10px] font-bold text-secondary">FREE INSTANT AI REPLIES</p>
+              <p className="text-[10px] font-bold text-secondary">FREE AI ASSISTANCE 24/7</p>
             </div>
           </div>
           <p className="text-xs text-slate-600 font-bold leading-relaxed">
-            Ji sir, hamara AI bot Telegram pe 24/7 active hai. Direct booking aur certified profiles ke liye humare bot se baat karein. Yeh bilkul FREE hai.
+            Sir, hamara AI bot Telegram pe active hai. Service details, staff certification aur direct queries ke liye abhi bot se baat karein. Yeh 100% FREE hai.
           </p>
           <Button 
             onClick={() => window.open("https://t.me/Reallmeetbot", "_blank")}
-            className="w-full bg-secondary hover:bg-secondary/90 text-white h-14 rounded-2xl font-black text-sm gap-2"
+            className="w-full bg-secondary hover:bg-secondary/90 text-white h-14 rounded-2xl font-black text-sm gap-2 shadow-lg active:scale-95 transition-all"
           >
-            START FREE CHAT ON BOT
+            CHAT ON BOT (FREE)
             <ArrowRight className="w-4 h-4" />
           </Button>
         </div>
@@ -108,7 +112,7 @@ export default function Home() {
                 </h2>
               </div>
               <p className="text-sm text-slate-500 leading-relaxed font-bold">
-                Agar aapko direct call ya WhatsApp pe certified <span className="text-primary">female staff</span> ki details chahiye, toh security verification mandatory hai.
+                Certified <span className="text-primary">female staff</span> ki profile dekhne aur direct call booking ke liye security verification mandatory hai.
               </p>
               
               {!paymentConfirmed && (
@@ -118,7 +122,7 @@ export default function Home() {
                       <div className="space-y-1">
                         <p className="text-[12px] text-slate-900 font-black leading-tight uppercase">Security Verification</p>
                         <p className="text-[11px] text-slate-500 font-bold leading-tight">
-                          Pay ₹49 verification fee for direct manager calls.
+                          Pay ₹49 verification fee for direct manager calls & profiles.
                         </p>
                       </div>
                    </div>
