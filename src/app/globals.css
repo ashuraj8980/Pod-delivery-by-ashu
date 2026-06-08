@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,40 +11,20 @@
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 221 83% 53%;
+    --primary: 221 83% 53%; /* Blue */
     --primary-foreground: 210 40% 98%;
-    --secondary: 142 71% 45%;
+    --secondary: 142 71% 45%; /* Green */
     --secondary-foreground: 210 40% 98%;
     --muted: 210 40% 94%;
     --muted-foreground: 215 16% 47%;
-    --accent: 48 96% 53%;
+    --accent: 48 96% 53%; /* Yellow */
     --accent-foreground: 222 47% 11%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
     --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 221 83% 53%;
-    --radius: 0.5rem;
-  }
-
-  .dark {
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 11%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 11%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 11%;
-    --secondary: 142 70% 45%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 48 96% 53%;
-    --accent-foreground: 222 47% 11%;
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 224 76% 48%;
+    --radius: 1.5rem;
   }
 }
 
@@ -58,10 +39,6 @@
 
 .font-headline {
   font-family: 'Literata', serif;
-}
-
-.glass-effect {
-  @apply bg-white/70 backdrop-blur-lg border border-white/20 shadow-xl;
 }
 
 @keyframes pulse-custom {
