@@ -14,13 +14,14 @@ import {
   Star,
   AlertCircle,
   CheckCircle2,
-  ArrowRight
+  ArrowRight,
+  RefreshCw
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
- * @fileOverview Delhivery POD Management Tool - Enterprise Edition (Pixel Perfect)
+ * @fileOverview Delhivery POD Management Tool - Enterprise Edition (No-Freeze & Flexible)
  * Optimized for Palam Vihar RPC. Built for Ashu.
  * RESET ON RELOAD: No persistent storage. Zero-Freeze processing.
  */
@@ -188,6 +189,7 @@ export default function PODTool() {
     const reader = new FileReader();
     
     reader.onload = (evt) => {
+      // Release main thread before heavy processing
       setTimeout(() => {
         try {
           const bstr = evt.target?.result;
@@ -302,10 +304,11 @@ export default function PODTool() {
 
     setIsProcessing(true);
     setUploadError(null);
+    
     const reader = new FileReader();
     
     reader.onload = (evt) => {
-      // Use longer timeout and handle larger datasets smoothly
+      // Zero-Freeze: Release the UI thread immediately
       setTimeout(() => {
         try {
           const bstr = evt.target?.result;
@@ -319,7 +322,10 @@ export default function PODTool() {
           const remarkKey = headers.find(h => /remark|nsl/i.test(h.toLowerCase().replace(/[\s_-]/g, ""))) || "";
           const awbKey = headers.find(h => /awb|waybill/i.test(h.toLowerCase().replace(/[\s_-]/g, ""))) || "";
 
-          if (!remarkKey) throw new Error("Remark column (e.g., 'Remarks Of NSL') not found");
+          // Strict Validation: If no remark column, don't upload
+          if (!remarkKey) {
+            throw new Error("Remark column (e.g. 'Remarks Of NSL') not found in this sheet.");
+          }
 
           const processed = rawData.map(row => {
             const original = String(row[remarkKey] || "").trim();
@@ -333,11 +339,15 @@ export default function PODTool() {
                 break;
               }
             }
-            // Fix AWB if found
-            const cleanAWB = awbKey ? fixAWB(row[awbKey]) : "";
+            
+            // Clean and keep original structure
             const newRow = { ...row };
             newRow[remarkKey] = replaced;
-            if (awbKey) newRow[awbKey] = cleanAWB;
+            
+            // Force AWB format if detected
+            if (awbKey) {
+              newRow[awbKey] = fixAWB(row[awbKey]);
+            }
             
             return { 
               ...newRow, 
@@ -351,7 +361,7 @@ export default function PODTool() {
           showToast(`Processed ${processed.length} rows`, "ok");
         } catch (err: any) {
           setUploadError(err.message || "Error processing file");
-          showToast("Remark mapping failed", "err");
+          showToast("Validation Failed", "err");
         } finally {
           setIsProcessing(false);
         }
@@ -376,7 +386,7 @@ export default function PODTool() {
 
   return (
     <div className="min-h-screen bg-[#F0F4FA] font-body text-[#374151]">
-      {/* Sticky Combined Header */}
+      {/* Sticky Top Header */}
       <div className="fixed top-0 left-0 w-full z-[300] shadow-lg">
         <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F]" />
         
@@ -439,15 +449,15 @@ export default function PODTool() {
               <div className="flex flex-col md:flex-row gap-4 mb-6">
                 <div className="flex-1 space-y-1.5">
                   <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">DSP ID</label>
-                  <input type="number" value={setupData.dspId} onChange={(e) => setSetupData({...setupData, dspId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[13px] font-bold outline-none focus:border-primary transition-all" placeholder="Enter ID" />
+                  <input type="number" value={setupData.dspId} onChange={(e) => setSetupData({...setupData, dspId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[13px] font-bold outline-none focus:border-primary transition-all text-[#111827]" placeholder="Enter ID" />
                 </div>
                 <div className="flex-1 space-y-1.5">
                   <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">FIELD EXECUTIVE (FE) NAME</label>
-                  <input type="text" value={setupData.feName} onChange={(e) => setSetupData({...setupData, feName: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[13px] font-bold outline-none focus:border-primary transition-all" placeholder="Enter Name" />
+                  <input type="text" value={setupData.feName} onChange={(e) => setSetupData({...setupData, feName: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[13px] font-bold outline-none focus:border-primary transition-all text-[#111827]" placeholder="Enter Name" />
                 </div>
                 <div className="flex-[0.5] space-y-1.5">
                   <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">DATE</label>
-                  <input type="date" value={setupData.date} onChange={(e) => setSetupData({...setupData, date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[13px] font-bold" />
+                  <input type="date" value={setupData.date} onChange={(e) => setSetupData({...setupData, date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[13px] font-bold text-[#111827]" />
                 </div>
               </div>
               
@@ -465,7 +475,7 @@ export default function PODTool() {
                 ) : uploadError ? (
                   <div className="space-y-3">
                     <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
-                    <p className="text-[14px] font-[700] text-red-600 uppercase">Invalid File Format</p>
+                    <p className="text-[14px] font-[700] text-red-600 uppercase">Invalid Session File</p>
                     <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest">{uploadError}</p>
                     <button onClick={() => setUploadError(null)} className="bg-red-600 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase">Try Again</button>
                   </div>
@@ -473,7 +483,7 @@ export default function PODTool() {
                   <div className="space-y-2">
                     <Download className="w-10 h-10 text-primary/40 mx-auto" />
                     <p className="text-[14px] font-[700] text-[#111827]">Drop Delhivery export file here, or click to upload</p>
-                    <p className="text-[10px] text-[#64748B] uppercase tracking-widest">No persistent storage active</p>
+                    <p className="text-[10px] text-[#64748B] uppercase tracking-widest">Fresh Start Enabled: Reset on Reload</p>
                   </div>
                 )}
               </div>
@@ -482,7 +492,7 @@ export default function PODTool() {
             {sessions.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between px-1">
-                  <h2 className="text-[10px] font-black text-[#1C2333] uppercase tracking-[0.2em]">ALL ACTIVE SESSIONS</h2>
+                  <h2 className="text-[10px] font-black text-[#1C2333] uppercase tracking-[0.2em]">ACTIVE FIELD SESSIONS</h2>
                   <button onClick={handleClearAllSessions} className="text-[10px] font-black text-[#D32F2F] uppercase tracking-widest flex items-center gap-2 hover:underline">
                     <Trash2 className="w-3.5 h-3.5" /> Clear All Sessions
                   </button>
@@ -680,13 +690,13 @@ export default function PODTool() {
                       <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
                       <p className="text-[14px] font-[700] text-red-600 uppercase">Invalid File Format</p>
                       <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest">{uploadError}</p>
-                      <button onClick={() => setUploadError(null)} className="bg-red-600 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase">Try Again</button>
+                      <button onClick={() => {setUploadError(null); setIsProcessing(false);}} className="bg-red-600 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase mt-4">Try Again</button>
                     </div>
                   ) : (
                     <div className="space-y-3">
                       <Download className="w-10 h-10 text-primary/40 mx-auto" />
-                      <p className="text-[15px] font-[700] text-[#111827]">Drop EOD Rejection File here, or click to upload</p>
-                      <p className="text-[11px] text-[#64748B] uppercase tracking-widest">Preserves original sheet columns (Hand over, Order No, etc.)</p>
+                      <p className="text-[15px] font-[700] text-[#111827]">Drop Any Excel/CSV Sheet here, or click to upload</p>
+                      <p className="text-[11px] text-[#64748B] uppercase tracking-widest">Preserves all original columns and order</p>
                     </div>
                   )}
                 </div>
@@ -699,7 +709,7 @@ export default function PODTool() {
                       <button onClick={() => {
                         const cleanData = replacerData.map(r => {
                           const { __isReplaced, __id, ...rest } = r;
-                          // Ensure AWB column is string
+                          // Force AWB strings in export
                           const awbKeys = Object.keys(rest).filter(k => /awb|waybill|no/i.test(k.toLowerCase()));
                           awbKeys.forEach(k => {
                             rest[k] = { v: String(rest[k]), t: 's', z: '@' };
@@ -708,7 +718,7 @@ export default function PODTool() {
                         });
                         const ws = XLSX.utils.json_to_sheet(cleanData);
                         const wb = XLSX.utils.book_new();
-                        XLSX.utils.book_append_sheet(wb, ws, "Replaced Remarks");
+                        XLSX.utils.book_append_sheet(wb, ws, "Official Remarks");
                         XLSX.writeFile(wb, `EOD_Official_Remarks_${new Date().toISOString().split('T')[0]}.xlsx`);
                         showToast("Official Excel Downloaded", "ok");
                       }} className="bg-[#2E7D32] hover:bg-[#1B5E20] text-white px-6 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Download className="w-4 h-4" /> Download Official Excel</button>
@@ -720,7 +730,7 @@ export default function PODTool() {
                         });
                         const headers = replacerMeta?.headers.join('\t') || "";
                         const rows = cleanData.map(r => Object.values(r).join('\t')).join('\n');
-                        navigator.clipboard.writeText(headers + '\n' + rows).then(() => showToast("Copied all rows to clipboard", "ok"));
+                        navigator.clipboard.writeText(headers + '\n' + rows).then(() => showToast("Copied table to clipboard", "ok"));
                       }} className="bg-[#1565C0] hover:bg-[#0D47A1] text-white px-6 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Copy className="w-4 h-4" /> Copy Full Table</button>
                     </div>
                     <button onClick={() => { setReplacerData([]); setReplacerMeta(null); }} className="text-[10px] font-black text-red-500 uppercase tracking-widest px-4 hover:underline">Clear Preview</button>
@@ -749,7 +759,7 @@ export default function PODTool() {
                         {replacerData.length > 500 && (
                           <tr>
                             <td colSpan={replacerMeta?.headers.length ? replacerMeta.headers.length + 1 : 1} className="p-10 text-center bg-slate-50 text-slate-400 font-bold italic">
-                              Showing first 500 rows. Download Excel or Copy to view all {replacerData.length} rows.
+                              Previewing first 500 rows. Download Excel for full {replacerData.length} records.
                             </td>
                           </tr>
                         )}
