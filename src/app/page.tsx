@@ -13,7 +13,8 @@ import {
   Search,
   Star,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  ArrowRight
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -21,7 +22,7 @@ import { cn } from "@/lib/utils";
 /**
  * @fileOverview Delhivery POD Management Tool - Enterprise Edition (Pixel Perfect)
  * Optimized for Palam Vihar RPC. Built for Ashu.
- * RESET ON RELOAD: No persistent storage.
+ * RESET ON RELOAD: No persistent storage. Zero-Freeze processing.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -60,7 +61,6 @@ interface PODRow {
   date: string;
   selected?: boolean;
   isIntact?: boolean;
-  originalData?: any; 
 }
 
 interface Session {
@@ -188,7 +188,6 @@ export default function PODTool() {
     const reader = new FileReader();
     
     reader.onload = (evt) => {
-      // Release main thread to show loader
       setTimeout(() => {
         try {
           const bstr = evt.target?.result;
@@ -306,7 +305,7 @@ export default function PODTool() {
     const reader = new FileReader();
     
     reader.onload = (evt) => {
-      // Use setTimeout to allow UI to update to 'Processing...'
+      // Use longer timeout and handle larger datasets smoothly
       setTimeout(() => {
         try {
           const bstr = evt.target?.result;
@@ -334,12 +333,15 @@ export default function PODTool() {
                 break;
               }
             }
+            // Fix AWB if found
             const cleanAWB = awbKey ? fixAWB(row[awbKey]) : "";
+            const newRow = { ...row };
+            newRow[remarkKey] = replaced;
+            if (awbKey) newRow[awbKey] = cleanAWB;
+            
             return { 
-              ...row, 
-              [remarkKey]: replaced, 
+              ...newRow, 
               __isReplaced: isReplaced, 
-              [awbKey || "AWB"]: cleanAWB,
               __id: crypto.randomUUID()
             };
           });
@@ -471,7 +473,7 @@ export default function PODTool() {
                   <div className="space-y-2">
                     <Download className="w-10 h-10 text-primary/40 mx-auto" />
                     <p className="text-[14px] font-[700] text-[#111827]">Drop Delhivery export file here, or click to upload</p>
-                    <p className="text-[10px] text-[#64748B] uppercase tracking-widest">Data will reset on page refresh</p>
+                    <p className="text-[10px] text-[#64748B] uppercase tracking-widest">No persistent storage active</p>
                   </div>
                 )}
               </div>
@@ -661,16 +663,17 @@ export default function PODTool() {
             <div className="lg:col-span-8 space-y-6">
               <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200">
                 <h2 className="text-[14px] font-[800] text-[#1C2333] flex items-center gap-2 mb-6"><FileSpreadsheet className="w-5 h-5 text-[#2E7D32]" /> Remark Replacer Dashboard</h2>
+                
                 <div className={cn(
                   "border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer relative",
                   uploadError ? "border-red-400 bg-red-50" : "border-slate-200 bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD]",
                   isProcessing && "pointer-events-none opacity-80"
                 )}>
-                  <input type="file" disabled={isProcessing} onChange={handleReplacerUpload} className="absolute inset-0 opacity-0 cursor-pointer z-20" />
+                  <input type="file" disabled={isProcessing} onChange={handleReplacerUpload} className="absolute inset-0 opacity-0 cursor-pointer z-20" title="" />
                   {isProcessing ? (
                     <div className="flex flex-col items-center gap-3">
                       <Loader2 className="w-10 h-10 text-primary animate-spin" />
-                      <p className="text-[11px] font-black uppercase text-primary tracking-widest">Analyzing File...</p>
+                      <p className="text-[11px] font-black uppercase text-primary tracking-widest">ANALYZING FILE...</p>
                     </div>
                   ) : uploadError ? (
                     <div className="space-y-3">
@@ -682,8 +685,8 @@ export default function PODTool() {
                   ) : (
                     <div className="space-y-3">
                       <Download className="w-10 h-10 text-primary/40 mx-auto" />
-                      <p className="text-[15px] font-[700] text-[#111827]">Upload EOD Rejection File</p>
-                      <p className="text-[11px] text-[#64748B] uppercase tracking-widest">Replaces Remarks while keeping ALL columns original</p>
+                      <p className="text-[15px] font-[700] text-[#111827]">Drop EOD Rejection File here, or click to upload</p>
+                      <p className="text-[11px] text-[#64748B] uppercase tracking-widest">Preserves original sheet columns (Hand over, Order No, etc.)</p>
                     </div>
                   )}
                 </div>
@@ -731,7 +734,7 @@ export default function PODTool() {
                         </tr>
                       </thead>
                       <tbody>
-                        {replacerData.map((row, idx) => (
+                        {replacerData.slice(0, 500).map((row, idx) => (
                           <tr key={row.__id} className={cn("border-b border-slate-100 transition-colors hover:bg-slate-50", row.__isReplaced ? "bg-[#F0FDF4]" : "bg-[#FFFDE7]")}>
                             <td className="p-3 text-center">
                               <button onClick={() => setReplacerData(prev => prev.filter(r => r.__id !== row.__id))} className="text-slate-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button>
@@ -743,6 +746,13 @@ export default function PODTool() {
                             ))}
                           </tr>
                         ))}
+                        {replacerData.length > 500 && (
+                          <tr>
+                            <td colSpan={replacerMeta?.headers.length ? replacerMeta.headers.length + 1 : 1} className="p-10 text-center bg-slate-50 text-slate-400 font-bold italic">
+                              Showing first 500 rows. Download Excel or Copy to view all {replacerData.length} rows.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -753,20 +763,24 @@ export default function PODTool() {
             <div className="lg:col-span-4">
               <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden sticky top-[130px]">
                 <div className="bg-[#2E7D32] p-4 text-white shadow-md">
-                  <h3 className="text-[11px] font-[800] uppercase tracking-widest flex items-center gap-2">Built-in Remark Mapping</h3>
+                  <h3 className="text-[11px] font-[800] uppercase tracking-widest flex items-center gap-2">BUILT-IN REMARK MAPPING</h3>
                   <p className="text-[9px] text-green-100 mt-0.5">NSL Remarks → Official Remarks</p>
                 </div>
                 <div className="p-4 overflow-y-auto max-h-[70vh] space-y-3 custom-scrollbar">
                   {Object.entries(REMARK_MAPPING).map(([nsl, official]) => (
-                    <div key={nsl} className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2 hover:bg-white transition-all">
+                    <div key={nsl} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3 hover:bg-white transition-all shadow-sm">
                       <div className="flex flex-col gap-1">
-                        <span className="text-[8px] font-black text-slate-400 uppercase">NSL Remark</span>
-                        <span className="bg-[#FFFDE7] text-[#D97706] border border-[#FDE68A] px-2 py-1 rounded-md text-[10px] font-bold">{nsl}</span>
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">NSL REMARK</span>
+                        <span className="bg-[#FFFDE7] text-[#D97706] border border-[#FDE68A] px-3 py-1.5 rounded-xl text-[10px] font-bold">{nsl}</span>
                       </div>
-                      <div className="flex justify-center text-green-600 font-black text-xs">↓</div>
+                      <div className="flex justify-center">
+                        <div className="bg-green-100 p-1 rounded-full">
+                           <ArrowRight className="w-3.5 h-3.5 text-green-600" />
+                        </div>
+                      </div>
                       <div className="flex flex-col gap-1">
-                        <span className="text-[8px] font-black text-slate-400 uppercase">Official Remark</span>
-                        <span className="bg-[#F0FDF4] text-[#2E7D32] border border-green-200 px-2 py-1 rounded-md text-[10px] font-bold">{official}</span>
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">OFFICIAL REMARK</span>
+                        <span className="bg-[#F0FDF4] text-[#2E7D32] border border-green-200 px-3 py-1.5 rounded-xl text-[10px] font-bold">{official}</span>
                       </div>
                     </div>
                   ))}
