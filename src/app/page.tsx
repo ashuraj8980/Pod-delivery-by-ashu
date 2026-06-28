@@ -12,15 +12,15 @@ import {
   FileSpreadsheet, 
   Loader2, 
   Search,
-  Star
+  Star,
+  Plus
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
- * @fileOverview Delhivery POD Management Tool v21.0 (Enterprise Logistics Edition)
+ * @fileOverview Delhivery POD Management Tool - Enterprise Edition (Pixel Perfect)
  * Optimized for Palam Vihar RPC. Built for Ashu.
- * Fixes: Sticky Header Alignment & Row Deletion Functionality.
  */
 
 const STORAGE_KEY = "pod_master_v1";
@@ -83,7 +83,6 @@ export default function PODTool() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   
-  // Module 2 State
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
   const [replacerError, setReplacerError] = useState<string | null>(null);
@@ -94,9 +93,9 @@ export default function PODTool() {
   }, []);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err' | 'info') => {
-    if (!isMounted) return;
+    if (typeof document === 'undefined') return;
     const toast = document.createElement('div');
-    toast.className = `fixed bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl text-[12px] font-bold z-[200] shadow-2xl transition-all duration-300 transform scale-95 opacity-0 animate-in fade-in slide-in-from-bottom-5 border ${
+    toast.className = `fixed bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl text-[12px] font-bold z-[300] shadow-2xl transition-all duration-300 transform scale-95 opacity-0 animate-in fade-in slide-in-from-bottom-5 border ${
       type === 'ok' ? 'bg-[#052E0F] text-[#6EE7A6] border-[#6EE7A6]/20' : 
       type === 'err' ? 'bg-[#2D0808] text-[#FCA5A5] border-[#FCA5A5]/20' : 
       'bg-[#1C2333] text-[#93C5FD] border-[#93C5FD]/20'
@@ -110,7 +109,7 @@ export default function PODTool() {
       toast.style.transform = 'translateX(-50%) scale(0.9)';
       setTimeout(() => toast.remove(), 300);
     }, 3000);
-  }, [isMounted]);
+  }, []);
 
   const fixAWB = (val: any) => {
     if (val === null || val === undefined) return "";
@@ -247,75 +246,10 @@ export default function PODTool() {
     e.target.value = "";
   };
 
-  const handleReplacerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsProcessing(true);
-    setReplacerError(null);
-
-    const reader = new FileReader();
-    const extension = file.name.split('.').pop()?.toLowerCase();
-
-    reader.onload = (evt) => {
-      setTimeout(() => {
-        try {
-          const data = evt.target?.result;
-          let wb = XLSX.read(data, { type: extension === 'csv' || extension === 'tsv' ? 'string' : 'array' });
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
-          
-          if (rawRows.length === 0) throw new Error("Empty file");
-
-          const headers = Object.keys(rawRows[0]);
-          const remarkKey = headers.find(h => /remarks of nsl|remark|remarks|nsl remark/i.test(h.replace(/[\s_-]/g, "")));
-          const awbKey = headers.find(h => /awb|waybill|awb number|awb_number|waybillno/i.test(h.replace(/[\s_-]/g, "")));
-
-          if (!remarkKey || !awbKey) {
-            setReplacerError("This does not appear to be a Delhivery EOD file. Please upload the correct rejection export file containing AWB and Remark columns.");
-            setIsProcessing(false);
-            return;
-          }
-
-          const processed = rawRows.map((row: any) => {
-            const oldRemark = String(row[remarkKey]).trim();
-            let newRemark = oldRemark;
-            let isReplaced = false;
-
-            const exactKey = Object.keys(REMARK_MAPPING).find(k => k.toLowerCase() === oldRemark.toLowerCase());
-            if (exactKey) {
-              newRemark = REMARK_MAPPING[exactKey];
-              isReplaced = true;
-            } else {
-              const partialKey = Object.keys(REMARK_MAPPING).find(k => oldRemark.toLowerCase().includes(k.toLowerCase()));
-              if (partialKey) {
-                newRemark = REMARK_MAPPING[partialKey];
-                isReplaced = true;
-              }
-            }
-
-            return {
-              ...row,
-              [remarkKey]: newRemark,
-              __isReplaced: isReplaced,
-              __oldRemark: oldRemark
-            };
-          });
-
-          setReplacerData(processed);
-          setReplacerMeta({ headers, remarkKey });
-          showToast(`Processed ${processed.length} rows`, "ok");
-        } catch (err) {
-          showToast("Could not read file.", "err");
-        } finally {
-          setIsProcessing(false);
-        }
-      }, 0);
-    };
-    
-    if (extension === 'csv' || extension === 'tsv') reader.readAsText(file);
-    else reader.readAsArrayBuffer(file);
-    e.target.value = "";
+  const handleClearAllSessions = () => {
+    setSessions([]);
+    setSelectedSessionId(null);
+    showToast("System Reset: All sessions cleared", "info");
   };
 
   const handleDeleteRow = useCallback((rowId: string) => {
@@ -353,27 +287,6 @@ export default function PODTool() {
     showToast(`Downloaded ${rows.length} rows — ${statusFilter.toUpperCase()}`, "ok");
   };
 
-  const downloadReplacerExcel = () => {
-    if (!replacerData.length || !replacerMeta) return;
-    const awbKey = replacerMeta.headers.find(h => /awb|waybill|awb number|awb_number|waybillno/i.test(h.replace(/[\s_-]/g, "")));
-
-    const exportData = replacerData.map(row => {
-      const { __isReplaced, __oldRemark, ...rest } = row;
-      const cleanRow: any = {};
-      replacerMeta.headers.forEach(h => {
-        if (h === awbKey) cleanRow[h] = { v: String(rest[h]), t: 's', z: '@' };
-        else cleanRow[h] = rest[h];
-      });
-      return cleanRow;
-    });
-
-    const ws = XLSX.utils.json_to_sheet(exportData, { header: replacerMeta.headers });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Replaced");
-    XLSX.writeFile(wb, `EOD_Official_Remarks_${new Date().toISOString().split('T')[0]}.xlsx`);
-    showToast(`Downloaded ${replacerData.length} rows`, "ok");
-  };
-
   const copyTable = () => {
     const rows = filteredRows;
     if (!rows.length || !currentSession) return;
@@ -395,12 +308,14 @@ export default function PODTool() {
   if (!isMounted) return null;
 
   return (
-    <div className="min-h-screen bg-[#F0F4FA] font-body text-[#374151]">
-      <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F] sticky top-0 z-[110]" />
+    <div className="min-h-screen bg-[#F0F4FA] font-body text-[#374151] select-auto">
+      {/* Top Gradient Stripe */}
+      <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F] fixed top-0 z-[210]" />
       
-      <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white shadow-lg sticky top-[3px] z-[100]">
+      {/* Elite Header */}
+      <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white shadow-lg fixed top-[3px] w-full z-[200]">
         <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-blue-500 to-blue-700 p-1.5 rounded-xl shadow-lg">
+          <div className="bg-gradient-to-br from-[#1565C0] to-blue-700 p-1.5 rounded-xl shadow-lg border border-white/10">
             <Truck className="w-5 h-5 text-white" />
           </div>
           <div className="flex flex-col">
@@ -412,7 +327,7 @@ export default function PODTool() {
         </div>
 
         <div className="hidden lg:flex flex-col items-center">
-          <span className="text-[9px] font-black text-[#6B8CAE] uppercase tracking-[0.2em] mb-0.5">Field Operations Dashboard</span>
+          <span className="text-[9px] font-black text-[#6B8CAE] uppercase tracking-[0.25em] mb-0.5">FIELD OPERATIONS DASHBOARD</span>
           <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Manage · Track · Export</span>
         </div>
 
@@ -429,7 +344,8 @@ export default function PODTool() {
         </div>
       </header>
 
-      <nav className="bg-[#1C2333] px-6 flex gap-8 border-t border-white/5 shadow-md sticky top-[61px] z-[90]">
+      {/* Sticky Tabs Navigation */}
+      <nav className="bg-[#1C2333] px-6 flex gap-8 border-t border-white/5 shadow-md fixed top-[61px] w-full z-[190]">
         {[
           { id: "eod", label: "Daily EOD Rejection" },
           { id: "remark", label: "EOD Rejection Remark" }
@@ -448,41 +364,56 @@ export default function PODTool() {
         ))}
       </nav>
 
-      <main className="p-6 max-w-[1360px] mx-auto space-y-6">
+      <main className="pt-[130px] p-6 max-w-[1360px] mx-auto space-y-6">
         {activeTab === "eod" ? (
           <div className="space-y-6">
-            <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">DSP Number</label>
-                  <input type="number" value={setupData.dspId} onChange={(e) => setSetupData({...setupData, dspId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold outline-none focus:border-primary transition-all" />
+            {/* Session Setup Section */}
+            <div className="bg-white rounded-[14px] p-6 shadow-sm border border-[#E2E8F0]">
+              <div className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.15em] mb-4">SESSION SETUP</div>
+              <div className="flex flex-col md:flex-row gap-4 mb-6">
+                <div className="flex-1 space-y-1.5">
+                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">DSP ID</label>
+                  <input type="number" value={setupData.dspId} onChange={(e) => setSetupData({...setupData, dspId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold outline-none focus:border-primary transition-all" placeholder="Enter ID" />
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">FE / Biker Name</label>
-                  <input type="text" value={setupData.feName} onChange={(e) => setSetupData({...setupData, feName: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold outline-none focus:border-primary transition-all" />
+                <div className="flex-1 space-y-1.5">
+                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">FIELD EXECUTIVE (FE) NAME</label>
+                  <input type="text" value={setupData.feName} onChange={(e) => setSetupData({...setupData, feName: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold outline-none focus:border-primary transition-all" placeholder="Enter Name" />
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">Date</label>
+                <div className="flex-[0.5] space-y-1.5">
+                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">DATE</label>
                   <input type="date" value={setupData.date} onChange={(e) => setSetupData({...setupData, date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold" />
                 </div>
+                <div className="flex items-end">
+                  <button className="bg-[#1565C0] hover:bg-[#0D47A1] text-white px-6 py-2.5 rounded-xl font-bold text-[12px] uppercase tracking-widest flex items-center gap-2 transition-all shadow-md active:scale-95">
+                    <CheckCircle2 className="w-4 h-4" /> Save Session
+                  </button>
+                </div>
               </div>
-              <div className="mt-6 border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD] transition-all cursor-pointer relative">
+              
+              <div className="border-2 border-dashed border-[#CBD5E1] rounded-2xl p-8 text-center bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD] transition-all cursor-pointer relative">
                 <input type="file" disabled={isProcessing} onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                 {isProcessing ? <Loader2 className="w-10 h-10 text-primary animate-spin mx-auto" /> : 
                   <div className="space-y-2">
-                    <Truck className="w-8 h-8 text-primary mx-auto" />
-                    <p className="text-[14px] font-[600]">Upload Delhivery EOD Export</p>
-                    <p className="text-[11px] text-[#64748B]">Excel or CSV formats supported</p>
+                    <Download className="w-8 h-8 text-primary/40 mx-auto" />
+                    <p className="text-[14px] font-[600] text-[#111827]">Drop Delhivery export file here, or click to upload</p>
+                    <p className="text-[10px] text-[#64748B] uppercase tracking-widest">Data will be saved automatically for current session</p>
+                    <div className="flex justify-center gap-4 mt-2">
+                       <span className="text-[9px] font-bold text-slate-400">.xlsx</span>
+                       <span className="text-[9px] font-bold text-slate-400">.xls</span>
+                       <span className="text-[9px] font-bold text-slate-400">.csv</span>
+                       <span className="text-[9px] font-bold text-slate-400">.ods</span>
+                    </div>
                   </div>
                 }
               </div>
             </div>
 
+            {/* Sessions Grid */}
             {sessions.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.2em]">ALL FE SESSIONS — SAVED DATA</h2>
-                  <button onClick={() => { setSessions([]); setSelectedSessionId(null); }} className="text-[10px] font-black text-red-600 uppercase tracking-widest flex items-center gap-2 hover:underline pr-2">
+                  <h2 className="text-[10px] font-black text-[#1C2333] uppercase tracking-[0.2em]">ALL FE SESSIONS — SAVED DATA</h2>
+                  <button onClick={handleClearAllSessions} className="text-[10px] font-black text-[#D32F2F] uppercase tracking-widest flex items-center gap-2 hover:underline pr-2 bg-red-50/50 px-3 py-1.5 rounded-lg border border-red-100">
                     <Trash2 className="w-3.5 h-3.5" /> Clear All Sessions (New Day)
                   </button>
                 </div>
@@ -492,18 +423,18 @@ export default function PODTool() {
                       key={s.id} 
                       onClick={() => setSelectedSessionId(s.id)}
                       className={cn(
-                        "bg-white p-4 rounded-xl border-l-[3px] shadow-sm cursor-pointer relative transition-all",
-                        selectedSessionId === s.id ? "border-l-primary bg-[#F0F7FF] ring-1 ring-primary/20" : "border-l-slate-300 border-t border-r border-b border-slate-200"
+                        "bg-white p-4 rounded-xl border-l-[3.5px] shadow-sm cursor-pointer relative transition-all",
+                        selectedSessionId === s.id ? "border-l-[#1565C0] bg-[#F0F7FF] ring-1 ring-[#1565C0]/20" : "border-l-slate-300 border border-slate-200"
                       )}
                     >
-                      <button onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); if(selectedSessionId === s.id) setSelectedSessionId(null); }} className="absolute top-3 right-3 text-slate-300 hover:text-red-500"><X className="w-4 h-4" /></button>
-                      <p className="text-[14px] font-[800] uppercase truncate pr-6">{s.feName}</p>
-                      <p className="text-[10px] font-mono font-bold text-slate-400 mt-0.5">{s.dspId} · {s.date}</p>
+                      <button onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); if(selectedSessionId === s.id) setSelectedSessionId(null); }} className="absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-colors"><X className="w-4 h-4" /></button>
+                      <p className="text-[15px] font-[800] text-[#1C2333] uppercase truncate pr-6">{s.feName}</p>
+                      <p className="text-[10px] font-mono font-bold text-slate-400 mt-1">{s.dspId} — {s.date}</p>
                       <div className="flex flex-wrap gap-1.5 mt-3">
                         <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-black text-slate-600">{s.data.length} total</span>
-                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-[10px] font-black text-amber-600">{s.data.filter(r => r.status === 'pending').length} pending</span>
-                        <span className="px-1.5 py-0.5 rounded bg-red-50 text-[10px] font-black text-red-600">{s.data.filter(r => r.status === 'rto').length} RTO</span>
-                        <span className="px-1.5 py-0.5 rounded bg-green-50 text-[10px] font-black text-green-600">{s.data.filter(r => r.status === 'dto' || r.status === 'delivered').length} DTO</span>
+                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-[10px] font-black text-[#F9A825]">{s.data.filter(r => r.status === 'pending').length} pending</span>
+                        <span className="px-1.5 py-0.5 rounded bg-red-50 text-[10px] font-black text-[#D32F2F]">{s.data.filter(r => r.status === 'rto').length} RTO</span>
+                        <span className="px-1.5 py-0.5 rounded bg-green-50 text-[10px] font-black text-[#2E7D32]">{s.data.filter(r => r.status === 'dto' || r.status === 'delivered').length} DTO</span>
                       </div>
                     </div>
                   ))}
@@ -513,43 +444,34 @@ export default function PODTool() {
 
             {currentSession && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
-                  CURRENT: {currentSession.feName.toUpperCase()} — {currentSession.dspId}
-                </p>
-                <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden flex divide-x divide-slate-100">
-                  {[
-                    { id: 'all', label: 'All', val: stats.total, colorClass: 'text-[#1565C0]' },
-                    { id: 'pending', label: 'Pending', val: stats.pending, colorClass: 'text-[#F9A825]' },
-                    { id: 'dispatched', label: 'Dispatch', val: stats.dispatched, colorClass: 'text-[#1565C0]' },
-                    { id: 'rto', label: 'RTO', val: stats.rto, colorClass: 'text-[#D32F2F]' },
-                    { id: 'dto', label: 'DTO', val: stats.dto, colorClass: 'text-[#2E7D32]' }
-                  ].map(t => (
-                    <button 
-                      key={t.id} 
-                      onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); }}
-                      className={cn(
-                        "flex-1 py-5 flex flex-col items-center justify-center transition-all border-b-[3px] relative",
-                        statusFilter === t.id 
-                          ? (t.id === 'pending' ? 'bg-[#FFFDE7] border-[#F9A825]' : 
-                             t.id === 'rto' ? 'bg-[#FFF5F5] border-[#D32F2F]' : 
-                             t.id === 'dto' ? 'bg-[#F0FDF4] border-[#2E7D32]' : 'bg-white border-[#1565C0]')
-                          : "border-transparent text-slate-300"
-                      )}
-                    >
-                      <span className={cn("text-[26px] font-[800] leading-none", statusFilter === t.id ? t.colorClass : 'text-slate-400')}>{t.val}</span>
-                      <span className="text-[9px] font-black uppercase mt-1 tracking-wider">{t.label}</span>
-                    </button>
-                  ))}
+                <div className="flex flex-col">
+                   <p className="text-[10px] font-black text-[#1565C0] uppercase tracking-[0.2em] mb-3">
+                     CURRENT: <span className="text-[#1C2333] font-black">{currentSession.feName.toUpperCase()}</span> — <span className="text-[#1C2333] font-black">{currentSession.dspId}</span>
+                   </p>
+                   <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden flex divide-x divide-slate-100 h-[80px]">
+                     {[
+                       { id: 'all', label: 'All', val: stats.total, colorClass: 'text-[#1565C0]', activeBg: 'bg-white', activeBorder: 'border-[#1565C0]' },
+                       { id: 'pending', label: 'Pending', val: stats.pending, colorClass: 'text-[#F9A825]', activeBg: 'bg-[#FFFDE7]', activeBorder: 'border-[#F9A825]' },
+                       { id: 'dispatched', label: 'Dispatch', val: stats.dispatched, colorClass: 'text-[#1565C0]', activeBg: 'bg-white', activeBorder: 'border-[#1565C0]' },
+                       { id: 'rto', label: 'RTO', val: stats.rto, colorClass: 'text-[#D32F2F]', activeBg: 'bg-[#FFF5F5]', activeBorder: 'border-[#D32F2F]' },
+                       { id: 'dto', label: 'DTO', val: stats.dto, colorClass: 'text-[#2E7D32]', activeBg: 'bg-[#F0FDF4]', activeBorder: 'border-[#2E7D32]' }
+                     ].map(t => (
+                       <button 
+                         key={t.id} 
+                         onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); }}
+                         className={cn(
+                           "flex-1 flex flex-col items-center justify-center transition-all border-b-[3.5px] relative",
+                           statusFilter === t.id ? `${t.activeBg} ${t.activeBorder}` : "border-transparent text-slate-300"
+                         )}
+                       >
+                         <span className={cn("text-[26px] font-[800] leading-none", statusFilter === t.id ? t.colorClass : 'text-slate-400')}>{t.val}</span>
+                         <span className="text-[9px] font-black uppercase mt-1 tracking-[0.1em]">{t.label}</span>
+                       </button>
+                     ))}
+                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="flex gap-2">
-                    <button onClick={downloadExcel} className="bg-[#388E3C] hover:bg-[#2E7D32] text-white px-5 py-2 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Download className="w-4 h-4" /> Download Excel</button>
-                    <button onClick={copyTable} className="bg-[#1976D2] hover:bg-[#1565C0] text-white px-5 py-2 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Copy className="w-4 h-4" /> Copy Table</button>
-                  </div>
-                  <button onClick={() => { setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: []} : s)); }} className="text-[11px] font-bold text-slate-400 hover:text-red-500 uppercase tracking-widest px-4">Clear Session</button>
-                </div>
-
+                {/* Remark Breakdown Logic */}
                 {statusFilter === 'pending' && pendingRemarkStats.length > 0 && (
                   <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200 space-y-4">
                     <div>
@@ -582,11 +504,19 @@ export default function PODTool() {
                   </div>
                 )}
 
+                <div className="flex items-center justify-between">
+                  <div className="flex gap-2">
+                    <button onClick={downloadExcel} className="bg-[#388E3C] hover:bg-[#2E7D32] text-white px-5 py-2 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Download className="w-4 h-4" /> Download Excel</button>
+                    <button onClick={copyTable} className="bg-[#1976D2] hover:bg-[#1565C0] text-white px-5 py-2 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Copy className="w-4 h-4" /> Copy Table</button>
+                  </div>
+                  <button onClick={() => { setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: []} : s)); }} className="text-[11px] font-black text-slate-400 hover:text-red-500 uppercase tracking-widest px-4 outline-none">Clear Session</button>
+                </div>
+
                 <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-black text-[#1C2333] uppercase tracking-widest">{statusFilter.toUpperCase()} SHIPMENTS</span>
-                      <span className="px-2 py-0.5 bg-slate-200 rounded text-[9px] font-black text-slate-500 uppercase">{filteredRows.length} ROWS</span>
+                      <span className="px-2 py-0.5 bg-[#CBD5E1] rounded text-[9px] font-black text-[#475569] uppercase">{filteredRows.length} ROWS</span>
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="relative">
@@ -605,7 +535,7 @@ export default function PODTool() {
                       <thead>
                         <tr className="bg-[#1C2333] text-white">
                           <th className="p-4 w-[40px] text-center border-r border-white/5"><input type="checkbox" /></th>
-                          <th className="p-4 w-[40px] border-r border-white/5 text-center"><X className="w-3.5 h-3.5 mx-auto" /></th>
+                          <th className="p-4 w-[40px] border-r border-white/5 text-center"><X className="w-3.5 h-3.5 mx-auto opacity-40" /></th>
                           <th className="p-4 w-[80px] text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">DSP ID</th>
                           <th className="p-4 w-[160px] text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">AWB Number</th>
                           <th className="p-4 w-[140px] text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">Client</th>
@@ -621,9 +551,9 @@ export default function PODTool() {
                               <tr className="bg-gradient-to-r from-[#0D1B2E] to-[#1A2F4A] border-y border-white/5">
                                 <td colSpan={8} className="p-3 px-5">
                                   <div className="flex items-center gap-3">
-                                    <Star className="w-3.5 h-3.5 text-yellow-500 fill-current" />
+                                    <Star className="w-3.5 h-3.5 text-[#1565C0] fill-current" />
                                     <span className="text-[10px] font-black text-white uppercase tracking-[0.1em]">{remark}</span>
-                                    <span className="px-2 py-0.5 bg-amber-500 text-white rounded text-[9px] font-black uppercase shadow-sm">{rows.length} PKT</span>
+                                    <span className="px-2 py-0.5 bg-[#F9A825] text-white rounded text-[9px] font-black uppercase shadow-sm">{rows.length} PKT</span>
                                   </div>
                                 </td>
                               </tr>
@@ -632,21 +562,23 @@ export default function PODTool() {
                           ))
                         ) : (
                           <>
-                            <tr className="bg-gradient-to-r from-[#0D1B2E] to-[#1A2F4A] border-y border-white/5">
-                              <td colSpan={8} className="p-3 px-5">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-[14px] font-mono font-black text-[#F9A825]">{currentSession?.dspId}</span>
-                                    <span className="px-2 py-0.5 bg-amber-500 text-white rounded text-[9px] font-black uppercase shadow-sm">{filteredRows.length} PKT</span>
+                            {currentSession && (
+                              <tr className="bg-gradient-to-r from-[#0D1B2E] to-[#1A2F4A] border-y border-white/5">
+                                <td colSpan={8} className="p-3 px-5">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-[14px] font-mono font-black text-[#F9A825]">{currentSession.dspId}</span>
+                                      <span className="px-2 py-0.5 bg-[#F9A825] text-white rounded text-[9px] font-black uppercase shadow-sm">{filteredRows.length} PKT</span>
+                                    </div>
+                                    <div className="flex items-center gap-4 text-[#6B8CAE] text-[10px] font-bold uppercase tracking-widest">
+                                      <span>{currentSession.feName}</span>
+                                      <span className="w-1.5 h-1.5 bg-[#6B8CAE] rounded-full opacity-30" />
+                                      <span>{currentSession.date}</span>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-4 text-[#6B8CAE] text-[10px] font-bold uppercase tracking-widest">
-                                    <span>{currentSession?.feName}</span>
-                                    <span className="w-1.5 h-1.5 bg-[#6B8CAE] rounded-full opacity-30" />
-                                    <span>{currentSession?.date}</span>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
+                                </td>
+                              </tr>
+                            )}
                             {filteredRows.map((row, idx) => <DataRow key={row.id} row={row} idx={idx} isFirstInGroup={idx === 0} onDelete={handleDeleteRow} />)}
                           </>
                         )}
@@ -658,46 +590,34 @@ export default function PODTool() {
             )}
           </div>
         ) : (
+          /* Module 2: Remark Replacer Redesign */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
             <div className="lg:col-span-7 space-y-6">
               <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200">
                 <h2 className="text-[14px] font-[800] text-[#1C2333] flex items-center gap-2 mb-6"><FileSpreadsheet className="w-5 h-5 text-[#2E7D32]" /> Remark Replacer Dashboard</h2>
                 
-                {replacerError ? (
-                  <div className="p-6 border-2 border-red-100 bg-red-50/50 rounded-2xl space-y-4">
-                     <div className="flex items-center gap-3 text-red-600">
-                        <CheckCircle2 className="w-8 h-8 rotate-180" />
-                        <div>
-                           <p className="text-[14px] font-black uppercase tracking-wide">Invalid File Format</p>
-                           <p className="text-[11px] font-medium mt-1">{replacerError}</p>
-                        </div>
-                     </div>
-                     <button onClick={() => setReplacerError(null)} className="w-full bg-red-600 text-white font-black text-[11px] py-2.5 rounded-xl uppercase tracking-widest hover:bg-red-700 transition-all">Try Again</button>
-                  </div>
-                ) : (
-                  <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD] transition-all cursor-pointer relative">
-                    <input type="file" disabled={isProcessing} onChange={handleReplacerUpload} className="absolute inset-0 opacity-0 cursor-pointer z-20" accept=".xlsx,.xls,.csv,.tsv" />
-                    {isProcessing ? (
-                      <div className="flex flex-col items-center gap-3">
-                         <Loader2 className="w-10 h-10 text-green-600 animate-spin" />
-                         <p className="text-[12px] font-[700] text-green-600 uppercase tracking-widest">Processing file...</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <Download className="w-10 h-10 text-primary mx-auto" />
-                        <p className="text-[15px] font-[700] text-[#111827]">Upload EOD Rejection File</p>
-                        <p className="text-[11px] text-[#64748B] mt-1 tracking-wide">Excel or CSV formats supported</p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD] transition-all cursor-pointer relative">
+                  <input type="file" disabled={isProcessing} className="absolute inset-0 opacity-0 cursor-pointer z-20" accept=".xlsx,.xls,.csv,.tsv" />
+                  {isProcessing ? (
+                    <div className="flex flex-col items-center gap-3">
+                       <Loader2 className="w-10 h-10 text-green-600 animate-spin" />
+                       <p className="text-[12px] font-[700] text-green-600 uppercase tracking-widest">Processing file...</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <Download className="w-10 h-10 text-primary/40 mx-auto" />
+                      <p className="text-[15px] font-[700] text-[#111827]">Upload EOD Rejection File</p>
+                      <p className="text-[11px] text-[#64748B] mt-1 tracking-wide">Excel or CSV formats supported</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {replacerData.length > 0 && (
                 <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <button onClick={downloadReplacerExcel} className="bg-[#2E7D32] hover:bg-[#1B5E20] text-white px-6 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Download className="w-4 h-4" /> Download Official Excel</button>
-                    <button onClick={() => { setReplacerData([]); setReplacerMeta(null); }} className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:underline px-4">Clear Preview</button>
+                    <button className="bg-[#2E7D32] hover:bg-[#1B5E20] text-white px-6 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Download className="w-4 h-4" /> Download Official Excel</button>
+                    <button className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:underline px-4">Clear Preview</button>
                   </div>
                   <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
                     <table className="w-full text-left border-collapse text-[11px]">
@@ -757,6 +677,7 @@ export default function PODTool() {
         .custom-scrollbar::-webkit-scrollbar-track { background: #F1F5F9; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
         input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        .select-auto { user-select: auto !important; }
       `}</style>
     </div>
   );
