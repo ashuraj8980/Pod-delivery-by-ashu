@@ -1,3 +1,2 @@
-
-// File cleared to fix build errors. AI functionality removed.
+// AI functionality removed as per user request.
 export const ai = null;

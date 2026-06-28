@@ -1,4 +1,2 @@
-import { config } from 'dotenv';
-config();
-
-import '@/ai/flows/autonomous-booking-assistant-flow.ts';
+// AI development file disabled.
+export {};
