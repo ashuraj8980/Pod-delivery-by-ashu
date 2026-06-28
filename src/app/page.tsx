@@ -11,15 +11,19 @@ import {
   Filter,
   Settings,
   ChevronRight,
-  ChevronLeft
+  ChevronLeft,
+  Calendar,
+  User,
+  Hash,
+  ArrowUpDown
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
- * @fileOverview Delhivery POD Management Tool.
- * Modules: Daily EOD Rejection & Remark Replacer.
- * Final Fix: Strict validation, filtered exports, and build cleanup.
+ * @fileOverview Delhivery POD Management Tool v1.1
+ * Features: AWB Scientific Notation Fix, Filtered Export, Remark Breakdown.
+ * Author: Ashu (ashuraj9771@gmail.com)
  */
 
 const STORAGE_KEY = "pod_master_v1";
@@ -77,7 +81,6 @@ export default function PODTool() {
   const [remarkFilter, setRemarkFilter] = useState<string | null>(null);
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
   const [showIntactModal, setShowIntactModal] = useState(false);
-  const [focusedIndex, setFocusedIndex] = useState(-1);
   const [isMounted, setIsMounted] = useState(false);
   
   // Module 2 State
@@ -101,15 +104,23 @@ export default function PODTool() {
   useEffect(() => {
     if (!isMounted) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
       if (e.key === "ArrowLeft") {
         const tabs = ["all", "pending", "dispatched", "rto", "dto"];
         const idx = tabs.indexOf(statusFilter);
-        if (idx > 0) setStatusFilter(tabs[idx - 1]);
+        if (idx > 0) {
+          setStatusFilter(tabs[idx - 1]);
+          setRemarkFilter(null);
+        }
       }
       if (e.key === "ArrowRight") {
         const tabs = ["all", "pending", "dispatched", "rto", "dto"];
         const idx = tabs.indexOf(statusFilter);
-        if (idx < tabs.length - 1) setStatusFilter(tabs[idx + 1]);
+        if (idx < tabs.length - 1) {
+          setStatusFilter(tabs[idx + 1]);
+          setRemarkFilter(null);
+        }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -191,7 +202,7 @@ export default function PODTool() {
       rows = rows.filter(r => r.status === statusFilter);
     }
     if (remarkFilter !== null) {
-      rows = rows.filter(r => r.remark === remarkFilter);
+      rows = rows.filter(r => (r.remark || "") === remarkFilter);
     }
     return rows;
   }, [currentSession, statusFilter, remarkFilter]);
@@ -201,6 +212,7 @@ export default function PODTool() {
       showToast("No data to copy!", "err");
       return;
     }
+    // No headers, tab separated, dsp only on first row
     const text = dataRows.map((r, i) => {
       const dsp = i === 0 ? r.dspId : "";
       return `${r.date}\t${dsp}\t${r.awb}\t${r.client}\t${r.orderId}\t${r.remark}\t${r.feName}`;
@@ -209,13 +221,7 @@ export default function PODTool() {
     navigator.clipboard.writeText(text).then(() => {
       showToast("Copied — Paste in Excel", "info");
     }).catch(() => {
-      const el = document.createElement('textarea');
-      el.value = text;
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand('copy');
-      document.body.removeChild(el);
-      showToast("Copied — Paste in Excel", "info");
+      showToast("Copy failed!", "err");
     });
   };
 
@@ -236,8 +242,8 @@ export default function PODTool() {
     ]);
 
     const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-    const wscols = [{ wch: 13 }, { wch: 12 }, { wch: 26 }, { wch: 20 }, { wch: 20 }, { wch: 36 }, { wch: 18 }];
-    ws['!cols'] = wscols;
+    // Set widths
+    ws['!cols'] = [{ wch: 13 }, { wch: 12 }, { wch: 26 }, { wch: 20 }, { wch: 20 }, { wch: 36 }, { wch: 18 }];
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "POD_Report");
@@ -325,7 +331,8 @@ export default function PODTool() {
     if (!currentSession || statusFilter !== "pending") return [];
     const counts: Record<string, number> = {};
     currentSession.data.filter(r => r.status === 'pending').forEach(r => {
-      counts[r.remark] = (counts[r.remark] || 0) + 1;
+      const rem = r.remark || "";
+      counts[rem] = (counts[rem] || 0) + 1;
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [currentSession, statusFilter]);
@@ -335,6 +342,7 @@ export default function PODTool() {
   return (
     <div className="min-h-screen bg-[#F0F4FA] font-body text-[#1C2333] select-none">
       <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F]" />
+      
       <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white shadow-xl relative z-20">
         <div className="flex items-center gap-3">
           <div className="bg-gradient-to-br from-blue-400 to-blue-600 p-1.5 rounded-lg">
@@ -352,12 +360,9 @@ export default function PODTool() {
             <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
             <span className="text-[9px] font-black text-green-400 tracking-widest uppercase">Live</span>
           </div>
-          <div className="bg-[#F9A825] px-3 py-1 rounded-lg text-[#1C2333] font-code text-[11px] font-black shadow-lg">
+          <div className="bg-[#F9A825] px-3 py-1 rounded-lg text-[#1C2333] font-code text-[11px] font-black">
             {currentSession?.data.length || 0} ROWS
           </div>
-          <button className="text-slate-400 hover:text-white transition-colors">
-            <Settings className="w-4 h-4" />
-          </button>
         </div>
       </header>
 
@@ -390,7 +395,7 @@ export default function PODTool() {
             <div className="bg-white rounded-[1.25rem] p-6 shadow-sm border border-[#E2E8F0] space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">DSP ID</label>
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Hash className="w-3 h-3" /> DSP ID (Required)</label>
                   <input 
                     type="number" 
                     value={setupData.dspId} 
@@ -400,7 +405,7 @@ export default function PODTool() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">FE / Biker Name</label>
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><User className="w-3 h-3" /> FE / Biker Name</label>
                   <input 
                     type="text" 
                     value={setupData.feName} 
@@ -414,7 +419,7 @@ export default function PODTool() {
               <div 
                 className={cn(
                   "border-2 border-dashed rounded-2xl p-8 text-center transition-all relative group",
-                  (!setupData.feName || !setupData.dspId) ? "bg-slate-50 border-slate-200 opacity-60" : "border-blue-200 hover:border-blue-500 hover:bg-blue-50/30 cursor-pointer"
+                  (!setupData.feName || !setupData.dspId) ? "bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed" : "border-blue-200 hover:border-blue-500 hover:bg-blue-50/30 cursor-pointer"
                 )}
               >
                 <input 
@@ -428,7 +433,7 @@ export default function PODTool() {
                   <Download className={cn("w-10 h-10 mx-auto transition-colors", (!setupData.feName || !setupData.dspId) ? "text-slate-300" : "text-blue-400 group-hover:text-blue-600")} />
                   <div>
                     <p className="text-[11px] font-bold text-slate-600">
-                      {(!setupData.feName || !setupData.dspId) ? "Bhai, pehle DSP aur FE Name fill karo!" : "Drop Delhivery export file here or click to upload"}
+                      {(!setupData.feName || !setupData.dspId) ? "Bhai, pehle DSP ID aur FE Name fill karein!" : "Drop Delhivery export file here or click to upload"}
                     </p>
                   </div>
                 </div>
@@ -461,6 +466,7 @@ export default function PODTool() {
 
             {statusFilter === "pending" && uniqueRemarks.length > 0 && (
               <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4">REMARK BREAKDOWN — PENDING</p>
                 <div className="flex flex-wrap gap-3">
                   {uniqueRemarks.map(([rem, count]) => (
                     <button 
@@ -468,15 +474,17 @@ export default function PODTool() {
                       onClick={() => setRemarkFilter(rem)}
                       className={cn(
                         "px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest border-2 transition-all flex items-center gap-2",
-                        remarkFilter === rem ? "bg-blue-600 border-blue-600 text-white" : "bg-slate-100 border-slate-200 text-slate-500"
+                        remarkFilter === rem ? "bg-blue-600 border-blue-600 text-white" : 
+                        (rem.toLowerCase().includes('intact') || rem.toLowerCase().includes('reject but package')) ? "bg-red-50 border-red-100 text-red-600" :
+                        "bg-slate-50 border-slate-200 text-slate-500"
                       )}
                     >
                       {rem || "No Remark"}
-                      <span className="px-2 py-0.5 rounded-md bg-white/20 text-[9px]">{count}</span>
+                      <span className="px-2 py-0.5 rounded-md bg-black/10 text-[9px]">{count}</span>
                     </button>
                   ))}
-                  {remarkFilter && (
-                    <button onClick={() => setRemarkFilter(null)} className="text-[10px] font-black text-red-500 hover:underline uppercase">Reset Filter</button>
+                  {remarkFilter !== null && (
+                    <button onClick={() => setRemarkFilter(null)} className="text-[10px] font-black text-red-500 hover:underline uppercase">← All Pending</button>
                   )}
                 </div>
               </div>
@@ -486,8 +494,8 @@ export default function PODTool() {
               <div className="bg-white rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden">
                 <div className="p-6 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                   <div className="flex gap-3">
-                    <button onClick={() => downloadExcel(filteredRows, currentSession)} className="bg-[#2E7D32] text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><Download className="w-4 h-4" /> Download Filtered Excel</button>
-                    <button onClick={() => copyTable(filteredRows)} className="bg-[#1565C0] text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><Copy className="w-4 h-4" /> Copy Filtered Table</button>
+                    <button onClick={() => downloadExcel(filteredRows, currentSession)} className="bg-[#2E7D32] text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><Download className="w-4 h-4" /> Download {statusFilter.toUpperCase()} Excel</button>
+                    <button onClick={() => copyTable(filteredRows)} className="bg-[#1565C0] text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2"><Copy className="w-4 h-4" /> Copy {statusFilter.toUpperCase()} Table</button>
                   </div>
                 </div>
                 
@@ -505,7 +513,10 @@ export default function PODTool() {
                     </thead>
                     <tbody>
                       {filteredRows.map((row, idx) => (
-                        <tr key={row.awb} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                        <tr key={row.awb} className={cn(
+                          "border-b border-slate-50 hover:bg-slate-50 transition-colors",
+                          (row.remark.toLowerCase().includes("intact") || row.remark.toLowerCase().includes("reject but package")) && "bg-red-50/30"
+                        )}>
                           <td className="p-4 font-code text-xs font-bold text-slate-400">{idx === 0 ? row.dspId : ""}</td>
                           <td className="p-4 font-code text-[11.5px] font-black text-[#1565C0] tracking-wider">{row.awb}</td>
                           <td className="p-4 text-[11px] font-bold text-slate-700">{row.client}</td>
