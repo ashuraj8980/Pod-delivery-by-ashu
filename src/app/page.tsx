@@ -188,11 +188,10 @@ export default function PODTool() {
     const reader = new FileReader();
     
     reader.onload = (evt) => {
-      // Release main thread before heavy processing
       setTimeout(() => {
         try {
-          const bstr = evt.target?.result;
-          const wb = XLSX.read(bstr, { type: 'binary' });
+          const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+          const wb = XLSX.read(data, { type: 'array' });
           const ws = wb.Sheets[wb.SheetNames[0]];
           const rawData = XLSX.utils.sheet_to_json(ws);
           
@@ -204,10 +203,10 @@ export default function PODTool() {
               const key = keys.find(k => regex.test(k.toLowerCase().replace(/[\s_-]/g, "")));
               return key ? row[key] : "";
             };
-            const awb = fixAWB(findVal(/waybill|awb|awbnumber|waybillno/));
+            const awb = fixAWB(findVal(/waybill|awb|awbnumber|waybillno|awbno/));
             const statusRaw = String(findVal(/status|currentstatus|current status/)).toLowerCase().trim();
             const status = STATUS_MAP[statusRaw] || "unknown";
-            const remark = String(findVal(/remark|remarks|remark1/)).trim();
+            const remark = String(findVal(/remark|remarks|remark1|nsl/)).trim();
             const isIntact = /reject|intact|content|barcode/i.test(remark);
 
             return {
@@ -246,7 +245,7 @@ export default function PODTool() {
         }
       }, 50);
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
     e.target.value = "";
   };
 
@@ -310,20 +309,28 @@ export default function PODTool() {
       // Zero-Freeze: Release the UI thread immediately
       setTimeout(() => {
         try {
-          const bstr = evt.target?.result;
-          const wb = XLSX.read(bstr, { type: 'binary' });
+          const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+          const wb = XLSX.read(data, { type: 'array' });
           const ws = wb.Sheets[wb.SheetNames[0]];
           const rawData = XLSX.utils.sheet_to_json(ws, { defval: "" });
           
           if (!Array.isArray(rawData) || rawData.length === 0) throw new Error("Empty file content");
 
           const headers = Object.keys(rawData[0]);
-          const remarkKey = headers.find(h => /remark|nsl/i.test(h.toLowerCase().replace(/[\s_-]/g, ""))) || "";
-          const awbKey = headers.find(h => /awb|waybill/i.test(h.toLowerCase().replace(/[\s_-]/g, ""))) || "";
+          
+          // Ultra-Flexible Column Detection (Aggressive search)
+          const remarkKey = headers.find(h => {
+            const clean = h.toLowerCase().replace(/[\s_-]/g, "");
+            return clean.includes("remark") || clean.includes("nsl") || clean.includes("statuscomment");
+          }) || "";
 
-          // Strict Validation: If no remark column, don't upload
+          const awbKey = headers.find(h => {
+            const clean = h.toLowerCase().replace(/[\s_-]/g, "");
+            return clean.includes("awb") || clean.includes("waybill") || clean.includes("waybillno");
+          }) || "";
+
           if (!remarkKey) {
-            throw new Error("Remark column (e.g. 'Remarks Of NSL') not found in this sheet.");
+            throw new Error("Remark column (e.g. 'Remarks Of NSL') not found. Please ensure your sheet has a remark header.");
           }
 
           const processed = rawData.map(row => {
@@ -331,6 +338,7 @@ export default function PODTool() {
             let replaced = original;
             let isReplaced = false;
 
+            // Mapping logic: Exact then Partial
             for (const [key, val] of Object.entries(REMARK_MAPPING)) {
               if (original.toLowerCase() === key.toLowerCase() || original.toLowerCase().includes(key.toLowerCase())) {
                 replaced = val;
@@ -339,11 +347,9 @@ export default function PODTool() {
               }
             }
             
-            // Clean and keep original structure
             const newRow = { ...row };
             newRow[remarkKey] = replaced;
             
-            // Force AWB format if detected
             if (awbKey) {
               newRow[awbKey] = fixAWB(row[awbKey]);
             }
@@ -366,7 +372,7 @@ export default function PODTool() {
         }
       }, 100);
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
     e.target.value = "";
   };
 
@@ -708,8 +714,10 @@ export default function PODTool() {
                       <button onClick={() => {
                         const cleanData = replacerData.map(r => {
                           const { __isReplaced, __id, ...rest } = r;
-                          // Force AWB strings in export
-                          const awbKeys = Object.keys(rest).filter(k => /awb|waybill|no/i.test(k.toLowerCase()));
+                          const awbKeys = Object.keys(rest).filter(k => {
+                            const clean = k.toLowerCase().replace(/[\s_-]/g, "");
+                            return clean.includes("awb") || clean.includes("waybill") || clean.includes("no");
+                          });
                           awbKeys.forEach(k => {
                             rest[k] = { v: String(rest[k]), t: 's', z: '@' };
                           });
@@ -755,13 +763,6 @@ export default function PODTool() {
                             ))}
                           </tr>
                         ))}
-                        {replacerData.length > 500 && (
-                          <tr>
-                            <td colSpan={replacerMeta?.headers.length ? replacerMeta.headers.length + 1 : 1} className="p-10 text-center bg-slate-50 text-slate-400 font-bold italic">
-                              Previewing first 500 rows. Download Excel for full {replacerData.length} records.
-                            </td>
-                          </tr>
-                        )}
                       </tbody>
                     </table>
                   </div>
