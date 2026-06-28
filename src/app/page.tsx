@@ -23,10 +23,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * @fileOverview POD Management Tool for Delhivery.
- * Exact specifications: Module 1 (EOD) & Module 2 (Replacer).
+ * Module 1 (EOD) & Module 2 (Replacer).
+ * Fixed Export Logic: Downloads/Copies only filtered visible data.
  */
 
-// --- Constants & Config ---
 const STORAGE_KEY = "pod_master_v1";
 
 const STATUS_MAP: Record<string, string> = {
@@ -88,10 +88,8 @@ export default function PODTool() {
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerStats, setReplacerStats] = useState({ total: 0, replaced: 0, missing: 0 });
 
-  const setupRef = useRef<any>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
-  // Persistence
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) setSessions(JSON.parse(saved));
@@ -104,7 +102,6 @@ export default function PODTool() {
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Tab Navigation
       if (e.key === "ArrowLeft") {
         const tabs = ["all", "pending", "dispatched", "rto", "dto"];
         const idx = tabs.indexOf(statusFilter);
@@ -115,31 +112,18 @@ export default function PODTool() {
         const idx = tabs.indexOf(statusFilter);
         if (idx < tabs.length - 1) setStatusFilter(tabs[idx + 1]);
       }
-
-      // Table Navigation
       if (currentSession && focusedIndex !== -1) {
-        if (e.key === "ArrowDown") setFocusedIndex(Math.min(filteredRows.length - 1, focusedIndex + 1));
+        const rows = filteredRows;
+        if (e.key === "ArrowDown") setFocusedIndex(Math.min(rows.length - 1, focusedIndex + 1));
         if (e.key === "ArrowUp") setFocusedIndex(Math.max(0, focusedIndex - 1));
-        if (e.key === "Enter") toggleRowSelection(filteredRows[focusedIndex].awb);
-        if (e.key === "Delete") removeRow(filteredRows[focusedIndex].awb);
+        if (e.key === "Enter" && rows[focusedIndex]) toggleRowSelection(rows[focusedIndex].awb);
+        if (e.key === "Delete" && rows[focusedIndex]) removeRow(rows[focusedIndex].awb);
       }
       if (e.key === "Escape") setFocusedIndex(-1);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [statusFilter, focusedIndex, currentSession]);
-
-  // Auto-save session debounce
-  useEffect(() => {
-    if (setupData.feName && setupData.dspId) {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-      debounceTimer.current = setTimeout(() => {
-        // Automatically handled when file is uploaded or session created
-      }, 800);
-    }
-  }, [setupData.feName, setupData.dspId]);
-
-  // --- Logic ---
 
   const fixAWB = (val: any) => {
     let str = String(val);
@@ -228,6 +212,10 @@ export default function PODTool() {
   };
 
   const copyTable = (dataRows: PODRow[]) => {
+    if (dataRows.length === 0) {
+      showToast("No data to copy!", "err");
+      return;
+    }
     const text = dataRows.map((r, i) => {
       const dsp = i === 0 ? r.dspId : "";
       return `${r.date}\t${dsp}\t${r.awb}\t${r.client}\t${r.orderId}\t${r.remark}\t${r.feName}`;
@@ -246,11 +234,15 @@ export default function PODTool() {
     });
   };
 
-  const downloadExcel = (session: Session) => {
+  const downloadExcel = (dataRows: PODRow[], session: Session) => {
+    if (dataRows.length === 0) {
+      showToast("No data to download!", "err");
+      return;
+    }
     const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
-    const rows = session.data.map((r, i) => [
+    const rows = dataRows.map((r, i) => [
       r.date,
-      i === 0 ? r.dspId : "",
+      i === 0 ? session.dspId : "",
       { v: r.awb, t: 's' },
       r.client,
       r.orderId,
@@ -259,8 +251,6 @@ export default function PODTool() {
     ]);
 
     const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-    
-    // Formatting
     const wscols = [{ wch: 13 }, { wch: 12 }, { wch: 26 }, { wch: 20 }, { wch: 20 }, { wch: 36 }, { wch: 18 }];
     ws['!cols'] = wscols;
 
@@ -270,7 +260,6 @@ export default function PODTool() {
     showToast("Downloading Excel...", "ok");
   };
 
-  // --- Module 2 Logic ---
   const handleReplacerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -291,7 +280,6 @@ export default function PODTool() {
         };
 
         const oldRemark = String(findVal(/remark/));
-        // Exact case-insensitive match or partial include
         let official = REMARK_MAPPING[oldRemark];
         if (!official) {
           const key = Object.keys(REMARK_MAPPING).find(k => oldRemark.toLowerCase().includes(k.toLowerCase()));
@@ -335,8 +323,6 @@ export default function PODTool() {
     }, 2800);
   };
 
-  // --- Computed ---
-
   const filteredRows = useMemo(() => {
     if (!currentSession) return [];
     let rows = currentSession.data;
@@ -357,7 +343,7 @@ export default function PODTool() {
       dispatched: currentSession.data.filter(r => r.status === 'dispatched').length,
       rto: currentSession.data.filter(r => r.status === 'rto').length,
       dto: currentSession.data.filter(r => r.status === 'dto').length,
-      intact: currentSession.data.filter(r => r.status === 'pending' && r.remark.toLowerCase().includes('intact')).length
+      intact: currentSession.data.filter(r => r.status === 'pending' && (r.remark.toLowerCase().includes('intact') || r.remark.toLowerCase().includes('reject but package'))).length
     };
   }, [currentSession]);
 
@@ -372,10 +358,7 @@ export default function PODTool() {
 
   return (
     <div className="min-h-screen bg-[#F0F4FA] font-body text-[#1C2333] select-none">
-      {/* Rainbow Stripe */}
       <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F]" />
-      
-      {/* Header */}
       <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white shadow-xl relative z-20">
         <div className="flex items-center gap-3">
           <div className="bg-gradient-to-br from-blue-400 to-blue-600 p-1.5 rounded-lg shadow-inner">
@@ -402,7 +385,6 @@ export default function PODTool() {
         </div>
       </header>
 
-      {/* Nav Tabs */}
       <nav className="bg-[#1C2333] px-6 flex gap-10">
         <button 
           onClick={() => setActiveTab("eod")}
@@ -430,7 +412,6 @@ export default function PODTool() {
         {activeTab === "eod" ? (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Setup Card */}
               <div className="bg-white rounded-[1.25rem] p-6 shadow-sm border border-[#E2E8F0] space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
@@ -481,17 +462,11 @@ export default function PODTool() {
                     <Download className={cn("w-10 h-10 mx-auto transition-colors", (!setupData.feName || !setupData.dspId) ? "text-slate-300" : "text-blue-400 group-hover:text-blue-600")} />
                     <div>
                       <p className="text-[11px] font-bold text-slate-600">Drop Delhivery export file here or click to upload</p>
-                      <div className="mt-2 flex items-center justify-center gap-1.5">
-                        {['.XLSX', '.XLS', '.CSV', '.ODS'].map(tag => (
-                          <span key={tag} className="text-[8px] font-code bg-slate-100 px-1.5 py-0.5 rounded text-slate-400">{tag}</span>
-                        ))}
-                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Saved Sessions Grid */}
               <div className="lg:col-span-2 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">All FE Sessions — Saved Data</h3>
@@ -509,13 +484,12 @@ export default function PODTool() {
                   {sessions.map(s => (
                     <div 
                       key={s.id} 
-                      onClick={() => { setCurrentSession(s); setStatusFilter("all"); showToast(`Loaded session: ${s.feName}`, "info"); }}
+                      onClick={() => { setCurrentSession(s); setStatusFilter("all"); setRemarkFilter(null); showToast(`Loaded session: ${s.feName}`, "info"); }}
                       className={cn(
                         "bg-white border p-5 rounded-[1.5rem] shadow-sm hover:shadow-md transition-all cursor-pointer relative group",
                         currentSession?.id === s.id ? "border-blue-500 ring-4 ring-blue-500/5 bg-blue-50/20" : "border-slate-200"
                       )}
                     >
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-12 bg-gradient-to-b from-blue-500 to-green-500 rounded-r-full" />
                       <button 
                         onClick={(e) => { e.stopPropagation(); setSessions(sessions.filter(ses => ses.id !== s.id)); if(currentSession?.id === s.id) setCurrentSession(null); }}
                         className="absolute top-4 right-4 text-slate-300 hover:text-red-500 p-1 transition-colors"
@@ -527,14 +501,6 @@ export default function PODTool() {
                           <p className="text-sm font-black text-[#1C2333] tracking-tight">{s.feName}</p>
                           <p className="text-[10px] font-code font-bold text-slate-400">DSP: {s.dspId} • {s.date}</p>
                         </div>
-                        <div className="flex gap-2">
-                          {[{ l: 'PKT', v: s.data.length, c: 'bg-slate-50 text-slate-600' }, { l: 'PEND', v: s.data.filter(r => r.status === 'pending').length, c: 'bg-amber-50 text-amber-600' }, { l: 'RTO', v: s.data.filter(r => r.status === 'rto').length, c: 'bg-red-50 text-red-600' }].map(item => (
-                            <div key={item.l} className={cn("flex-1 p-2 rounded-xl text-center", item.c)}>
-                              <p className="text-[8px] font-black uppercase opacity-60">{item.l}</p>
-                              <p className="text-[11px] font-black">{item.v}</p>
-                            </div>
-                          ))}
-                        </div>
                       </div>
                     </div>
                   ))}
@@ -542,7 +508,6 @@ export default function PODTool() {
               </div>
             </div>
 
-            {/* Status Tabs */}
             {currentSession && (
               <div className="grid grid-cols-5 gap-4">
                 {[
@@ -567,7 +532,6 @@ export default function PODTool() {
               </div>
             )}
 
-            {/* Remark Breakdown (Pending only) */}
             {statusFilter === "pending" && uniqueRemarks.length > 0 && (
               <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm animate-in slide-in-from-top-2 duration-300">
                 <div className="flex items-center justify-between mb-6">
@@ -601,13 +565,12 @@ export default function PODTool() {
               </div>
             )}
 
-            {/* Action Bar & Table */}
             {currentSession && (
               <div className="bg-white rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden">
                 <div className="p-6 bg-slate-50 border-b border-slate-200 flex items-center justify-between flex-wrap gap-4">
                   <div className="flex gap-3">
-                    <button onClick={() => downloadExcel(currentSession)} className="bg-[#2E7D32] text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-[#1B5E20] transition-all flex items-center gap-2 shadow-lg"><Download className="w-4 h-4" /> Download Excel</button>
-                    <button onClick={() => copyTable(filteredRows)} className="bg-[#1565C0] text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-[#0D47A1] transition-all flex items-center gap-2 shadow-lg"><Copy className="w-4 h-4" /> Copy Table</button>
+                    <button onClick={() => downloadExcel(filteredRows, currentSession)} className="bg-[#2E7D32] text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-[#1B5E20] transition-all flex items-center gap-2 shadow-lg"><Download className="w-4 h-4" /> Download {statusFilter === 'all' ? 'All' : statusFilter.toUpperCase()} Excel</button>
+                    <button onClick={() => copyTable(filteredRows)} className="bg-[#1565C0] text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-[#0D47A1] transition-all flex items-center gap-2 shadow-lg"><Copy className="w-4 h-4" /> Copy {statusFilter === 'all' ? 'All' : statusFilter.toUpperCase()} Table</button>
                     {currentSession.data.some(r => r.selected) && (
                       <button onClick={deleteSelected} className="bg-red-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-red-700 transition-all flex items-center gap-2 shadow-lg animate-in zoom-in">
                         <Trash2 className="w-4 h-4" /> Delete ({currentSession.data.filter(r => r.selected).length})
@@ -632,14 +595,13 @@ export default function PODTool() {
                       </tr>
                     </thead>
                     <tbody>
-                      {/* DSP Group Banner */}
                       <tr className="bg-gradient-to-r from-[#0D1B2E] to-[#1A2F4A] text-white">
                         <td colSpan={8} className="p-3">
                           <div className="flex items-center justify-between px-4">
                             <div className="flex items-center gap-4">
                               <span className="text-[#F9A825] font-code font-black text-sm tracking-widest uppercase">DSP: {currentSession.dspId}</span>
                               <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] font-black tracking-widest text-amber-400">
-                                {currentSession.data.length} PACKETS
+                                {filteredRows.length} {statusFilter.toUpperCase()} PACKETS
                               </div>
                             </div>
                             <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -690,7 +652,6 @@ export default function PODTool() {
         ) : (
           <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Replacer Upload */}
               <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm space-y-8">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-green-50 rounded-xl text-green-600"><AlertCircle className="w-5 h-5" /></div>
@@ -703,7 +664,6 @@ export default function PODTool() {
                     <Download className="w-12 h-12 text-green-200 group-hover:text-green-500 mx-auto transition-colors" />
                     <div>
                       <p className="text-sm font-black text-slate-700">Upload EOD Export File</p>
-                      <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest font-bold">Auto-detect NSL Remarks</p>
                     </div>
                   </div>
                 </div>
@@ -720,20 +680,9 @@ export default function PODTool() {
                     </div>
                   ))}
                 </div>
-
-                {replacerData.length > 0 && (
-                  <div className="flex gap-4">
-                    <button className="flex-1 bg-green-600 text-white font-black py-4 rounded-2xl shadow-xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-[11px]">
-                      <Download className="w-4 h-4" /> Download Official File
-                    </button>
-                    <button className="bg-blue-600 text-white p-4 rounded-2xl shadow-xl hover:bg-blue-700 transition-all"><Copy className="w-5 h-5" /></button>
-                  </div>
-                )}
               </div>
 
-              {/* Mapping Reference */}
               <div className="bg-[#1C2333] rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 blur-[60px] rounded-full" />
                 <h3 className="text-sm font-black text-yellow-400 uppercase tracking-[0.3em] mb-8 flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5" /> Official Mapping Reference
                 </h3>
@@ -755,7 +704,6 @@ export default function PODTool() {
               </div>
             </div>
 
-            {/* Preview Table */}
             {replacerData.length > 0 && (
               <div className="bg-white rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden animate-in slide-in-from-bottom-4 duration-500">
                 <div className="p-8 border-b border-slate-200 flex items-center justify-between">
@@ -798,7 +746,6 @@ export default function PODTool() {
         )}
       </main>
 
-      {/* Intact Modal */}
       {showIntactModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-[#1C2333]/90 backdrop-blur-lg animate-in fade-in duration-300" onClick={() => setShowIntactModal(false)}>
           <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
@@ -809,14 +756,24 @@ export default function PODTool() {
             </div>
             <div className="p-10 space-y-8">
               <div className="grid grid-cols-2 gap-4">
-                <button className="h-20 bg-slate-900 text-white rounded-3xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"><Copy className="w-6 h-6" /> Copy All AWBs</button>
-                <button className="h-20 bg-red-600 text-white rounded-3xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"><Download className="w-6 h-6" /> Download List</button>
+                <button 
+                  onClick={() => copyTable(currentSession?.data.filter(r => r.status === 'pending' && (r.remark.toLowerCase().includes('intact') || r.remark.toLowerCase().includes('reject but package'))) || [])} 
+                  className="h-20 bg-slate-900 text-white rounded-3xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
+                >
+                  <Copy className="w-6 h-6" /> Copy Intact AWBs
+                </button>
+                <button 
+                  onClick={() => downloadExcel(currentSession?.data.filter(r => r.status === 'pending' && (r.remark.toLowerCase().includes('intact') || r.remark.toLowerCase().includes('reject but package'))) || [], currentSession!)} 
+                  className="h-20 bg-red-600 text-white rounded-3xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
+                >
+                  <Download className="w-6 h-6" /> Download Intact List
+                </button>
               </div>
               <div className="max-h-[400px] overflow-y-auto border border-slate-100 rounded-[2rem] scrollbar-thin">
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 sticky top-0"><tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b"><th className="p-5">AWB Number</th><th className="p-5">Client Name</th><th className="p-5">Remark</th><th className="p-5 text-center">Action</th></tr></thead>
                   <tbody>
-                    {currentSession?.data.filter(r => r.status === 'pending' && r.remark.toLowerCase().includes('intact')).map(row => (
+                    {currentSession?.data.filter(r => r.status === 'pending' && (r.remark.toLowerCase().includes('intact') || r.remark.toLowerCase().includes('reject but package'))).map(row => (
                       <tr key={row.awb} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                         <td className="p-5 font-code text-sm font-black text-red-600 tracking-tighter">{row.awb}</td>
                         <td className="p-5 text-[11px] font-bold text-slate-700">{row.client}</td>
@@ -832,7 +789,6 @@ export default function PODTool() {
         </div>
       )}
 
-      {/* Intact Float Badge */}
       {currentSession && stats.intact > 0 && activeTab === 'eod' && (
         <button 
           onClick={() => setShowIntactModal(true)}
@@ -854,7 +810,6 @@ export default function PODTool() {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        
         @keyframes pulse-custom {
           0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
           50% { transform: scale(1.05); box-shadow: 0 0 30px 10px rgba(220, 38, 38, 0.2); }
