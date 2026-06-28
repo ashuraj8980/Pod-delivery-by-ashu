@@ -12,10 +12,7 @@ import {
   CheckCircle2, 
   AlertCircle, 
   Search,
-  ChevronLeft,
-  ChevronRight,
   Filter,
-  Lock,
   Settings
 } from "lucide-react";
 import * as XLSX from "xlsx";
@@ -24,7 +21,7 @@ import { cn } from "@/lib/utils";
 /**
  * @fileOverview POD Management Tool for Delhivery.
  * Module 1 (EOD) & Module 2 (Replacer).
- * Fixed Export Logic: Downloads/Copies only filtered visible data.
+ * Fix: Hydration errors and filtered-only exports.
  */
 
 const STORAGE_KEY = "pod_master_v1";
@@ -80,27 +77,32 @@ export default function PODTool() {
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [remarkFilter, setRemarkFilter] = useState<string | null>(null);
-  const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: new Date().toISOString().split('T')[0] });
+  const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
   const [showIntactModal, setShowIntactModal] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
+  const [isMounted, setIsMounted] = useState(false);
   
   // Module 2 State
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerStats, setReplacerStats] = useState({ total: 0, replaced: 0, missing: 0 });
 
-  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
-
+  // Prevent Hydration Mismatch
   useEffect(() => {
+    setIsMounted(true);
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) setSessions(JSON.parse(saved));
+    setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-  }, [sessions]);
+    if (isMounted) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    }
+  }, [sessions, isMounted]);
 
   // Keyboard Shortcuts
   useEffect(() => {
+    if (!isMounted) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowLeft") {
         const tabs = ["all", "pending", "dispatched", "rto", "dto"];
@@ -112,18 +114,10 @@ export default function PODTool() {
         const idx = tabs.indexOf(statusFilter);
         if (idx < tabs.length - 1) setStatusFilter(tabs[idx + 1]);
       }
-      if (currentSession && focusedIndex !== -1) {
-        const rows = filteredRows;
-        if (e.key === "ArrowDown") setFocusedIndex(Math.min(rows.length - 1, focusedIndex + 1));
-        if (e.key === "ArrowUp") setFocusedIndex(Math.max(0, focusedIndex - 1));
-        if (e.key === "Enter" && rows[focusedIndex]) toggleRowSelection(rows[focusedIndex].awb);
-        if (e.key === "Delete" && rows[focusedIndex]) removeRow(rows[focusedIndex].awb);
-      }
-      if (e.key === "Escape") setFocusedIndex(-1);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [statusFilter, focusedIndex, currentSession]);
+  }, [statusFilter, isMounted]);
 
   const fixAWB = (val: any) => {
     let str = String(val);
@@ -309,6 +303,7 @@ export default function PODTool() {
   };
 
   const showToast = (msg: string, type: 'ok' | 'err' | 'info') => {
+    if (!isMounted) return;
     const toast = document.createElement('div');
     toast.className = `fixed bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl text-xs font-bold z-[100] shadow-2xl animate-in slide-in-from-bottom-2 duration-300 ${
       type === 'ok' ? 'bg-[#052E0F] text-[#6EE7A6]' : 
@@ -355,6 +350,8 @@ export default function PODTool() {
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [currentSession, statusFilter]);
+
+  if (!isMounted) return null;
 
   return (
     <div className="min-h-screen bg-[#F0F4FA] font-body text-[#1C2333] select-none">
@@ -819,4 +816,3 @@ export default function PODTool() {
     </div>
   );
 }
-
