@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { 
   Truck, 
   Trash2, 
@@ -10,7 +10,6 @@ import {
   X, 
   CheckCircle2, 
   FileSpreadsheet, 
-  Filter, 
   Loader2, 
   Search,
   Star
@@ -19,8 +18,9 @@ import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
- * @fileOverview Delhivery POD Management Tool v20.5 (Enterprise Logistics Edition)
+ * @fileOverview Delhivery POD Management Tool v21.0 (Enterprise Logistics Edition)
  * Optimized for Palam Vihar RPC. Built for Ashu.
+ * Fixes: Sticky Header Alignment & Row Deletion Functionality.
  */
 
 const STORAGE_KEY = "pod_master_v1";
@@ -318,6 +318,16 @@ export default function PODTool() {
     e.target.value = "";
   };
 
+  const handleDeleteRow = useCallback((rowId: string) => {
+    setSessions(prev => prev.map(s => {
+      if (s.id === selectedSessionId) {
+        return { ...s, data: s.data.filter(r => r.id !== rowId) };
+      }
+      return s;
+    }));
+    showToast("Row deleted", "info");
+  }, [selectedSessionId, showToast]);
+
   const downloadExcel = () => {
     const rows = filteredRows;
     if (!rows.length || !currentSession) return;
@@ -386,9 +396,9 @@ export default function PODTool() {
 
   return (
     <div className="min-h-screen bg-[#F0F4FA] font-body text-[#374151]">
-      <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F] sticky top-0 z-[100]" />
+      <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F] sticky top-0 z-[110]" />
       
-      <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white shadow-lg relative z-[90]">
+      <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white shadow-lg sticky top-[3px] z-[100]">
         <div className="flex items-center gap-3">
           <div className="bg-gradient-to-br from-blue-500 to-blue-700 p-1.5 rounded-xl shadow-lg">
             <Truck className="w-5 h-5 text-white" />
@@ -419,7 +429,7 @@ export default function PODTool() {
         </div>
       </header>
 
-      <nav className="bg-[#1C2333] px-6 flex gap-8 border-t border-white/5 shadow-md sticky top-[58px] z-[85]">
+      <nav className="bg-[#1C2333] px-6 flex gap-8 border-t border-white/5 shadow-md sticky top-[61px] z-[90]">
         {[
           { id: "eod", label: "Daily EOD Rejection" },
           { id: "remark", label: "EOD Rejection Remark" }
@@ -471,9 +481,9 @@ export default function PODTool() {
             {sessions.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.2em]">ALL FE SESSIONS</h2>
+                  <h2 className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.2em]">ALL FE SESSIONS — SAVED DATA</h2>
                   <button onClick={() => { setSessions([]); setSelectedSessionId(null); }} className="text-[10px] font-black text-red-600 uppercase tracking-widest flex items-center gap-2 hover:underline pr-2">
-                    <Trash2 className="w-3.5 h-3.5" /> Clear All Sessions
+                    <Trash2 className="w-3.5 h-3.5" /> Clear All Sessions (New Day)
                   </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -508,11 +518,11 @@ export default function PODTool() {
                 </p>
                 <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden flex divide-x divide-slate-100">
                   {[
-                    { id: 'all', label: 'All', val: stats.total, color: 'blue', colorClass: 'text-[#1565C0]' },
-                    { id: 'pending', label: 'Pending', val: stats.pending, color: 'amber', colorClass: 'text-[#F9A825]' },
-                    { id: 'dispatched', label: 'Dispatch', val: stats.dispatched, color: 'blue', colorClass: 'text-[#1565C0]' },
-                    { id: 'rto', label: 'RTO', val: stats.rto, color: 'red', colorClass: 'text-[#D32F2F]' },
-                    { id: 'dto', label: 'DTO', val: stats.dto, color: 'green', colorClass: 'text-[#2E7D32]' }
+                    { id: 'all', label: 'All', val: stats.total, colorClass: 'text-[#1565C0]' },
+                    { id: 'pending', label: 'Pending', val: stats.pending, colorClass: 'text-[#F9A825]' },
+                    { id: 'dispatched', label: 'Dispatch', val: stats.dispatched, colorClass: 'text-[#1565C0]' },
+                    { id: 'rto', label: 'RTO', val: stats.rto, colorClass: 'text-[#D32F2F]' },
+                    { id: 'dto', label: 'DTO', val: stats.dto, colorClass: 'text-[#2E7D32]' }
                   ].map(t => (
                     <button 
                       key={t.id} 
@@ -617,7 +627,7 @@ export default function PODTool() {
                                   </div>
                                 </td>
                               </tr>
-                              {rows.map((row, idx) => <DataRow key={row.id} row={row} idx={idx} isFirstInGroup={idx === 0} />)}
+                              {rows.map((row, idx) => <DataRow key={row.id} row={row} idx={idx} isFirstInGroup={idx === 0} onDelete={handleDeleteRow} />)}
                             </React.Fragment>
                           ))
                         ) : (
@@ -626,18 +636,18 @@ export default function PODTool() {
                               <td colSpan={8} className="p-3 px-5">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-3">
-                                    <span className="text-[14px] font-mono font-black text-[#F9A825]">{currentSession.dspId}</span>
+                                    <span className="text-[14px] font-mono font-black text-[#F9A825]">{currentSession?.dspId}</span>
                                     <span className="px-2 py-0.5 bg-amber-500 text-white rounded text-[9px] font-black uppercase shadow-sm">{filteredRows.length} PKT</span>
                                   </div>
                                   <div className="flex items-center gap-4 text-[#6B8CAE] text-[10px] font-bold uppercase tracking-widest">
-                                    <span>{currentSession.feName}</span>
+                                    <span>{currentSession?.feName}</span>
                                     <span className="w-1.5 h-1.5 bg-[#6B8CAE] rounded-full opacity-30" />
-                                    <span>{currentSession.date}</span>
+                                    <span>{currentSession?.date}</span>
                                   </div>
                                 </div>
                               </td>
                             </tr>
-                            {filteredRows.map((row, idx) => <DataRow key={row.id} row={row} idx={idx} isFirstInGroup={idx === 0} />)}
+                            {filteredRows.map((row, idx) => <DataRow key={row.id} row={row} idx={idx} isFirstInGroup={idx === 0} onDelete={handleDeleteRow} />)}
                           </>
                         )}
                       </tbody>
@@ -752,7 +762,7 @@ export default function PODTool() {
   );
 }
 
-function DataRow({ row, idx, isFirstInGroup }: { row: PODRow, idx: number, isFirstInGroup: boolean }) {
+function DataRow({ row, idx, isFirstInGroup, onDelete }: { row: PODRow, idx: number, isFirstInGroup: boolean, onDelete: (id: string) => void }) {
   const handleCopyAWB = () => {
     navigator.clipboard.writeText(row.awb);
   };
@@ -760,7 +770,14 @@ function DataRow({ row, idx, isFirstInGroup }: { row: PODRow, idx: number, isFir
   return (
     <tr className={cn("border-b border-slate-100 transition-colors group", row.isIntact ? "bg-[#FFF5F5]" : "hover:bg-[#F0F7FF]")}>
       <td className="p-3 text-center"><input type="checkbox" className="accent-[#1565C0]" /></td>
-      <td className="p-3 text-center text-slate-300 hover:text-red-500 cursor-pointer transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></td>
+      <td className="p-3 text-center">
+        <button 
+          onClick={() => onDelete(row.id)}
+          className="text-slate-300 hover:text-red-500 cursor-pointer transition-colors outline-none"
+        >
+          <Trash2 className="w-3.5 h-3.5 mx-auto" />
+        </button>
+      </td>
       <td className="p-3 font-mono text-[11.5px] font-bold text-slate-400">{isFirstInGroup ? row.dspId : ""}</td>
       <td 
         onClick={handleCopyAWB}
