@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
@@ -9,23 +10,21 @@ import {
   X, 
   AlertCircle, 
   Filter,
-  Settings,
-  ChevronRight,
-  ChevronLeft,
-  Calendar,
   User,
   Hash,
-  ArrowUpDown,
   CheckCircle2,
   FileSpreadsheet,
-  MousePointerClick
+  MousePointerClick,
+  Calendar,
+  Layers,
+  Search
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
- * @fileOverview Delhivery POD Management Tool v1.2
- * Features: Click-to-Copy, Module 2 Data Fix, Smooth Transitions, Filtered Export.
+ * @fileOverview Delhivery POD Management Tool v2.0
+ * Features: Session Persistence, Row Deletion, AWB Cleaning, Filtered Export.
  * Author: Ashu (ashuraj9771@gmail.com)
  */
 
@@ -56,6 +55,7 @@ const REMARK_MAPPING: Record<string, string> = {
 };
 
 interface PODRow {
+  id: string;
   awb: string;
   client: string;
   orderId: string;
@@ -64,7 +64,6 @@ interface PODRow {
   feName: string;
   dspId: string;
   date: string;
-  selected?: boolean;
 }
 
 interface Session {
@@ -79,7 +78,7 @@ interface Session {
 export default function PODTool() {
   const [activeTab, setActiveTab] = useState<"eod" | "remark">("eod");
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [currentSession, setCurrentSession] = useState<Session | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [remarkFilter, setRemarkFilter] = useState<string | null>(null);
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
@@ -93,7 +92,11 @@ export default function PODTool() {
   useEffect(() => {
     setIsMounted(true);
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) setSessions(JSON.parse(saved));
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      setSessions(parsed);
+      if (parsed.length > 0) setSelectedSessionId(parsed[0].id);
+    }
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
   }, []);
 
@@ -109,21 +112,16 @@ export default function PODTool() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       
-      if (e.key === "ArrowLeft") {
-        const tabs = ["all", "pending", "dispatched", "rto", "dto"];
-        const idx = tabs.indexOf(statusFilter);
-        if (idx > 0) {
-          setStatusFilter(tabs[idx - 1]);
-          setRemarkFilter(null);
-        }
+      const tabs = ["all", "pending", "dispatched", "rto", "dto"];
+      const idx = tabs.indexOf(statusFilter);
+
+      if (e.key === "ArrowLeft" && idx > 0) {
+        setStatusFilter(tabs[idx - 1]);
+        setRemarkFilter(null);
       }
-      if (e.key === "ArrowRight") {
-        const tabs = ["all", "pending", "dispatched", "rto", "dto"];
-        const idx = tabs.indexOf(statusFilter);
-        if (idx < tabs.length - 1) {
-          setStatusFilter(tabs[idx + 1]);
-          setRemarkFilter(null);
-        }
+      if (e.key === "ArrowRight" && idx < tabs.length - 1) {
+        setStatusFilter(tabs[idx + 1]);
+        setRemarkFilter(null);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -131,7 +129,7 @@ export default function PODTool() {
   }, [statusFilter, isMounted]);
 
   const fixAWB = (val: any) => {
-    let str = String(val).trim();
+    let str = String(val).trim().replace(/['",]/g, ""); // Remove commas and quotes
     if (/^[\d.]+[eE][+\-]?\d+$/.test(str)) {
       str = BigInt(Math.round(Number(val))).toString();
     }
@@ -141,7 +139,7 @@ export default function PODTool() {
   const showToast = (msg: string, type: 'ok' | 'err' | 'info') => {
     if (!isMounted) return;
     const toast = document.createElement('div');
-    toast.className = `fixed bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl text-[11px] font-black z-[100] shadow-2xl animate-in slide-in-from-bottom-5 duration-300 ${
+    toast.className = `fixed bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl text-[11px] font-black z-[200] shadow-2xl animate-in slide-in-from-bottom-5 duration-300 ${
       type === 'ok' ? 'bg-[#052E0F] text-[#6EE7A6]' : 
       type === 'err' ? 'bg-[#2D0808] text-[#FCA5A5]' : 
       'bg-[#1C2333] text-[#93C5FD]'
@@ -190,6 +188,7 @@ export default function PODTool() {
           const status = STATUS_MAP[statusRaw] || "unknown";
 
           return {
+            id: crypto.randomUUID(),
             awb,
             client: String(findVal(/client|clientname/)),
             orderId: String(findVal(/order|orderid/)),
@@ -198,7 +197,6 @@ export default function PODTool() {
             feName: setupData.feName,
             dspId: setupData.dspId,
             date: setupData.date,
-            selected: false
           };
         }).filter(row => row.awb.length >= 3 && row.status !== "unknown");
 
@@ -211,8 +209,8 @@ export default function PODTool() {
             data: parsedRows,
             timestamp: Date.now()
           };
-          setCurrentSession(newSession);
           setSessions(prev => [newSession, ...prev]);
+          setSelectedSessionId(newSession.id);
           showToast(`Imported ${parsedRows.length} rows!`, "ok");
         } else {
           showToast("No valid rows found in file!", "err");
@@ -222,6 +220,7 @@ export default function PODTool() {
       }
     };
     reader.readAsBinaryString(file);
+    e.target.value = "";
   };
 
   const handleReplacerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -275,6 +274,8 @@ export default function PODTool() {
     };
     reader.readAsBinaryString(file);
   };
+
+  const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
 
   const filteredRows = useMemo(() => {
     if (!currentSession) return [];
@@ -338,6 +339,23 @@ export default function PODTool() {
     copyToClipboard(text, "Table Data Copied");
   };
 
+  const deleteRow = (rowId: string) => {
+    if (!selectedSessionId) return;
+    setSessions(prev => prev.map(s => {
+      if (s.id === selectedSessionId) {
+        return { ...s, data: s.data.filter(r => r.id !== rowId) };
+      }
+      return s;
+    }));
+    showToast("Row deleted", "info");
+  };
+
+  const deleteSession = (sessionId: string) => {
+    setSessions(prev => prev.filter(s => s.id !== sessionId));
+    if (selectedSessionId === sessionId) setSelectedSessionId(null);
+    showToast("Session cleared", "info");
+  };
+
   const stats = useMemo(() => {
     if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0, intact: 0 };
     return {
@@ -363,7 +381,7 @@ export default function PODTool() {
   if (!isMounted) return null;
 
   return (
-    <div className="min-h-screen bg-[#F0F4FA] font-body text-[#1C2333] select-none transition-colors duration-500">
+    <div className="min-h-screen bg-[#F0F4FA] font-body text-[#1C2333] select-none transition-all duration-500 overflow-x-hidden">
       <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F] sticky top-0 z-[100]" />
       
       <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white shadow-xl relative z-[90]">
@@ -415,7 +433,7 @@ export default function PODTool() {
       <main className="p-6 max-w-[1440px] mx-auto animate-in fade-in slide-in-from-top-4 duration-700">
         {activeTab === "eod" ? (
           <div className="space-y-6">
-            <div className="bg-white rounded-[1.5rem] p-6 shadow-sm border border-[#E2E8F0] grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white rounded-[1.5rem] p-6 shadow-sm border border-[#E2E8F0] grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
               <div className="md:col-span-2 grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Hash className="w-3 h-3" /> DSP ID (Required)</label>
@@ -459,13 +477,13 @@ export default function PODTool() {
                 </div>
               </div>
               
-              <div className="bg-slate-900 rounded-[1.25rem] p-6 text-white flex flex-col justify-between shadow-2xl relative overflow-hidden group">
+              <div className="bg-slate-900 rounded-[1.25rem] p-6 text-white flex flex-col justify-between shadow-2xl relative overflow-hidden group min-h-[180px]">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full -mr-10 -mt-10 blur-3xl group-hover:bg-blue-500/20 transition-all" />
                 <div className="space-y-4 relative z-10">
-                  <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Active Session</p>
+                  <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Active Report</p>
                   <div>
-                    <h3 className="text-xl font-black">{setupData.feName || "FE Name"}</h3>
-                    <p className="text-xs font-code text-slate-400 mt-1">DSP: {setupData.dspId || "----"}</p>
+                    <h3 className="text-xl font-black">{currentSession?.feName || "No Session"}</h3>
+                    <p className="text-xs font-code text-slate-400 mt-1">DSP: {currentSession?.dspId || "----"}</p>
                   </div>
                 </div>
                 <div className="relative z-10 pt-6 border-t border-white/10 flex justify-between items-end">
@@ -480,6 +498,57 @@ export default function PODTool() {
                 </div>
               </div>
             </div>
+
+            {sessions.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2"><Layers className="w-4 h-4" /> All FE Sessions — Saved Data</h2>
+                  <button onClick={() => setSessions([])} className="text-[10px] font-black text-red-500 hover:underline uppercase tracking-widest flex items-center gap-1"><Trash2 className="w-3 h-3" /> Clear All</button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {sessions.map(s => (
+                    <div 
+                      key={s.id} 
+                      onClick={() => setSelectedSessionId(s.id)}
+                      className={cn(
+                        "bg-white p-4 rounded-2xl border transition-all cursor-pointer relative group",
+                        selectedSessionId === s.id ? "border-blue-500 shadow-lg ring-4 ring-blue-500/5 bg-blue-50/20" : "border-slate-200 hover:border-blue-300"
+                      )}
+                    >
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
+                        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-50 rounded-lg text-red-400 transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <div className="flex items-center gap-3">
+                        <div className="w-1 h-10 rounded-full bg-gradient-to-b from-blue-400 to-green-400" />
+                        <div>
+                          <p className="text-sm font-black text-slate-800">{s.feName}</p>
+                          <p className="text-[10px] font-code text-slate-400 font-bold tracking-tight">DSP: {s.dspId}</p>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex gap-4 border-t pt-3 border-slate-100">
+                        <div>
+                          <p className="text-[14px] font-black text-slate-900 leading-none">{s.data.length}</p>
+                          <p className="text-[8px] font-black text-slate-400 uppercase mt-1">Total</p>
+                        </div>
+                        <div>
+                          <p className="text-[14px] font-black text-amber-500 leading-none">{s.data.filter(r => r.status === 'pending').length}</p>
+                          <p className="text-[8px] font-black text-slate-400 uppercase mt-1">Pend</p>
+                        </div>
+                        {s.data.some(r => r.remark.toLowerCase().includes('intact')) && (
+                          <div>
+                            <p className="text-[14px] font-black text-red-500 leading-none">{s.data.filter(r => r.remark.toLowerCase().includes('intact')).length}</p>
+                            <p className="text-[8px] font-black text-slate-400 uppercase mt-1">Intact</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {currentSession && (
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -549,6 +618,7 @@ export default function PODTool() {
                   <table className="w-full text-left">
                     <thead className="sticky top-0 z-30">
                       <tr className="bg-[#1C2333] text-white text-[10px] font-black uppercase tracking-[0.2em]">
+                        <th className="p-4 w-[40px]"></th>
                         <th className="p-4 w-[105px]">DSP ID</th>
                         <th className="p-4 w-[165px]">AWB Number</th>
                         <th className="p-4 w-[120px]">Client</th>
@@ -559,10 +629,15 @@ export default function PODTool() {
                     </thead>
                     <tbody>
                       {filteredRows.map((row, idx) => (
-                        <tr key={row.awb} className={cn(
+                        <tr key={row.id} className={cn(
                           "border-b border-slate-50 hover:bg-slate-50 transition-colors group",
                           (row.remark.toLowerCase().includes("intact") || row.remark.toLowerCase().includes("reject but package")) && "bg-red-50/40"
                         )}>
+                          <td className="p-4">
+                            <button onClick={() => deleteRow(row.id)} className="text-slate-300 hover:text-red-500 transition-colors">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </td>
                           <td className="p-4 font-code text-xs font-bold text-slate-400">{idx === 0 ? row.dspId : ""}</td>
                           <td 
                             className="p-4 font-code text-[11.5px] font-black text-[#1565C0] tracking-wider cursor-pointer hover:underline flex items-center gap-2"
@@ -752,7 +827,7 @@ export default function PODTool() {
                   </thead>
                   <tbody>
                     {currentSession?.data.filter(r => r.status === 'pending' && (r.remark.toLowerCase().includes('intact') || r.remark.toLowerCase().includes('reject but package'))).map(r => (
-                      <tr key={r.awb} className="border-b border-slate-50 hover:bg-red-50/30 transition-colors">
+                      <tr key={r.id} className="border-b border-slate-50 hover:bg-red-50/30 transition-colors">
                         <td className="py-3 font-code text-[11px] font-black text-red-600 cursor-pointer" onClick={() => copyToClipboard(r.awb)}>{r.awb}</td>
                         <td className="py-3 text-[10px] font-bold text-slate-600">{r.client}</td>
                         <td className="py-3 text-[10px] text-red-400">{r.remark}</td>
@@ -786,4 +861,3 @@ export default function PODTool() {
     </div>
   );
 }
-
