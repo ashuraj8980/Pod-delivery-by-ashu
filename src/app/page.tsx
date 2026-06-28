@@ -704,7 +704,10 @@ function DataRow({ row, idx, isFirstInGroup, onDelete }: { row: PODRow, idx: num
       <td className="p-3 text-[11px] text-[#374151] truncate max-w-[140px] font-medium">{row.client}</td>
       <td className="p-3 text-[11px] text-[#374151] truncate max-w-[140px] font-medium">{row.orderId}</td>
       <td className="p-3">
-        <span className={cn("px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-tight border shadow-sm inline-block", row.isIntact ? "bg-[#FFF5F5] text-[#D32F2F] border-[#FFCDD2]" : "bg-[#FFFDE7] text-[#D97706] border-[#FDE68A]")}>
+        <span className={cn(
+          "px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-tight border shadow-sm inline-block whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] align-middle", 
+          row.isIntact ? "bg-[#FFF5F5] text-[#D32F2F] border-[#FFCDD2]" : "bg-[#FFFDE7] text-[#D97706] border-[#FDE68A]"
+        )}>
           {row.remark || "N/A"}
         </span>
       </td>
