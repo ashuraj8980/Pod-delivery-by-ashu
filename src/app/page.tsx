@@ -403,12 +403,12 @@ export default function PODTool() {
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase">FE / Biker Name</label>
-                      <input type="text" value={setupData.feName} onChange={(e) => setSetupData({...setupData, feName: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 ring-blue-500/20 outline-none" placeholder="Ashu..." />
-                    </div>
-                    <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-400 uppercase">DSP Number</label>
                       <input type="number" value={setupData.dspId} onChange={(e) => setSetupData({...setupData, dspId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 ring-blue-500/20 outline-none" placeholder="1234..." />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">FE / Biker Name</label>
+                      <input type="text" value={setupData.feName} onChange={(e) => setSetupData({...setupData, feName: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 ring-blue-500/20 outline-none" placeholder="Ashu..." />
                     </div>
                   </div>
                   <div className="space-y-1">
@@ -691,4 +691,3 @@ export default function PODTool() {
     </div>
   );
 }
-
