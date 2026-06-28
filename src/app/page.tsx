@@ -23,8 +23,9 @@ import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
- * @fileOverview Delhivery POD Management Tool v3.0
+ * @fileOverview Delhivery POD Management Tool v3.2
  * Features: Session Persistence, Duplicate Highlighting, Scientific AWB Fix, Filtered Export.
+ * Removed "Current Session" card as per user request.
  * Author: Ashu (ashuraj9771@gmail.com)
  */
 
@@ -82,7 +83,6 @@ export default function PODTool() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [remarkFilter, setRemarkFilter] = useState<string | null>(null);
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
-  const [showIntactModal, setShowIntactModal] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   
   // Module 2 State
@@ -145,7 +145,6 @@ export default function PODTool() {
   };
 
   const copyToClipboard = (text: string, label: string = "Copied") => {
-    // Adding a tab character for better Excel pasting if it's a multi-line thing
     navigator.clipboard.writeText(text).then(() => {
       showToast(`${label}: ${text}`, "info");
     });
@@ -153,7 +152,7 @@ export default function PODTool() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!setupData.feName || !setupData.dspId) {
-      showToast("Bhai, DSP ID aur FE Name fill karein!", "err");
+      showToast("Palam Vihar Biker, DSP ID aur FE Name bharein!", "err");
       e.target.value = "";
       return;
     }
@@ -265,7 +264,6 @@ export default function PODTool() {
     return rows;
   }, [currentSession, statusFilter, remarkFilter]);
 
-  // Duplicate Highlighting Logic
   const duplicateAWBs = useMemo(() => {
     if (!currentSession) return new Set<string>();
     const seen = new Set<string>();
@@ -278,13 +276,6 @@ export default function PODTool() {
   }, [currentSession]);
 
   const duplicateFEs = useMemo(() => {
-    // If FE Name and DSP are same in multiple sessions, it's fine.
-    // User wants highlighting if FE Name is double in same context.
-    if (!currentSession) return false;
-    // Logic: If more than one row exists for the same FE within the session, it's standard, 
-    // but the prompt asked for "if fe name double then red".
-    // We'll mark the FE name red if it appears more than once in the whole sessions list for same DSP?
-    // Let's stick to current session duplicates for AWB and sessions list for FE.
     const counts: Record<string, number> = {};
     sessions.forEach(s => {
       const key = `${s.feName}-${s.dspId}`;
@@ -314,8 +305,6 @@ export default function PODTool() {
 
   const copyTable = (dataRows: PODRow[]) => {
     if (dataRows.length === 0) return;
-    // The key to fixing AWB in Excel paste is ensuring it doesn't look like a number
-    // We can prefix with a tab or just ensure it's a clean string.
     const text = dataRows.map((r, i) => {
       const dsp = i === 0 ? r.dspId : "";
       return `${r.date}\t${dsp}\t${r.awb}\t${r.client}\t${r.orderId}\t${r.remark}\t${r.feName}`;
@@ -391,80 +380,64 @@ export default function PODTool() {
         ))}
       </nav>
 
-      <main className="p-8 max-w-[1440px] mx-auto animate-in fade-in slide-in-from-top-4 duration-700">
+      <main className="p-8 max-w-[1400px] mx-auto animate-in fade-in slide-in-from-top-4 duration-700">
         {activeTab === "eod" ? (
           <div className="space-y-8">
-            <div className="bg-white rounded-[2rem] p-8 shadow-xl border border-[#E2E8F0] grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
-              <div className="md:col-span-2 grid grid-cols-2 gap-6">
-                <div className="space-y-2">
+            {/* Session Setup Card - Full Width Clean Layout */}
+            <div className="bg-white rounded-[2rem] p-10 shadow-xl border border-[#E2E8F0] space-y-10">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Hash className="w-4 h-4" /> DSP ID (Numbers Only)</label>
                   <input 
                     type="number" 
                     value={setupData.dspId} 
                     onChange={(e) => setSetupData({...setupData, dspId: e.target.value})}
-                    className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl px-5 py-4 text-[13px] font-code font-bold outline-none focus:border-[#1565C0] focus:ring-4 ring-blue-500/10 transition-all" 
+                    className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl px-6 py-5 text-[14px] font-code font-bold outline-none focus:border-[#1565C0] focus:ring-4 ring-blue-500/10 transition-all shadow-sm" 
                     placeholder="Enter DSP No..." 
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><User className="w-4 h-4" /> FE / Biker Name</label>
                   <input 
                     type="text" 
                     value={setupData.feName} 
                     onChange={(e) => setSetupData({...setupData, feName: e.target.value})}
-                    className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl px-5 py-4 text-[13px] font-bold outline-none focus:border-[#1565C0] focus:ring-4 ring-blue-500/10 transition-all" 
+                    className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl px-6 py-5 text-[14px] font-bold outline-none focus:border-[#1565C0] focus:ring-4 ring-blue-500/10 transition-all shadow-sm" 
                     placeholder="Enter FE Name..." 
                   />
                 </div>
-                <div 
-                  className={cn(
-                    "col-span-2 border-4 border-dashed rounded-[2.5rem] p-12 text-center transition-all relative group overflow-hidden",
-                    (!setupData.feName || !setupData.dspId) ? "bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed" : "border-blue-200 hover:border-blue-500 hover:bg-blue-50/50 cursor-pointer"
-                  )}
-                >
-                  <input 
-                    type="file" 
-                    disabled={!setupData.feName || !setupData.dspId} 
-                    onChange={handleFileUpload} 
-                    className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed z-10" 
-                    accept=".xlsx,.xls,.csv" 
-                  />
-                  <div className="space-y-4">
-                    <Download className={cn("w-12 h-12 mx-auto transition-all duration-300", (!setupData.feName || !setupData.dspId) ? "text-slate-300" : "text-blue-500 group-hover:scale-110")} />
-                    <p className="text-[12px] font-black text-slate-600 uppercase tracking-widest">
-                      {(!setupData.feName || !setupData.dspId) ? "Pehele DSP ID aur FE Name bharein!" : "Drop Delhivery export file here or click to upload"}
-                    </p>
-                  </div>
-                </div>
               </div>
               
-              <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col justify-between shadow-2xl relative overflow-hidden group min-h-[220px]">
-                <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/10 rounded-full -mr-16 -mt-16 blur-3xl group-hover:bg-blue-500/20 transition-all" />
-                <div className="space-y-4 relative z-10">
-                  <p className="text-[11px] font-black text-blue-400 uppercase tracking-[0.3em]">Current Session</p>
+              <div 
+                className={cn(
+                  "border-4 border-dashed rounded-[3rem] p-16 text-center transition-all relative group overflow-hidden shadow-inner",
+                  (!setupData.feName || !setupData.dspId) ? "bg-slate-50 border-slate-200 opacity-40 cursor-not-allowed" : "border-blue-200 hover:border-blue-500 hover:bg-blue-50/50 cursor-pointer"
+                )}
+              >
+                <input 
+                  type="file" 
+                  disabled={!setupData.feName || !setupData.dspId} 
+                  onChange={handleFileUpload} 
+                  className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed z-10" 
+                  accept=".xlsx,.xls,.csv" 
+                />
+                <div className="space-y-6">
+                  <Download className={cn("w-16 h-16 mx-auto transition-all duration-300", (!setupData.feName || !setupData.dspId) ? "text-slate-300" : "text-blue-500 group-hover:scale-110")} />
                   <div>
-                    <h3 className="text-2xl font-black italic">{currentSession?.feName || "No FE Active"}</h3>
-                    <p className="text-sm font-code text-slate-400 mt-2">DSP: {currentSession?.dspId || "----"}</p>
+                    <p className="text-[14px] font-black text-slate-700 uppercase tracking-widest">
+                      {(!setupData.feName || !setupData.dspId) ? "Pehele DSP ID aur FE Name bharein!" : "Drop Delhivery export file here or click to upload"}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-2 tracking-[0.2em]">Supports Excel & CSV</p>
                   </div>
-                </div>
-                <div className="relative z-10 pt-8 border-t border-white/10 flex justify-between items-end">
-                   <div className="text-center">
-                      <p className="text-[32px] font-black text-amber-500 leading-none">{stats.total}</p>
-                      <p className="text-[9px] font-black uppercase text-slate-500 mt-2">Total Pkts</p>
-                   </div>
-                   <div className="text-center">
-                      <p className="text-[32px] font-black text-red-500 leading-none">{stats.intact}</p>
-                      <p className="text-[9px] font-black uppercase text-slate-500 mt-2">Intact</p>
-                   </div>
                 </div>
               </div>
             </div>
 
             {sessions.length > 0 && (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <div className="flex items-center justify-between px-2">
-                  <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-3"><Layers className="w-5 h-5" /> Saved FE Records</h2>
-                  <button onClick={() => { if(confirm("Kya aap saare sessions delete karna chahte hain?")) setSessions([]); }} className="text-[11px] font-black text-red-600 hover:text-red-700 uppercase tracking-widest flex items-center gap-2 border-b-2 border-red-600/20 hover:border-red-600 pb-0.5"><Trash2 className="w-4 h-4" /> Clear All Database</button>
+                  <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-3"><Layers className="w-5 h-5" /> Saved Records Database</h2>
+                  <button onClick={() => { if(confirm("Kya aap saare sessions delete karna chahte hain?")) setSessions([]); }} className="text-[11px] font-black text-red-600 hover:text-red-700 uppercase tracking-widest flex items-center gap-2 border-b-2 border-red-600/20 hover:border-red-600 pb-0.5"><Trash2 className="w-4 h-4" /> Clear All Data</button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   {sessions.map(s => {
@@ -475,31 +448,31 @@ export default function PODTool() {
                         key={s.id} 
                         onClick={() => setSelectedSessionId(s.id)}
                         className={cn(
-                          "bg-white p-6 rounded-[2rem] border-2 transition-all cursor-pointer relative group",
-                          selectedSessionId === s.id ? "border-blue-600 shadow-2xl scale-[1.02] bg-blue-50/30" : "border-slate-200 hover:border-blue-400 shadow-sm"
+                          "bg-white p-6 rounded-[2.5rem] border-2 transition-all cursor-pointer relative group shadow-sm",
+                          selectedSessionId === s.id ? "border-blue-600 shadow-2xl scale-[1.02] bg-blue-50/20" : "border-slate-100 hover:border-blue-400"
                         )}
                       >
                         <button 
                           onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); }}
-                          className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 p-2 hover:bg-red-50 rounded-xl text-red-500 transition-all shadow-sm"
+                          className="absolute top-5 right-5 opacity-0 group-hover:opacity-100 p-2 hover:bg-red-50 rounded-xl text-red-500 transition-all shadow-sm"
                         >
                           <Trash2 className="w-5 h-5" />
                         </button>
                         <div className="flex items-center gap-4">
-                          <div className="w-1.5 h-12 rounded-full bg-gradient-to-b from-blue-500 to-green-500" />
+                          <div className="w-2 h-14 rounded-full bg-gradient-to-b from-blue-500 to-indigo-600" />
                           <div>
                             <p className={cn("text-lg font-black italic", isFEDupe ? "text-red-600" : "text-slate-800")}>{s.feName}</p>
-                            <p className="text-[11px] font-code text-slate-400 font-bold tracking-tight mt-1">DSP: {s.dspId}</p>
+                            <p className="text-[11px] font-code text-slate-400 font-black tracking-tight mt-1 uppercase">DSP: {s.dspId}</p>
                           </div>
                         </div>
-                        <div className="mt-6 flex gap-6 border-t pt-4 border-slate-100">
+                        <div className="mt-8 flex gap-6 border-t pt-5 border-slate-50">
                           <div className="text-center">
-                            <p className="text-[18px] font-black text-slate-900">{s.data.length}</p>
-                            <p className="text-[9px] font-black text-slate-400 uppercase">Pkts</p>
+                            <p className="text-[20px] font-black text-slate-900">{s.data.length}</p>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total</p>
                           </div>
                           <div className="text-center ml-auto">
-                            <p className="text-[18px] font-black text-amber-600">{s.data.filter(r => r.status === 'pending').length}</p>
-                            <p className="text-[9px] font-black text-slate-400 uppercase">Pend</p>
+                            <p className="text-[20px] font-black text-amber-600">{s.data.filter(r => r.status === 'pending').length}</p>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Pend</p>
                           </div>
                         </div>
                       </div>
@@ -510,13 +483,13 @@ export default function PODTool() {
             )}
 
             {currentSession && (
-              <div className="bg-white rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden animate-in slide-in-from-bottom-6 duration-500">
-                <div className="p-8 bg-slate-50 border-b-2 border-slate-200 flex flex-wrap gap-6 items-center justify-between">
+              <div className="bg-white rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden animate-in slide-in-from-bottom-6 duration-700">
+                <div className="p-8 bg-slate-50 border-b-2 border-slate-100 flex flex-wrap gap-6 items-center justify-between">
                   <div className="flex flex-wrap gap-4">
-                    <button onClick={() => downloadExcel(filteredRows, currentSession)} className="bg-[#2E7D32] hover:bg-[#1B5E20] text-white px-8 py-4 rounded-[1.25rem] font-black text-[11px] uppercase tracking-widest flex items-center gap-3 shadow-xl active:scale-95 transition-all"><Download className="w-5 h-5" /> Download Excel</button>
-                    <button onClick={() => copyTable(filteredRows)} className="bg-[#1565C0] hover:bg-[#0D47A1] text-white px-8 py-4 rounded-[1.25rem] font-black text-[11px] uppercase tracking-widest flex items-center gap-3 shadow-xl active:scale-95 transition-all"><Copy className="w-5 h-5" /> Copy For Excel</button>
+                    <button onClick={() => downloadExcel(filteredRows, currentSession)} className="bg-[#2E7D32] hover:bg-[#1B5E20] text-white px-8 py-4 rounded-[1.5rem] font-black text-[11px] uppercase tracking-widest flex items-center gap-3 shadow-xl active:scale-95 transition-all"><Download className="w-5 h-5" /> Export {statusFilter.toUpperCase()}</button>
+                    <button onClick={() => copyTable(filteredRows)} className="bg-[#1565C0] hover:bg-[#0D47A1] text-white px-8 py-4 rounded-[1.5rem] font-black text-[11px] uppercase tracking-widest flex items-center gap-3 shadow-xl active:scale-95 transition-all"><Copy className="w-5 h-5" /> Copy List</button>
                   </div>
-                  <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-5">
                     {[
                       { id: 'all', label: 'All', val: stats.total, col: 'blue' },
                       { id: 'pending', label: 'Pending', val: stats.pending, col: 'amber' },
@@ -527,47 +500,48 @@ export default function PODTool() {
                         key={t.id} 
                         onClick={() => { setStatusFilter(t.id); setRemarkFilter(null); }}
                         className={cn(
-                          "px-6 py-2 rounded-2xl border-2 transition-all text-center",
-                          statusFilter === t.id ? `bg-${t.col}-600 border-${t.col}-600 text-white shadow-lg` : `border-slate-200 text-slate-400 hover:border-slate-300`
+                          "px-7 py-3 rounded-2xl border-2 transition-all text-center",
+                          statusFilter === t.id ? `bg-${t.col}-600 border-${t.col}-600 text-white shadow-xl scale-105` : `border-slate-200 text-slate-400 hover:border-slate-300`
                         )}
                       >
-                        <p className="text-[14px] font-black leading-none">{t.val}</p>
-                        <p className="text-[8px] font-black uppercase mt-1">{t.label}</p>
+                        <p className="text-[16px] font-black leading-none">{t.val}</p>
+                        <p className="text-[8px] font-black uppercase mt-1 tracking-widest">{t.label}</p>
                       </button>
                     ))}
                   </div>
                 </div>
                 
-                <div className="overflow-x-auto max-h-[700px] custom-scrollbar">
+                <div className="overflow-x-auto max-h-[750px] custom-scrollbar">
                   <table className="w-full text-left border-collapse">
                     <thead className="sticky top-0 z-30">
                       <tr className="bg-[#1C2333] text-white text-[11px] font-black uppercase tracking-[0.2em]">
-                        <th className="p-5 w-[50px] text-center"><Hash className="w-4 h-4 mx-auto" /></th>
-                        <th className="p-5 w-[110px]">DSP ID</th>
-                        <th className="p-5 w-[180px]">AWB Number</th>
-                        <th className="p-5 w-[140px]">Client</th>
-                        <th className="p-5 w-[140px]">Order ID</th>
-                        <th className="p-5">Remark</th>
-                        <th className="p-5 w-[130px]">FE Name</th>
+                        <th className="p-6 w-[60px] text-center"><Hash className="w-4 h-4 mx-auto" /></th>
+                        <th className="p-6 w-[120px]">DSP ID</th>
+                        <th className="p-6 w-[200px]">AWB Number</th>
+                        <th className="p-6 w-[160px]">Client</th>
+                        <th className="p-6 w-[160px]">Order ID</th>
+                        <th className="p-6">Official Remark</th>
+                        <th className="p-6 w-[150px]">FE Name</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredRows.map((row, idx) => {
                         const isAWBDupe = duplicateAWBs.has(row.awb);
+                        const isIntact = row.remark.toLowerCase().includes("intact") || row.remark.toLowerCase().includes("reject but package");
                         return (
                           <tr key={row.id} className={cn(
                             "border-b-2 border-slate-50 hover:bg-slate-50 transition-colors group relative",
-                            (row.remark.toLowerCase().includes("intact") || row.remark.toLowerCase().includes("reject but package")) ? "bg-red-50/50" : ""
+                            isIntact ? "bg-red-50/40" : ""
                           )}>
-                            <td className="p-5 text-center">
+                            <td className="p-6 text-center">
                               <button onClick={() => deleteRow(row.id)} className="text-slate-300 hover:text-red-600 transition-colors">
                                 <X className="w-5 h-5" />
                               </button>
                             </td>
-                            <td className="p-5 font-code text-[12px] font-bold text-slate-400">{idx === 0 ? row.dspId : ""}</td>
+                            <td className="p-6 font-code text-[12px] font-bold text-slate-400">{idx === 0 ? row.dspId : ""}</td>
                             <td 
                               className={cn(
-                                "p-5 font-code text-[13px] font-black tracking-wider cursor-pointer hover:underline flex items-center gap-2",
+                                "p-6 font-code text-[14px] font-black tracking-wider cursor-pointer hover:underline flex items-center gap-3",
                                 isAWBDupe ? "text-red-600" : "text-[#1565C0]"
                               )}
                               onClick={() => copyToClipboard(row.awb, "AWB Copied")}
@@ -575,17 +549,17 @@ export default function PODTool() {
                               {row.awb}
                               <MousePointerClick className="w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                             </td>
-                            <td className="p-5 text-[12px] font-bold text-slate-700">{row.client}</td>
-                            <td className="p-5 text-[12px] text-slate-500 font-medium">{row.orderId}</td>
-                            <td className="p-5">
+                            <td className="p-6 text-[12px] font-bold text-slate-700">{row.client}</td>
+                            <td className="p-6 text-[12px] text-slate-500 font-medium">{row.orderId}</td>
+                            <td className="p-6">
                               <span className={cn(
-                                "inline-flex px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-sm",
-                                (row.remark.toLowerCase().includes("intact") || row.remark.toLowerCase().includes("reject but package")) ? "bg-red-100 text-red-700 border-red-200" : "bg-[#FFFDE7] text-amber-700 border-amber-200"
+                                "inline-flex px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-sm",
+                                isIntact ? "bg-red-100 text-red-700 border-red-200" : "bg-[#FFFDE7] text-amber-700 border-amber-200"
                               )}>
                                 {row.remark || "No Remark"}
                               </span>
                             </td>
-                            <td className="p-5 text-[12px] font-black text-slate-500">{row.feName}</td>
+                            <td className="p-6 text-[12px] font-black text-slate-500">{row.feName}</td>
                           </tr>
                         );
                       })}
@@ -596,48 +570,48 @@ export default function PODTool() {
             )}
           </div>
         ) : (
-          <div className="space-y-8">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="bg-white rounded-[2.5rem] p-10 border-2 border-slate-200 shadow-xl space-y-10">
-                <h2 className="text-2xl font-black tracking-tighter flex items-center gap-3"><FileSpreadsheet className="w-8 h-8 text-green-600" /> Remark Replacer Engine</h2>
-                <div className="border-8 border-dashed border-green-50 rounded-[3rem] p-16 text-center hover:border-green-300 hover:bg-green-50/30 transition-all cursor-pointer relative group overflow-hidden shadow-inner">
+          <div className="space-y-10">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+              <div className="bg-white rounded-[3rem] p-12 border-2 border-slate-100 shadow-2xl space-y-12">
+                <h2 className="text-3xl font-black tracking-tighter flex items-center gap-4"><FileSpreadsheet className="w-10 h-10 text-green-600" /> Remark Replacer AI</h2>
+                <div className="border-8 border-dashed border-green-50 rounded-[4rem] p-20 text-center hover:border-green-300 hover:bg-green-50/50 transition-all cursor-pointer relative group overflow-hidden shadow-inner">
                   <input type="file" onChange={handleReplacerUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" accept=".xlsx,.xls,.csv" />
-                  <Download className="w-16 h-16 text-green-200 mx-auto transition-transform group-hover:scale-125 group-hover:text-green-500" />
-                  <div className="mt-6">
-                    <p className="text-lg font-black text-slate-700 uppercase italic">Upload EOD Export File</p>
-                    <p className="text-[11px] font-bold text-slate-400 mt-2 tracking-[0.3em] uppercase">Supports Excel & CSV</p>
+                  <Download className="w-20 h-20 text-green-200 mx-auto transition-transform group-hover:scale-125 group-hover:text-green-500" />
+                  <div className="mt-8">
+                    <p className="text-xl font-black text-slate-700 uppercase italic">Upload Delhivery EOD Export</p>
+                    <p className="text-[11px] font-bold text-slate-400 mt-3 tracking-[0.4em] uppercase">Excel & CSV Supported</p>
                   </div>
                 </div>
 
                 {replacerData.length > 0 && (
-                  <div className="grid grid-cols-3 gap-6 pt-6 animate-in zoom-in-95 duration-500">
-                    <div className="bg-slate-900 p-6 rounded-[2rem] text-center shadow-lg">
-                       <p className="text-3xl font-black text-white leading-none">{replacerStats.total}</p>
-                       <p className="text-[10px] font-black text-slate-400 uppercase mt-2 tracking-widest">Total Rows</p>
+                  <div className="grid grid-cols-3 gap-8 pt-8 animate-in zoom-in-95 duration-500">
+                    <div className="bg-slate-900 p-8 rounded-[2.5rem] text-center shadow-xl">
+                       <p className="text-4xl font-black text-white leading-none">{replacerStats.total}</p>
+                       <p className="text-[10px] font-black text-slate-400 uppercase mt-3 tracking-widest">Total</p>
                     </div>
-                    <div className="bg-green-600 p-6 rounded-[2rem] text-center shadow-lg">
-                       <p className="text-3xl font-black text-white leading-none">{replacerStats.replaced}</p>
-                       <p className="text-[10px] font-black text-white/60 uppercase mt-2 tracking-widest">Replaced</p>
+                    <div className="bg-green-600 p-8 rounded-[2.5rem] text-center shadow-xl">
+                       <p className="text-4xl font-black text-white leading-none">{replacerStats.replaced}</p>
+                       <p className="text-[10px] font-black text-white/60 uppercase mt-3 tracking-widest">Replaced</p>
                     </div>
-                    <div className="bg-amber-500 p-6 rounded-[2rem] text-center shadow-lg">
-                       <p className="text-3xl font-black text-white leading-none">{replacerStats.missing}</p>
-                       <p className="text-[10px] font-black text-white/60 uppercase mt-2 tracking-widest">Manual</p>
+                    <div className="bg-amber-500 p-8 rounded-[2.5rem] text-center shadow-xl">
+                       <p className="text-4xl font-black text-white leading-none">{replacerStats.missing}</p>
+                       <p className="text-[10px] font-black text-white/60 uppercase mt-3 tracking-widest">No Match</p>
                     </div>
                   </div>
                 )}
               </div>
 
-              <div className="bg-[#1C2333] rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-[6px] bg-gradient-to-r from-blue-500 via-green-500 to-amber-500" />
-                <h3 className="text-[12px] font-black text-[#F9A825] uppercase tracking-[0.4em] mb-10 flex items-center gap-3">
-                  <AlertCircle className="w-6 h-6" /> Official Mapping Guide
+              <div className="bg-[#1C2333] rounded-[3rem] p-12 text-white shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-[8px] bg-gradient-to-r from-blue-500 via-green-500 to-amber-500" />
+                <h3 className="text-[12px] font-black text-[#F9A825] uppercase tracking-[0.5em] mb-12 flex items-center gap-4">
+                  <AlertCircle className="w-6 h-6" /> Official Remark Guide
                 </h3>
-                <div className="overflow-y-auto max-h-[500px] space-y-3 custom-scrollbar pr-4">
+                <div className="overflow-y-auto max-h-[550px] space-y-4 custom-scrollbar pr-6">
                   {Object.entries(REMARK_MAPPING).map(([old, official]) => (
-                    <div key={old} className="p-5 bg-white/5 rounded-2xl text-[11px] border border-white/10 hover:bg-white/10 transition-colors shadow-sm">
-                      <p className="text-slate-500 italic font-bold mb-2 uppercase tracking-tight">{old}</p>
-                      <p className="text-green-400 font-black flex items-center gap-3 text-[13px]">
-                        <CheckCircle2 className="w-4 h-4 text-green-500" /> {official}
+                    <div key={old} className="p-6 bg-white/5 rounded-3xl text-[11px] border border-white/10 hover:bg-white/10 transition-colors shadow-sm">
+                      <p className="text-slate-500 italic font-bold mb-3 uppercase tracking-tight">{old}</p>
+                      <p className="text-green-400 font-black flex items-center gap-3 text-[14px]">
+                        <CheckCircle2 className="w-5 h-5 text-green-500" /> {official}
                       </p>
                     </div>
                   ))}
@@ -646,61 +620,61 @@ export default function PODTool() {
             </div>
             
             {replacerData.length > 0 && (
-              <div className="bg-white rounded-[2.5rem] shadow-2xl border-2 border-slate-200 overflow-hidden animate-in slide-in-from-bottom-8 duration-700">
-                <div className="p-8 bg-slate-50 border-b-2 border-slate-200 flex items-center justify-between">
-                  <div className="flex gap-6">
+              <div className="bg-white rounded-[3rem] shadow-2xl border-2 border-slate-100 overflow-hidden animate-in slide-in-from-bottom-8 duration-700">
+                <div className="p-10 bg-slate-50 border-b-2 border-slate-100 flex items-center justify-between">
+                  <div className="flex gap-8">
                     <button onClick={() => {
                         const header = ['Date', 'DSP No', 'AWB Number', 'Client', 'Original Remark', 'Official Remark', 'FE Name'];
                         const rows = replacerData.map(r => [r.date, r.dsp, { v: r.awb, t: 's' }, r.client, r.oldRemark, r.officialRemark, r.feName]);
                         const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
                         const wb = XLSX.utils.book_new();
                         XLSX.utils.book_append_sheet(wb, ws, "Replaced");
-                        XLSX.writeFile(wb, `Replaced_Remarks.xlsx`);
-                    }} className="bg-[#2E7D32] text-white px-10 py-4 rounded-[1.5rem] font-black text-[11px] uppercase tracking-widest flex items-center gap-3 shadow-xl active:scale-95 transition-all"><Download className="w-5 h-5" /> Download Replaced Excel</button>
+                        XLSX.writeFile(wb, `Delhivery_Replaced_Remarks.xlsx`);
+                    }} className="bg-[#2E7D32] text-white px-12 py-5 rounded-[1.75rem] font-black text-[11px] uppercase tracking-widest flex items-center gap-4 shadow-2xl active:scale-95 transition-all"><Download className="w-6 h-6" /> Download Replaced</button>
                     <button onClick={() => {
                       const text = replacerData.map(r => `${r.date}\t${r.dsp}\t${r.awb}\t${r.client}\t${r.officialRemark}\t${r.feName}`).join("\n");
-                      copyToClipboard(text, "Replaced Data Copied");
-                    }} className="bg-[#1565C0] text-white px-10 py-4 rounded-[1.5rem] font-black text-[11px] uppercase tracking-widest flex items-center gap-3 shadow-xl active:scale-95 transition-all"><Copy className="w-5 h-5" /> Copy Replaced List</button>
+                      copyToClipboard(text, "Replaced List Copied");
+                    }} className="bg-[#1565C0] text-white px-12 py-5 rounded-[1.75rem] font-black text-[11px] uppercase tracking-widest flex items-center gap-4 shadow-2xl active:scale-95 transition-all"><Copy className="w-6 h-6" /> Copy For Excel</button>
                   </div>
                 </div>
                 
-                <div className="overflow-x-auto max-h-[700px] custom-scrollbar">
+                <div className="overflow-x-auto max-h-[750px] custom-scrollbar">
                   <table className="w-full text-left">
                     <thead className="sticky top-0 z-30">
                       <tr className="bg-[#1C2333] text-white text-[11px] font-black uppercase tracking-[0.2em]">
-                        <th className="p-5 w-[60px]">#</th>
-                        <th className="p-5 w-[120px]">Date</th>
-                        <th className="p-5 w-[180px]">AWB Number</th>
-                        <th className="p-5">Official Remark</th>
-                        <th className="p-5 w-[140px]">Original Remark</th>
-                        <th className="p-5 w-[120px]">FE Name</th>
+                        <th className="p-7 w-[80px]">#</th>
+                        <th className="p-7 w-[140px]">Date</th>
+                        <th className="p-7 w-[200px]">AWB Number</th>
+                        <th className="p-7">Official Remark</th>
+                        <th className="p-7 w-[180px]">Original Remark</th>
+                        <th className="p-7 w-[150px]">FE Name</th>
                       </tr>
                     </thead>
                     <tbody>
                       {replacerData.map((row, idx) => (
                         <tr key={idx} className={cn(
                           "border-b-2 border-slate-50 hover:bg-slate-50 transition-colors group",
-                          row.isReplaced ? "bg-green-50/30" : "bg-amber-50/30"
+                          row.isReplaced ? "bg-green-50/20" : "bg-amber-50/20"
                         )}>
-                          <td className="p-5 text-[11px] font-black text-slate-400">{row.id}</td>
-                          <td className="p-5 text-[11px] text-slate-600 font-black">{row.date}</td>
+                          <td className="p-7 text-[12px] font-black text-slate-400">{row.id}</td>
+                          <td className="p-7 text-[12px] text-slate-600 font-black">{row.date}</td>
                           <td 
-                            className="p-5 font-code text-[12px] font-black text-[#1565C0] cursor-pointer hover:underline flex items-center gap-2"
-                            onClick={() => copyToClipboard(row.awb)}
+                            className="p-7 font-code text-[14px] font-black text-[#1565C0] cursor-pointer hover:underline flex items-center gap-3"
+                            onClick={() => copyToClipboard(row.awb, "AWB Copied")}
                           >
                             {row.awb}
                             <MousePointerClick className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
                           </td>
-                          <td className="p-5">
+                          <td className="p-7">
                             <span className={cn(
-                              "inline-flex px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-sm",
+                              "inline-flex px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-sm",
                               row.isReplaced ? "bg-green-600 text-white border-green-700" : "bg-amber-500 text-white border-amber-600"
                             )}>
                               {row.officialRemark}
                             </span>
                           </td>
-                          <td className="p-5 text-[10px] text-slate-400 italic font-bold truncate max-w-[150px]">{row.oldRemark}</td>
-                          <td className="p-5 text-[11px] font-black text-slate-700">{row.feName}</td>
+                          <td className="p-7 text-[10px] text-slate-400 italic font-bold truncate max-w-[180px]">{row.oldRemark}</td>
+                          <td className="p-7 text-[12px] font-black text-slate-700">{row.feName}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -718,9 +692,9 @@ export default function PODTool() {
         body { font-family: 'Inter', sans-serif; overflow-x: hidden; }
         .font-code { font-family: 'IBM Plex Mono', monospace; }
         
-        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 10px; height: 10px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #F8FAFC; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 20px; border: 2px solid #F8FAFC; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 20px; border: 3px solid #F8FAFC; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
 
         input[type="number"]::-webkit-inner-spin-button,
