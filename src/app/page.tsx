@@ -118,7 +118,6 @@ export default function PODTool() {
   const fixValueToString = (val: any) => {
     if (val === null || val === undefined) return "";
     let str = String(val).trim().replace(/['",]/g, ""); 
-    // Handle scientific notation (e.g. 5.5E+13)
     if (/^[\d.]+[eE][+\-]?\d+$/.test(str)) {
       try {
         str = BigInt(Math.round(Number(val))).toString();
@@ -205,7 +204,7 @@ export default function PODTool() {
     e.target.value = "";
   };
 
-  // MODULE 2: REMARK REPLACER (ULTRA-FIXED)
+  // MODULE 2: REMARK REPLACER (ULTRA-FIXED - 7 COLUMN OUTPUT)
   const handleReplacerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -215,7 +214,6 @@ export default function PODTool() {
     
     const reader = new FileReader();
     reader.onload = (evt) => {
-      // Background processing to prevent freeze
       setTimeout(() => {
         try {
           const data = new Uint8Array(evt.target?.result as ArrayBuffer);
@@ -231,16 +229,19 @@ export default function PODTool() {
             throw new Error("This file appears to be empty.");
           }
 
-          const headers = Object.keys(rawData[0]);
+          const allHeaders = Object.keys(rawData[0]);
           
           // Strict Requirement Check
-          const remarkKey = headers.find(h => h === "Remarks Of NSL") || "";
-          const awbKey = headers.find(h => h === "Awb") || headers.find(h => /awb|waybill/i.test(h)) || "";
-          const dspKey = headers.find(h => h === "DSP No") || "";
+          const remarkKey = allHeaders.find(h => h === "Remarks Of NSL") || "";
+          const awbKey = allHeaders.find(h => h === "Awb") || "";
+          const dspKey = allHeaders.find(h => h === "DSP No") || "";
 
           if (!remarkKey) {
             throw new Error("This file does not have Remarks Of NSL column. Please upload the correct Delhivery EOD rejection sheet.");
           }
+
+          // Target Headers (Exactly 7 columns, excluding OFFICIAL REMARK)
+          const targetHeaders = ["Date", "DSP No", "Awb", "Client Name", "Order- No", "Remarks Of NSL", "Fe Name"];
 
           let replacedCount = 0;
           let noMappingCount = 0;
@@ -250,7 +251,6 @@ export default function PODTool() {
             let finalRemark = originalRemark;
             let isReplaced = false;
 
-            // Mapping Logic: Exact Case-Insensitive first
             const mappingEntry = Object.entries(REMARK_MAPPING).find(([key]) => 
               key.toLowerCase() === originalRemark.toLowerCase()
             );
@@ -259,7 +259,6 @@ export default function PODTool() {
               finalRemark = mappingEntry[1];
               isReplaced = true;
             } else {
-              // Partial Match
               const partialEntry = Object.entries(REMARK_MAPPING).find(([key]) => 
                 originalRemark.toLowerCase().includes(key.toLowerCase())
               );
@@ -276,18 +275,24 @@ export default function PODTool() {
             const cleanAwb = fixValueToString(row[awbKey]);
             const cleanDsp = fixValueToString(row[dspKey]);
             
-            return { 
-              ...row, 
-              [remarkKey]: finalRemark,
-              [awbKey]: cleanAwb,
-              [dspKey]: cleanDsp,
-              __isReplaced: isReplaced, 
+            // Build the clean row with only target headers
+            const cleanRow: any = {
+              __isReplaced: isReplaced,
               __id: crypto.randomUUID()
             };
+
+            targetHeaders.forEach(h => {
+              if (h === remarkKey) cleanRow[h] = finalRemark;
+              else if (h === awbKey) cleanRow[h] = cleanAwb;
+              else if (h === dspKey) cleanRow[h] = cleanDsp;
+              else cleanRow[h] = row[h] !== undefined ? row[h] : "";
+            });
+            
+            return cleanRow;
           });
 
           setReplacerData(processed);
-          setReplacerMeta({ headers, remarkKey, awbKey, dspKey });
+          setReplacerMeta({ headers: targetHeaders, remarkKey, awbKey, dspKey });
           setReplacerStats({ total: processed.length, replaced: replacedCount, noMapping: noMappingCount });
           showToast(`Processed ${processed.length} rows — ${replacedCount} replaced`, "ok");
         } catch (err: any) {
@@ -360,18 +365,23 @@ export default function PODTool() {
   const downloadOfficialExcel = () => {
     if (!replacerData.length || !replacerMeta) return;
     
-    // Prepare data for export
+    // Prepare data for export - ensure exact order and text formatting
     const exportData = replacerData.map(r => {
-      const { __isReplaced, __id, ...rest } = r;
-      // Force AWB and DSP as Text
-      if (replacerMeta.awbKey) rest[replacerMeta.awbKey] = { v: String(rest[replacerMeta.awbKey]), t: 's', z: '@' };
-      if (replacerMeta.dspKey) rest[replacerMeta.dspKey] = { v: String(rest[replacerMeta.dspKey]), t: 's', z: '@' };
-      return rest;
+      const row: any = {};
+      replacerMeta.headers.forEach(h => {
+        let val = r[h];
+        if (h === replacerMeta.awbKey || h === replacerMeta.dspKey) {
+           row[h] = { v: String(val), t: 's', z: '@' };
+        } else {
+           row[h] = val;
+        }
+      });
+      return row;
     });
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     
-    // Header Styling (Simulation through AOE)
+    // Header Styling (Dark Navy #1C2333, White Text, Bold)
     const range = XLSX.utils.decode_range(ws['!ref']!);
     for (let C = range.s.c; C <= range.e.c; ++C) {
       const address = XLSX.utils.encode_col(C) + "1";
@@ -379,7 +389,7 @@ export default function PODTool() {
       ws[address].s = {
         fill: { fgColor: { rgb: "1C2333" } },
         font: { color: { rgb: "FFFFFF" }, bold: true, sz: 11, name: "Calibri" },
-        alignment: { horizontal: "center" }
+        alignment: { horizontal: "center", vertical: "center" }
       };
     }
 
@@ -441,7 +451,6 @@ export default function PODTool() {
       <main className="pt-[130px] p-6 max-w-[1440px] mx-auto space-y-6">
         {activeTab === "eod" ? (
           <div className="space-y-6">
-            {/* SESSION SETUP CARD */}
             <div className="bg-white rounded-[14px] p-6 shadow-sm border border-[#E2E8F0]">
               <div className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.15em] mb-4">SESSION SETUP</div>
               <div className="flex flex-col md:flex-row gap-4 mb-6">
@@ -462,7 +471,6 @@ export default function PODTool() {
               </div>
             </div>
 
-            {/* SAVED SESSIONS GRID */}
             {sessions.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {sessions.map(s => (
@@ -472,21 +480,16 @@ export default function PODTool() {
                     <p className="text-[10px] font-mono font-bold text-slate-400 mt-1">{s.dspId} — {s.date}</p>
                     <div className="flex flex-wrap gap-1.5 mt-3">
                       <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-black text-slate-600 uppercase">{s.data.length} TOTAL</span>
-                      <span className="px-1.5 py-0.5 rounded bg-amber-50 text-[9px] font-black text-[#F9A825] uppercase">{s.data.filter(r => r.status === 'pending').length} PENDING</span>
-                      <span className="px-1.5 py-0.5 rounded bg-red-50 text-[9px] font-black text-[#D32F2F] uppercase">{s.data.filter(r => r.status === 'rto').length} RTO</span>
-                      <span className="px-1.5 py-0.5 rounded bg-green-50 text-[9px] font-black text-[#2E7D32] uppercase">{s.data.filter(r => r.status === 'dto').length} DTO</span>
                     </div>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* DATA VIEW AREA */}
             {currentSession && (
               <div className="space-y-6">
                 <div className="text-[10px] font-black text-[#64748B] uppercase tracking-widest pl-1">CURRENT: {currentSession.feName} — {currentSession.dspId}</div>
                 
-                {/* COLOURFUL STATUS TABS */}
                 <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden flex h-[100px]">
                   {[
                     { id: 'all', label: 'All', val: stats.total, color: 'text-[#1565C0]', activeBg: 'bg-white', activeBorder: 'border-[#1565C0]' },
@@ -502,16 +505,14 @@ export default function PODTool() {
                   ))}
                 </div>
 
-                {/* PENDING REMARK BREAKDOWN */}
                 {statusFilter === 'pending' && pendingRemarkStats.length > 0 && (
-                  <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200 space-y-4 animate-in slide-in-from-top-2">
+                  <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200 space-y-4">
                     <div className="flex flex-col gap-1">
                       <h3 className="text-[11px] font-black text-[#1C2333] uppercase tracking-wider">REMARK BREAKDOWN — PENDING</h3>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase">Click any remark chip to filter the table</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {pendingRemarkStats.map((stat, i) => (
-                        <button key={i} onClick={() => setActiveRemarkChip(activeRemarkChip === stat.text ? null : stat.text)} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-bold uppercase transition-all shadow-sm", activeRemarkChip === stat.text ? "bg-[#1565C0] text-white border-[#1565C0]" : "bg-[#F3F4F6] border-[#E5E7EB] text-[#374151] hover:bg-slate-200 hover:border-primary")}>
+                        <button key={i} onClick={() => setActiveRemarkChip(activeRemarkChip === stat.text ? null : stat.text)} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-bold uppercase transition-all shadow-sm", activeRemarkChip === stat.text ? "bg-[#1565C0] text-white border-[#1565C0]" : "bg-[#F3F4F6] border-[#E5E7EB] text-[#374151] hover:bg-slate-200")}>
                           <span>{stat.text || "No Remark"}</span>
                           <span className={cn("px-1.5 py-0.5 rounded-full text-[9px] font-black", activeRemarkChip === stat.text ? "bg-white text-primary" : "bg-white text-slate-500")}>{stat.count}</span>
                         </button>
@@ -520,7 +521,6 @@ export default function PODTool() {
                   </div>
                 )}
 
-                {/* ACTION BAR */}
                 <div className="flex items-center justify-between">
                   <div className="flex gap-2">
                     <button onClick={downloadExcel} className="bg-[#388E3C] hover:bg-[#2E7D32] text-white px-5 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-transform active:scale-95"><Download className="w-4 h-4" /> Download Excel</button>
@@ -529,13 +529,11 @@ export default function PODTool() {
                   <button onClick={() => setSessions([])} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">Clear All Sessions</button>
                 </div>
 
-                {/* MAIN SHIPMENTS TABLE */}
                 <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-4 border-b bg-slate-50 flex items-center justify-between">
                     <div className="flex items-center gap-2"><span className="text-[11px] font-black uppercase text-[#1C2333]">{statusFilter.toUpperCase()} SHIPMENTS</span><span className="px-2 py-0.5 bg-[#CBD5E1] rounded text-[9px] font-black uppercase">{filteredRows.length} ROWS</span></div>
                     <div className="flex items-center gap-4">
                       <div className="relative"><Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="Search AWB..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-white border rounded-full pl-9 pr-4 py-1.5 text-[11px] font-bold outline-none w-[240px] focus:ring-2 focus:ring-primary/10" /></div>
-                      <input type="checkbox" className="w-4 h-4 accent-primary" />
                     </div>
                   </div>
                   <div className="overflow-x-auto max-h-[700px] custom-scrollbar">
@@ -588,7 +586,7 @@ export default function PODTool() {
             )}
           </div>
         ) : (
-          /* MODULE 2: REMARK REPLACER (ULTRA-FIXED) */
+          /* MODULE 2: REMARK REPLACER (7 COLUMN VERSION) */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-500">
             <div className="lg:col-span-8 space-y-6">
               <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200">
@@ -614,7 +612,7 @@ export default function PODTool() {
                       <button onClick={() => setUploadError(null)} className="bg-red-600 text-white px-6 py-2 rounded-lg text-[10px] font-black uppercase mt-4">Try Again</button>
                     </div>
                   ) : (
-                    <div className="space-y-3"><Download className="w-10 h-10 text-primary/40 mx-auto" /><p className="text-[15px] font-[700] text-[#111827]">Drop Official Delhivery EOD Sheet here, or click to upload</p><p className="text-[11px] text-[#64748B] uppercase tracking-widest">Supports strict column mapping for Ashu</p></div>
+                    <div className="space-y-3"><Download className="w-10 h-10 text-primary/40 mx-auto" /><p className="text-[15px] font-[700] text-[#111827]">Drop Official Delhivery EOD Sheet here, or click to upload</p><p className="text-[11px] text-[#64748B] uppercase tracking-widest">7 Column Final Output Enabled</p></div>
                   )}
                 </div>
               </div>
@@ -630,8 +628,8 @@ export default function PODTool() {
                           const { __isReplaced, __id, ...rest } = r;
                           return Object.values(rest).join('\t');
                         }).join('\n');
-                        navigator.clipboard.writeText(headers + '\n' + rows).then(() => showToast("Copied full table", "ok"));
-                      }} className="bg-[#1565C0] hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all"><Copy className="w-4 h-4" /> Copy Full Table</button>
+                        navigator.clipboard.writeText(headers + '\n' + rows).then(() => showToast("Copied table data", "ok"));
+                      }} className="bg-[#1565C0] hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all"><Copy className="w-4 h-4" /> Copy Data</button>
                     </div>
                     <button onClick={() => { setReplacerData([]); setReplacerMeta(null); }} className="text-[10px] font-black text-red-500 uppercase tracking-widest px-4 hover:underline">Clear Data</button>
                   </div>
@@ -702,7 +700,6 @@ function DataRow({ row, idx, isFirstInGroup, onDelete }: { row: PODRow, idx: num
       <td className="p-3 font-mono text-[11px] font-bold text-slate-400">{isFirstInGroup ? row.dspId : ""}</td>
       <td onClick={() => {
         navigator.clipboard.writeText(row.awb);
-        // Simple visual feedback could be added here
       }} className="p-3 font-mono text-[11.5px] font-[600] text-[#1565C0] cursor-pointer hover:underline transition-all tracking-tight">{row.awb}</td>
       <td className="p-3 text-[11px] text-[#374151] truncate max-w-[140px] font-medium">{row.client}</td>
       <td className="p-3 text-[11px] text-[#374151] truncate max-w-[140px] font-medium">{row.orderId}</td>
