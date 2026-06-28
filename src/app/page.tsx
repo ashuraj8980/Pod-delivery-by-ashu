@@ -12,7 +12,8 @@ import {
   Loader2, 
   Search,
   Star,
-  AlertCircle
+  AlertCircle,
+  CheckCircle2
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -187,6 +188,7 @@ export default function PODTool() {
     const reader = new FileReader();
     
     reader.onload = (evt) => {
+      // Release main thread to show loader
       setTimeout(() => {
         try {
           const bstr = evt.target?.result;
@@ -242,7 +244,7 @@ export default function PODTool() {
         } finally {
           setIsProcessing(false);
         }
-      }, 0);
+      }, 50);
     };
     reader.readAsBinaryString(file);
     e.target.value = "";
@@ -302,7 +304,9 @@ export default function PODTool() {
     setIsProcessing(true);
     setUploadError(null);
     const reader = new FileReader();
+    
     reader.onload = (evt) => {
+      // Use setTimeout to allow UI to update to 'Processing...'
       setTimeout(() => {
         try {
           const bstr = evt.target?.result;
@@ -349,7 +353,7 @@ export default function PODTool() {
         } finally {
           setIsProcessing(false);
         }
-      }, 0);
+      }, 100);
     };
     reader.readAsBinaryString(file);
     e.target.value = "";
@@ -447,7 +451,8 @@ export default function PODTool() {
               
               <div className={cn(
                 "border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer relative",
-                uploadError ? "border-red-400 bg-red-50" : "border-[#CBD5E1] bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD]"
+                uploadError ? "border-red-400 bg-red-50" : "border-[#CBD5E1] bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD]",
+                isProcessing && "pointer-events-none opacity-80"
               )}>
                 <input type="file" disabled={isProcessing} onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                 {isProcessing ? (
@@ -458,8 +463,9 @@ export default function PODTool() {
                 ) : uploadError ? (
                   <div className="space-y-3">
                     <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
-                    <p className="text-[14px] font-[700] text-red-600 uppercase">{uploadError}</p>
-                    <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest">Click to try again</p>
+                    <p className="text-[14px] font-[700] text-red-600 uppercase">Invalid File Format</p>
+                    <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest">{uploadError}</p>
+                    <button onClick={() => setUploadError(null)} className="bg-red-600 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase">Try Again</button>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -476,7 +482,7 @@ export default function PODTool() {
                 <div className="flex items-center justify-between px-1">
                   <h2 className="text-[10px] font-black text-[#1C2333] uppercase tracking-[0.2em]">ALL ACTIVE SESSIONS</h2>
                   <button onClick={handleClearAllSessions} className="text-[10px] font-black text-[#D32F2F] uppercase tracking-widest flex items-center gap-2 hover:underline">
-                    <Trash2 className="w-3.5 h-3.5" /> Clear All Data
+                    <Trash2 className="w-3.5 h-3.5" /> Clear All Sessions
                   </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -657,7 +663,8 @@ export default function PODTool() {
                 <h2 className="text-[14px] font-[800] text-[#1C2333] flex items-center gap-2 mb-6"><FileSpreadsheet className="w-5 h-5 text-[#2E7D32]" /> Remark Replacer Dashboard</h2>
                 <div className={cn(
                   "border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer relative",
-                  uploadError ? "border-red-400 bg-red-50" : "border-slate-200 bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD]"
+                  uploadError ? "border-red-400 bg-red-50" : "border-slate-200 bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD]",
+                  isProcessing && "pointer-events-none opacity-80"
                 )}>
                   <input type="file" disabled={isProcessing} onChange={handleReplacerUpload} className="absolute inset-0 opacity-0 cursor-pointer z-20" />
                   {isProcessing ? (
@@ -668,8 +675,9 @@ export default function PODTool() {
                   ) : uploadError ? (
                     <div className="space-y-3">
                       <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
-                      <p className="text-[14px] font-[700] text-red-600 uppercase">Invalid Format</p>
+                      <p className="text-[14px] font-[700] text-red-600 uppercase">Invalid File Format</p>
                       <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest">{uploadError}</p>
+                      <button onClick={() => setUploadError(null)} className="bg-red-600 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase">Try Again</button>
                     </div>
                   ) : (
                     <div className="space-y-3">
