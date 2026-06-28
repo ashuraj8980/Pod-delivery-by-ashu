@@ -85,7 +85,6 @@ export default function PODTool() {
   
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
-  const [replacerError, setReplacerError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -294,6 +293,75 @@ export default function PODTool() {
     navigator.clipboard.writeText(text).then(() => showToast(`Copied ${rows.length} rows`, "ok"));
   };
 
+  const handleReplacerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessing(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      setTimeout(() => {
+        try {
+          const bstr = evt.target?.result;
+          const wb = XLSX.read(bstr, { type: 'binary' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rawData = XLSX.utils.sheet_to_json(ws, { defval: "" });
+          
+          if (!Array.isArray(rawData) || rawData.length === 0) throw new Error("Empty file");
+
+          const headers = Object.keys(rawData[0]);
+          const remarkKey = headers.find(h => /remark|nsl/i.test(h)) || "";
+          const awbKey = headers.find(h => /awb|waybill/i.test(h)) || "";
+
+          if (!remarkKey || !awbKey) throw new Error("Missing columns");
+
+          const processed = rawData.map(row => {
+            const original = String(row[remarkKey] || "").trim();
+            let replaced = original;
+            let isReplaced = false;
+
+            for (const [key, val] of Object.entries(REMARK_MAPPING)) {
+              if (original.toLowerCase() === key.toLowerCase() || original.toLowerCase().includes(key.toLowerCase())) {
+                replaced = val;
+                isReplaced = true;
+                break;
+              }
+            }
+
+            return { ...row, [remarkKey]: replaced, __isReplaced: isReplaced, [awbKey]: fixAWB(row[awbKey]) };
+          });
+
+          setReplacerData(processed);
+          setReplacerMeta({ headers, remarkKey });
+          showToast("File processed successfully!", "ok");
+        } catch (err) {
+          showToast("Error processing file!", "err");
+        } finally {
+          setIsProcessing(false);
+        }
+      }, 0);
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  };
+
+  const downloadReplacerExcel = () => {
+    if (!replacerData.length || !replacerMeta) return;
+    const cleanData = replacerData.map(r => {
+      const { __isReplaced, ...rest } = r;
+      const awbKey = replacerMeta.headers.find(h => /awb|waybill/i.test(h)) || "";
+      if (awbKey) {
+        rest[awbKey] = { v: String(rest[awbKey]), t: 's', z: '@' };
+      }
+      return rest;
+    });
+    const ws = XLSX.utils.json_to_sheet(cleanData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Replaced Remarks");
+    XLSX.writeFile(wb, `EOD_Official_Remarks_${new Date().toISOString().split('T')[0]}.xlsx`);
+    showToast("Official Excel Downloaded", "ok");
+  };
+
   const groupedPendingRows = useMemo(() => {
     if (statusFilter !== 'pending' || !filteredRows.length) return null;
     const groups: Record<string, PODRow[]> = {};
@@ -309,60 +377,60 @@ export default function PODTool() {
 
   return (
     <div className="min-h-screen bg-[#F0F4FA] font-body text-[#374151] select-auto">
-      {/* Top Gradient Stripe */}
-      <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F] fixed top-0 z-[210]" />
-      
-      {/* Elite Header */}
-      <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white shadow-lg fixed top-[3px] w-full z-[200]">
-        <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-[#1565C0] to-blue-700 p-1.5 rounded-xl shadow-lg border border-white/10">
-            <Truck className="w-5 h-5 text-white" />
-          </div>
-          <div className="flex flex-col">
-            <h1 className="text-[15px] font-[800] tracking-tight leading-none uppercase">POD Management Tool</h1>
-            <p className="text-[9px] text-[#94A3B8] font-bold mt-1 uppercase tracking-wider">
-              Delhivery · Palam Vihar RPC · <span className="text-[#F9A825] font-black italic">By Ashu</span>
-            </p>
-          </div>
-        </div>
-
-        <div className="hidden lg:flex flex-col items-center">
-          <span className="text-[9px] font-black text-[#6B8CAE] uppercase tracking-[0.25em] mb-0.5">FIELD OPERATIONS DASHBOARD</span>
-          <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Manage · Track · Export</span>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-[#2E7D32]/20 px-3 py-1 rounded-full border border-[#2E7D32]/30">
-            <div className="w-1.5 h-1.5 bg-[#2E7D32] rounded-full animate-pulse shadow-[0_0_8px_#2E7D32]" />
-            <span className="text-[9px] font-black text-[#6EE7A6] uppercase tracking-widest">Live</span>
-          </div>
-          {currentSession && (
-            <div className="bg-[#F9A825]/20 px-3 py-1 rounded-full border border-[#F9A825]/30 text-[9px] font-mono font-black text-[#F9A825] uppercase">
-              {currentSession.data.length} ROWS
+      {/* Sticky Header Wrapper */}
+      <div className="fixed top-0 left-0 w-full z-[200]">
+        <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F]" />
+        
+        <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-to-br from-[#1565C0] to-blue-700 p-1.5 rounded-xl shadow-lg border border-white/10">
+              <Truck className="w-5 h-5 text-white" />
             </div>
-          )}
-        </div>
-      </header>
+            <div className="flex flex-col">
+              <h1 className="text-[15px] font-[800] tracking-tight leading-none uppercase">POD Management Tool</h1>
+              <p className="text-[9px] text-[#94A3B8] font-bold mt-1 uppercase tracking-wider">
+                Delhivery · Palam Vihar RPC · <span className="text-[#F9A825] font-black italic">By Ashu</span>
+              </p>
+            </div>
+          </div>
 
-      {/* Sticky Tabs Navigation */}
-      <nav className="bg-[#1C2333] px-6 flex gap-8 border-t border-white/5 shadow-md fixed top-[61px] w-full z-[190]">
-        {[
-          { id: "eod", label: "Daily EOD Rejection" },
-          { id: "remark", label: "EOD Rejection Remark" }
-        ].map(tab => (
-          <button 
-            key={tab.id}
-            onClick={() => { setActiveTab(tab.id as any); setStatusFilter("all"); setActiveRemarkChip(null); }}
-            className={cn(
-              "py-3 text-[11px] font-black uppercase tracking-[0.08em] transition-all relative outline-none",
-              activeTab === tab.id ? "text-white" : "text-[#94A3B8] hover:text-slate-300"
+          <div className="hidden lg:flex flex-col items-center">
+            <span className="text-[9px] font-black text-[#6B8CAE] uppercase tracking-[0.25em] mb-0.5">FIELD OPERATIONS DASHBOARD</span>
+            <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Manage · Track · Export</span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-[#2E7D32]/20 px-3 py-1 rounded-full border border-[#2E7D32]/30">
+              <div className="w-1.5 h-1.5 bg-[#2E7D32] rounded-full animate-pulse shadow-[0_0_8px_#2E7D32]" />
+              <span className="text-[9px] font-black text-[#6EE7A6] uppercase tracking-widest">Live</span>
+            </div>
+            {currentSession && (
+              <div className="bg-[#F9A825]/20 px-3 py-1 rounded-full border border-[#F9A825]/30 text-[9px] font-mono font-black text-[#F9A825] uppercase">
+                {currentSession.data.length} ROWS
+              </div>
             )}
-          >
-            {tab.label}
-            {activeTab === tab.id && <div className="absolute bottom-0 left-0 w-full h-[3px] bg-[#F9A825] rounded-t-full shadow-lg" />}
-          </button>
-        ))}
-      </nav>
+          </div>
+        </header>
+
+        <nav className="bg-[#1C2333] px-6 flex gap-8 border-t border-white/5 shadow-md">
+          {[
+            { id: "eod", label: "Daily EOD Rejection" },
+            { id: "remark", label: "EOD Rejection Remark" }
+          ].map(tab => (
+            <button 
+              key={tab.id}
+              onClick={() => { setActiveTab(tab.id as any); setStatusFilter("all"); setActiveRemarkChip(null); }}
+              className={cn(
+                "py-3 text-[11px] font-black uppercase tracking-[0.08em] transition-all relative outline-none",
+                activeTab === tab.id ? "text-white" : "text-[#94A3B8] hover:text-slate-300"
+              )}
+            >
+              {tab.label}
+              {activeTab === tab.id && <div className="absolute bottom-0 left-0 w-full h-[3px] bg-[#F9A825] rounded-t-full shadow-lg" />}
+            </button>
+          ))}
+        </nav>
+      </div>
 
       <main className="pt-[130px] p-6 max-w-[1360px] mx-auto space-y-6">
         {activeTab === "eod" ? (
@@ -383,11 +451,6 @@ export default function PODTool() {
                   <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">DATE</label>
                   <input type="date" value={setupData.date} onChange={(e) => setSetupData({...setupData, date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold" />
                 </div>
-                <div className="flex items-end">
-                  <button className="bg-[#1565C0] hover:bg-[#0D47A1] text-white px-6 py-2.5 rounded-xl font-bold text-[12px] uppercase tracking-widest flex items-center gap-2 transition-all shadow-md active:scale-95">
-                    <CheckCircle2 className="w-4 h-4" /> Save Session
-                  </button>
-                </div>
               </div>
               
               <div className="border-2 border-dashed border-[#CBD5E1] rounded-2xl p-8 text-center bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD] transition-all cursor-pointer relative">
@@ -397,12 +460,6 @@ export default function PODTool() {
                     <Download className="w-8 h-8 text-primary/40 mx-auto" />
                     <p className="text-[14px] font-[600] text-[#111827]">Drop Delhivery export file here, or click to upload</p>
                     <p className="text-[10px] text-[#64748B] uppercase tracking-widest">Data will be saved automatically for current session</p>
-                    <div className="flex justify-center gap-4 mt-2">
-                       <span className="text-[9px] font-bold text-slate-400">.xlsx</span>
-                       <span className="text-[9px] font-bold text-slate-400">.xls</span>
-                       <span className="text-[9px] font-bold text-slate-400">.csv</span>
-                       <span className="text-[9px] font-bold text-slate-400">.ods</span>
-                    </div>
                   </div>
                 }
               </div>
@@ -412,9 +469,9 @@ export default function PODTool() {
             {sessions.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-[10px] font-black text-[#1C2333] uppercase tracking-[0.2em]">ALL FE SESSIONS — SAVED DATA</h2>
-                  <button onClick={handleClearAllSessions} className="text-[10px] font-black text-[#D32F2F] uppercase tracking-widest flex items-center gap-2 hover:underline pr-2 bg-red-50/50 px-3 py-1.5 rounded-lg border border-red-100">
-                    <Trash2 className="w-3.5 h-3.5" /> Clear All Sessions (New Day)
+                  <h2 className="text-[10px] font-black text-[#1C2333] uppercase tracking-[0.2em]">ALL FE SESSIONS</h2>
+                  <button onClick={handleClearAllSessions} className="text-[10px] font-black text-[#D32F2F] uppercase tracking-widest flex items-center gap-2 hover:underline pr-2">
+                    <Trash2 className="w-3.5 h-3.5" /> Clear All Sessions
                   </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -443,29 +500,31 @@ export default function PODTool() {
             )}
 
             {currentSession && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="flex flex-col">
-                   <p className="text-[10px] font-black text-[#1565C0] uppercase tracking-[0.2em] mb-3">
-                     CURRENT: <span className="text-[#1C2333] font-black">{currentSession.feName.toUpperCase()}</span> — <span className="text-[#1C2333] font-black">{currentSession.dspId}</span>
+              <div className="space-y-6">
+                <div>
+                   <p className="text-[10px] font-black text-[#1565C0] uppercase tracking-[0.2em] mb-3 ml-1">
+                     CURRENT: <span className="text-[#1C2333]">{currentSession.feName.toUpperCase()} — {currentSession.dspId}</span>
                    </p>
-                   <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden flex divide-x divide-slate-100 h-[80px]">
+                   {/* Colourfull Status Tabs */}
+                   <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden flex h-[90px]">
                      {[
-                       { id: 'all', label: 'All', val: stats.total, colorClass: 'text-[#1565C0]', activeBg: 'bg-white', activeBorder: 'border-[#1565C0]' },
-                       { id: 'pending', label: 'Pending', val: stats.pending, colorClass: 'text-[#F9A825]', activeBg: 'bg-[#FFFDE7]', activeBorder: 'border-[#F9A825]' },
-                       { id: 'dispatched', label: 'Dispatch', val: stats.dispatched, colorClass: 'text-[#1565C0]', activeBg: 'bg-white', activeBorder: 'border-[#1565C0]' },
-                       { id: 'rto', label: 'RTO', val: stats.rto, colorClass: 'text-[#D32F2F]', activeBg: 'bg-[#FFF5F5]', activeBorder: 'border-[#D32F2F]' },
-                       { id: 'dto', label: 'DTO', val: stats.dto, colorClass: 'text-[#2E7D32]', activeBg: 'bg-[#F0FDF4]', activeBorder: 'border-[#2E7D32]' }
-                     ].map(t => (
+                       { id: 'all', label: 'All', val: stats.total, color: 'text-[#1565C0]', active: 'bg-white border-[#1565C0]' },
+                       { id: 'pending', label: 'Pending', val: stats.pending, color: 'text-[#F9A825]', active: 'bg-[#FFFDE7] border-[#F9A825]' },
+                       { id: 'dispatched', label: 'Dispatch', val: stats.dispatched, color: 'text-[#1565C0]', active: 'bg-white border-[#1565C0]' },
+                       { id: 'rto', label: 'RTO', val: stats.rto, color: 'text-[#D32F2F]', active: 'bg-[#FFF5F5] border-[#D32F2F]' },
+                       { id: 'dto', label: 'DTO', val: stats.dto, color: 'text-[#2E7D32]', active: 'bg-[#F0FDF4] border-[#2E7D32]' }
+                     ].map((t, i) => (
                        <button 
                          key={t.id} 
                          onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); }}
                          className={cn(
-                           "flex-1 flex flex-col items-center justify-center transition-all border-b-[3.5px] relative",
-                           statusFilter === t.id ? `${t.activeBg} ${t.activeBorder}` : "border-transparent text-slate-300"
+                           "flex-1 flex flex-col items-center justify-center transition-all border-b-[4px] relative",
+                           i !== 4 && "border-r border-slate-100",
+                           statusFilter === t.id ? t.active : "border-transparent bg-white hover:bg-slate-50"
                          )}
                        >
-                         <span className={cn("text-[26px] font-[800] leading-none", statusFilter === t.id ? t.colorClass : 'text-slate-400')}>{t.val}</span>
-                         <span className="text-[9px] font-black uppercase mt-1 tracking-[0.1em]">{t.label}</span>
+                         <span className={cn("text-[26px] font-[900] leading-none mb-1", statusFilter === t.id ? t.color : 'text-slate-400')}>{t.val}</span>
+                         <span className={cn("text-[9px] font-black uppercase tracking-[0.1em]", statusFilter === t.id ? t.color : 'text-slate-500')}>{t.label}</span>
                        </button>
                      ))}
                    </div>
@@ -492,7 +551,7 @@ export default function PODTool() {
                                 ? "bg-[#1565C0] text-white border-[#1565C0] shadow-md" 
                                 : isReject 
                                   ? "bg-[#FFF5F5] border-[#FFCDD2] text-[#D32F2F] hover:bg-red-100"
-                                  : "bg-[#F3F4F6] border-[#E5E7EB] text-[#374151] hover:border-[#1565C0] hover:text-[#1565C0] hover:bg-[#F0F7FF]"
+                                  : "bg-[#F3F4F6] border-[#E5E7EB] text-[#374151] hover:border-[#1565C0] hover:text-[#1565C0]"
                             )}
                           >
                             <span>{stat.text || "No Remark"}</span>
@@ -506,8 +565,8 @@ export default function PODTool() {
 
                 <div className="flex items-center justify-between">
                   <div className="flex gap-2">
-                    <button onClick={downloadExcel} className="bg-[#388E3C] hover:bg-[#2E7D32] text-white px-5 py-2 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Download className="w-4 h-4" /> Download Excel</button>
-                    <button onClick={copyTable} className="bg-[#1976D2] hover:bg-[#1565C0] text-white px-5 py-2 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Copy className="w-4 h-4" /> Copy Table</button>
+                    <button onClick={downloadExcel} className="bg-[#388E3C] hover:bg-[#2E7D32] text-white px-5 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Download className="w-4 h-4" /> Download Excel</button>
+                    <button onClick={copyTable} className="bg-[#1976D2] hover:bg-[#1565C0] text-white px-5 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Copy className="w-4 h-4" /> Copy Table</button>
                   </div>
                   <button onClick={() => { setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: []} : s)); }} className="text-[11px] font-black text-slate-400 hover:text-red-500 uppercase tracking-widest px-4 outline-none">Clear Session</button>
                 </div>
@@ -521,11 +580,7 @@ export default function PODTool() {
                     <div className="flex items-center gap-4">
                       <div className="relative">
                         <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input type="text" placeholder="Search AWB / Client..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-white border border-slate-200 rounded-full pl-9 pr-4 py-1.5 text-[11px] font-bold outline-none focus:border-primary w-[220px] shadow-inner" />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <input type="checkbox" className="accent-primary" />
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select All</span>
+                        <input type="text" placeholder="Search AWB..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-white border border-slate-200 rounded-full pl-9 pr-4 py-1.5 text-[11px] font-bold outline-none focus:border-primary w-[220px] shadow-inner" />
                       </div>
                     </div>
                   </div>
@@ -534,13 +589,13 @@ export default function PODTool() {
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="bg-[#1C2333] text-white">
-                          <th className="p-4 w-[40px] text-center border-r border-white/5"><input type="checkbox" /></th>
-                          <th className="p-4 w-[40px] border-r border-white/5 text-center"><X className="w-3.5 h-3.5 mx-auto opacity-40" /></th>
-                          <th className="p-4 w-[80px] text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">DSP ID</th>
-                          <th className="p-4 w-[160px] text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">AWB Number</th>
-                          <th className="p-4 w-[140px] text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">Client</th>
-                          <th className="p-4 w-[140px] text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">Order ID</th>
-                          <th className="p-4 text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">Remark</th>
+                          <th className="p-4 w-[40px] text-center"><input type="checkbox" /></th>
+                          <th className="p-4 w-[40px] text-center">X</th>
+                          <th className="p-4 w-[80px] text-[9.5px] uppercase font-[700] tracking-widest">DSP ID</th>
+                          <th className="p-4 w-[160px] text-[9.5px] uppercase font-[700] tracking-widest">AWB Number</th>
+                          <th className="p-4 w-[140px] text-[9.5px] uppercase font-[700] tracking-widest">Client</th>
+                          <th className="p-4 w-[140px] text-[9.5px] uppercase font-[700] tracking-widest">Order ID</th>
+                          <th className="p-4 text-[9.5px] uppercase font-[700] tracking-widest">Remark</th>
                           <th className="p-4 w-[120px] text-[9.5px] uppercase font-[700] tracking-widest">FE Name</th>
                         </tr>
                       </thead>
@@ -551,7 +606,7 @@ export default function PODTool() {
                               <tr className="bg-gradient-to-r from-[#0D1B2E] to-[#1A2F4A] border-y border-white/5">
                                 <td colSpan={8} className="p-3 px-5">
                                   <div className="flex items-center gap-3">
-                                    <Star className="w-3.5 h-3.5 text-[#1565C0] fill-current" />
+                                    <Star className="w-3.5 h-3.5 text-[#F9A825] fill-current" />
                                     <span className="text-[10px] font-black text-white uppercase tracking-[0.1em]">{remark}</span>
                                     <span className="px-2 py-0.5 bg-[#F9A825] text-white rounded text-[9px] font-black uppercase shadow-sm">{rows.length} PKT</span>
                                   </div>
@@ -590,34 +645,27 @@ export default function PODTool() {
             )}
           </div>
         ) : (
-          /* Module 2: Remark Replacer Redesign */
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-7 space-y-6">
               <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200">
                 <h2 className="text-[14px] font-[800] text-[#1C2333] flex items-center gap-2 mb-6"><FileSpreadsheet className="w-5 h-5 text-[#2E7D32]" /> Remark Replacer Dashboard</h2>
-                
                 <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD] transition-all cursor-pointer relative">
-                  <input type="file" disabled={isProcessing} className="absolute inset-0 opacity-0 cursor-pointer z-20" accept=".xlsx,.xls,.csv,.tsv" />
-                  {isProcessing ? (
-                    <div className="flex flex-col items-center gap-3">
-                       <Loader2 className="w-10 h-10 text-green-600 animate-spin" />
-                       <p className="text-[12px] font-[700] text-green-600 uppercase tracking-widest">Processing file...</p>
-                    </div>
-                  ) : (
+                  <input type="file" disabled={isProcessing} onChange={handleReplacerUpload} className="absolute inset-0 opacity-0 cursor-pointer z-20" />
+                  {isProcessing ? <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto" /> : 
                     <div className="space-y-3">
                       <Download className="w-10 h-10 text-primary/40 mx-auto" />
                       <p className="text-[15px] font-[700] text-[#111827]">Upload EOD Rejection File</p>
-                      <p className="text-[11px] text-[#64748B] mt-1 tracking-wide">Excel or CSV formats supported</p>
+                      <p className="text-[11px] text-[#64748B]">Keep original structure, only replace remarks</p>
                     </div>
-                  )}
+                  }
                 </div>
               </div>
 
               {replacerData.length > 0 && (
                 <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <button className="bg-[#2E7D32] hover:bg-[#1B5E20] text-white px-6 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Download className="w-4 h-4" /> Download Official Excel</button>
-                    <button className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:underline px-4">Clear Preview</button>
+                    <button onClick={downloadReplacerExcel} className="bg-[#2E7D32] hover:bg-[#1B5E20] text-white px-6 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"><Download className="w-4 h-4" /> Download Official Excel</button>
+                    <button onClick={() => setReplacerData([])} className="text-[10px] font-black text-red-500 uppercase tracking-widest px-4">Clear Preview</button>
                   </div>
                   <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
                     <table className="w-full text-left border-collapse text-[11px]">
@@ -647,7 +695,7 @@ export default function PODTool() {
               <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden sticky top-[130px]">
                 <div className="bg-[#2E7D32] p-4 text-white shadow-md">
                   <h3 className="text-[11px] font-[800] uppercase tracking-widest flex items-center gap-2">Built-in Remark Mapping</h3>
-                  <p className="text-[9px] text-green-100 mt-0.5">Auto-replace NSL Remarks with Official Remarks</p>
+                  <p className="text-[9px] text-green-100 mt-0.5">NSL Remarks → Official Remarks</p>
                 </div>
                 <div className="p-4 overflow-y-auto max-h-[70vh] space-y-3 custom-scrollbar">
                   {Object.entries(REMARK_MAPPING).map(([nsl, official]) => (
@@ -676,7 +724,6 @@ export default function PODTool() {
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #F1F5F9; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
-        input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         .select-auto { user-select: auto !important; }
       `}</style>
     </div>
@@ -684,28 +731,14 @@ export default function PODTool() {
 }
 
 function DataRow({ row, idx, isFirstInGroup, onDelete }: { row: PODRow, idx: number, isFirstInGroup: boolean, onDelete: (id: string) => void }) {
-  const handleCopyAWB = () => {
-    navigator.clipboard.writeText(row.awb);
-  };
-
   return (
     <tr className={cn("border-b border-slate-100 transition-colors group", row.isIntact ? "bg-[#FFF5F5]" : "hover:bg-[#F0F7FF]")}>
       <td className="p-3 text-center"><input type="checkbox" className="accent-[#1565C0]" /></td>
       <td className="p-3 text-center">
-        <button 
-          onClick={() => onDelete(row.id)}
-          className="text-slate-300 hover:text-red-500 cursor-pointer transition-colors outline-none"
-        >
-          <Trash2 className="w-3.5 h-3.5 mx-auto" />
-        </button>
+        <button onClick={() => onDelete(row.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button>
       </td>
       <td className="p-3 font-mono text-[11.5px] font-bold text-slate-400">{isFirstInGroup ? row.dspId : ""}</td>
-      <td 
-        onClick={handleCopyAWB}
-        className="p-3 font-mono text-[11.5px] font-[600] text-[#1565C0] cursor-pointer hover:underline underline-offset-4 decoration-[#1565C0]/30"
-      >
-        {row.awb}
-      </td>
+      <td onClick={() => navigator.clipboard.writeText(row.awb)} className="p-3 font-mono text-[11.5px] font-[600] text-[#1565C0] cursor-pointer hover:underline">{row.awb}</td>
       <td className="p-3 text-[11px] font-[500] text-[#374151] truncate max-w-[140px]">{row.client}</td>
       <td className="p-3 text-[11px] font-[500] text-[#374151] truncate max-w-[140px]">{row.orderId}</td>
       <td className="p-3">
