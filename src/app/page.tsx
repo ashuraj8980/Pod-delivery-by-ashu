@@ -19,9 +19,9 @@ import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
- * @fileOverview Delhivery POD Management Tool - Enterprise Edition (No-Freeze & Flexible)
+ * @fileOverview Delhivery POD Management Tool - Enterprise Edition (Zero-Freeze & Structure Preserved)
  * Optimized for Palam Vihar RPC. Built for Ashu.
- * RESET ON RELOAD: No persistent storage. Zero-Freeze processing.
+ * RESET ON RELOAD: No persistent storage. Asynchronous processing for heavy files.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -188,6 +188,7 @@ export default function PODTool() {
     const reader = new FileReader();
     
     reader.onload = (evt) => {
+      // Release main thread
       setTimeout(() => {
         try {
           const data = new Uint8Array(evt.target?.result as ArrayBuffer);
@@ -224,7 +225,7 @@ export default function PODTool() {
             };
           }).filter(row => row.awb.length >= 3 && row.status !== "unknown");
 
-          if (parsedRows.length === 0) throw new Error("No valid shipments found in file");
+          if (parsedRows.length === 0) throw new Error("No valid shipments found in file. Please ensure AWB and Status columns exist.");
 
           const newSession: Session = {
             id: crypto.randomUUID(),
@@ -292,6 +293,7 @@ export default function PODTool() {
   const copyTable = () => {
     const rows = filteredRows;
     if (!rows.length || !currentSession) return;
+    // Format according to reference: tab separated, DSP only on first row
     const text = rows.map((r, i) => `${r.date}\t${i === 0 ? currentSession.dspId : ""}\t${r.awb}\t${r.client}\t${r.orderId}\t${r.remark}\t${r.feName}`).join("\n");
     navigator.clipboard.writeText(text).then(() => showToast(`Copied ${rows.length} rows`, "ok"));
   };
@@ -306,7 +308,7 @@ export default function PODTool() {
     const reader = new FileReader();
     
     reader.onload = (evt) => {
-      // Zero-Freeze: Release the UI thread immediately
+      // Async processing to prevent freeze
       setTimeout(() => {
         try {
           const data = new Uint8Array(evt.target?.result as ArrayBuffer);
@@ -314,11 +316,11 @@ export default function PODTool() {
           const ws = wb.Sheets[wb.SheetNames[0]];
           const rawData = XLSX.utils.sheet_to_json(ws, { defval: "" });
           
-          if (!Array.isArray(rawData) || rawData.length === 0) throw new Error("Empty file content");
+          if (!Array.isArray(rawData) || rawData.length === 0) throw new Error("This file appears to be empty.");
 
           const headers = Object.keys(rawData[0]);
           
-          // Ultra-Flexible Column Detection (Aggressive search)
+          // Fuzzy Column Detection
           const remarkKey = headers.find(h => {
             const clean = h.toLowerCase().replace(/[\s_-]/g, "");
             return clean.includes("remark") || clean.includes("nsl") || clean.includes("statuscomment");
@@ -326,11 +328,12 @@ export default function PODTool() {
 
           const awbKey = headers.find(h => {
             const clean = h.toLowerCase().replace(/[\s_-]/g, "");
-            return clean.includes("awb") || clean.includes("waybill") || clean.includes("waybillno");
+            return clean.includes("awb") || clean.includes("waybill") || clean.includes("waybillno") || clean.includes("awbno");
           }) || "";
 
-          if (!remarkKey) {
-            throw new Error("Remark column (e.g. 'Remarks Of NSL') not found. Please ensure your sheet has a remark header.");
+          // Strict Validation before processing
+          if (!remarkKey || !awbKey) {
+            throw new Error("This does not appear to be a Delhivery EOD file. Please upload a sheet containing AWB Number and Remark columns.");
           }
 
           const processed = rawData.map(row => {
@@ -350,6 +353,7 @@ export default function PODTool() {
             const newRow = { ...row };
             newRow[remarkKey] = replaced;
             
+            // Fix AWB notation in all instances
             if (awbKey) {
               newRow[awbKey] = fixAWB(row[awbKey]);
             }
@@ -365,7 +369,7 @@ export default function PODTool() {
           setReplacerMeta({ headers, remarkKey });
           showToast(`Processed ${processed.length} rows`, "ok");
         } catch (err: any) {
-          setUploadError(err.message || "Error processing file");
+          setUploadError(err.message || "Error processing file. Please check structure.");
           showToast("Validation Failed", "err");
         } finally {
           setIsProcessing(false);
@@ -837,4 +841,3 @@ function DataRow({ row, idx, isFirstInGroup, onDelete }: { row: PODRow, idx: num
     </tr>
   );
 }
-    
