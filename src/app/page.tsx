@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { 
   Truck, 
   Trash2, 
@@ -14,7 +14,8 @@ import {
   Search,
   Star,
   Plus,
-  AlertCircle
+  AlertCircle,
+  ArrowRight
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,7 @@ interface PODRow {
   date: string;
   selected?: boolean;
   isIntact?: boolean;
+  originalData?: any; // To keep full structure for Module 2
 }
 
 interface Session {
@@ -90,6 +92,7 @@ export default function PODTool() {
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
+    // NO LOCALSTORAGE LOAD - WE WANT A FRESH START
   }, []);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err' | 'info') => {
@@ -188,6 +191,7 @@ export default function PODTool() {
     const reader = new FileReader();
     
     reader.onload = (evt) => {
+      // Async processing to prevent UI freeze
       setTimeout(() => {
         try {
           const bstr = evt.target?.result;
@@ -305,6 +309,7 @@ export default function PODTool() {
     setUploadError(null);
     const reader = new FileReader();
     reader.onload = (evt) => {
+      // Async to prevent freeze
       setTimeout(() => {
         try {
           const bstr = evt.target?.result;
@@ -507,14 +512,14 @@ export default function PODTool() {
                    <p className="text-[10px] font-black text-[#1565C0] uppercase tracking-[0.2em] mb-3 ml-1">
                      CURRENT: <span className="text-[#1C2333]">{currentSession.feName.toUpperCase()} — {currentSession.dspId}</span>
                    </p>
-                   {/* Colourful Status Tabs */}
+                   {/* Colourful Status Tabs - ALWAYS COLOURFUL NUMBERS */}
                    <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden flex h-[90px]">
                      {[
-                       { id: 'all', label: 'All', val: stats.total, color: 'text-[#1565C0]', active: 'bg-white border-[#1565C0]' },
-                       { id: 'pending', label: 'Pending', val: stats.pending, color: 'text-[#F9A825]', active: 'bg-[#FFFDE7] border-[#F9A825]' },
-                       { id: 'dispatched', label: 'Dispatch', val: stats.dispatched, color: 'text-[#1565C0]', active: 'bg-white border-[#1565C0]' },
-                       { id: 'rto', label: 'RTO', val: stats.rto, color: 'text-[#D32F2F]', active: 'bg-[#FFF5F5] border-[#D32F2F]' },
-                       { id: 'dto', label: 'DTO', val: stats.dto, color: 'text-[#2E7D32]', active: 'bg-[#F0FDF4] border-[#2E7D32]' }
+                       { id: 'all', label: 'All', val: stats.total, color: 'text-[#1565C0]', activeBg: 'bg-white', activeBorder: 'border-[#1565C0]' },
+                       { id: 'pending', label: 'Pending', val: stats.pending, color: 'text-[#F9A825]', activeBg: 'bg-[#FFFDE7]', activeBorder: 'border-[#F9A825]' },
+                       { id: 'dispatched', label: 'Dispatch', val: stats.dispatched, color: 'text-[#1565C0]', activeBg: 'bg-white', activeBorder: 'border-[#1565C0]' },
+                       { id: 'rto', label: 'RTO', val: stats.rto, color: 'text-[#D32F2F]', activeBg: 'bg-[#FFF5F5]', activeBorder: 'border-[#D32F2F]' },
+                       { id: 'dto', label: 'DTO', val: stats.dto, color: 'text-[#2E7D32]', activeBg: 'bg-[#F0FDF4]', activeBorder: 'border-[#2E7D32]' }
                      ].map((t, i) => (
                        <button 
                          key={t.id} 
@@ -522,11 +527,11 @@ export default function PODTool() {
                          className={cn(
                            "flex-1 flex flex-col items-center justify-center transition-all border-b-[4px] relative",
                            i !== 4 && "border-r border-slate-100",
-                           statusFilter === t.id ? t.active : "border-transparent bg-white hover:bg-slate-50"
+                           statusFilter === t.id ? `${t.activeBg} ${t.activeBorder}` : "border-transparent bg-white hover:bg-slate-50"
                          )}
                        >
-                         <span className={cn("text-[26px] font-[900] leading-none mb-1 transition-colors", statusFilter === t.id ? t.color : 'text-slate-400')}>{t.val}</span>
-                         <span className={cn("text-[9px] font-black uppercase tracking-[0.1em] transition-colors", statusFilter === t.id ? t.color : 'text-slate-500')}>{t.label}</span>
+                         <span className={cn("text-[26px] font-[900] leading-none mb-1 transition-colors", t.color)}>{t.val}</span>
+                         <span className={cn("text-[9px] font-black uppercase tracking-[0.1em] text-slate-500", statusFilter === t.id && t.color)}>{t.label}</span>
                        </button>
                      ))}
                    </div>
@@ -771,7 +776,6 @@ function DataRow({ row, idx, isFirstInGroup, onDelete }: { row: PODRow, idx: num
       <td className="p-3 font-mono text-[11.5px] font-bold text-slate-400">{isFirstInGroup ? row.dspId : ""}</td>
       <td onClick={() => {
         navigator.clipboard.writeText(row.awb);
-        // Simple success feedback could be added here if needed
       }} className="p-3 font-mono text-[11.5px] font-[600] text-[#1565C0] cursor-pointer hover:underline">{row.awb}</td>
       <td className="p-3 text-[11px] font-[500] text-[#374151] truncate max-w-[140px]">{row.client}</td>
       <td className="p-3 text-[11px] font-[500] text-[#374151] truncate max-w-[140px]">{row.orderId}</td>
