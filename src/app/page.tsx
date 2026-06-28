@@ -13,9 +13,7 @@ import {
   Search,
   Star,
   AlertCircle,
-  CheckCircle2,
-  ArrowRight,
-  RefreshCw
+  ArrowRight
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -85,6 +83,7 @@ export default function PODTool() {
   const [searchTerm, setSearchTerm] = useState("");
   const [uploadError, setUploadError] = useState<string | null>(null);
   
+  // Replacer state
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
 
@@ -837,3 +836,4 @@ function DataRow({ row, idx, isFirstInGroup, onDelete }: { row: PODRow, idx: num
     </tr>
   );
 }
+    
