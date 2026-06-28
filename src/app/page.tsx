@@ -1,31 +1,25 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { 
   Truck, 
   Trash2, 
   Download, 
   Copy, 
   X, 
-  User,
-  Hash,
-  CheckCircle2,
-  FileSpreadsheet,
-  Layers,
-  ArrowRight,
-  Info,
-  Calendar,
-  Filter,
-  Loader2,
-  ChevronRight,
-  AlertCircle
+  CheckCircle2, 
+  FileSpreadsheet, 
+  Filter, 
+  Loader2, 
+  Search,
+  Star
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
- * @fileOverview Delhivery POD Management Tool v15.0 (Enterprise Logistics Edition)
+ * @fileOverview Delhivery POD Management Tool v20.0 (Enterprise Logistics Edition)
  * Optimized for Palam Vihar RPC. Built for Ashu.
  */
 
@@ -43,7 +37,6 @@ const STATUS_MAP: Record<string, string> = {
 const REMARK_MAPPING: Record<string, string> = {
   "Incomplete address & contact details": "Return Address Not Found (Need To New Contact Number)",
   "On Hold. Recipient unable to Accept Delivery": "Client Out Of Station (Receive The Shipment After 3 Days)",
-  "On Hold. Recipient unable to Accept Delivery for 5 days": "Client Out Of Station (Receive The Shipment After 3 Days)",
   "Not Attempted": "Not Attempted To Client",
   "Seller/CWH permanently closed": "Seller/CWH permanently closed",
   "Recipient unavailable.Establishment closed": "Client Office Found Close",
@@ -78,14 +71,6 @@ interface Session {
   timestamp: number;
 }
 
-interface ReplacerMeta {
-  total: number;
-  replaced: number;
-  missing: number;
-  remarkKey: string;
-  headers: string[];
-}
-
 export default function PODTool() {
   const [activeTab, setActiveTab] = useState<"eod" | "remark">("eod");
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -95,16 +80,28 @@ export default function PODTool() {
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
   const [isMounted, setIsMounted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
   
   // Module 2 State
   const [replacerData, setReplacerData] = useState<any[]>([]);
-  const [replacerMeta, setReplacerMeta] = useState<ReplacerMeta | null>(null);
-  const [replacerError, setReplacerError] = useState<{title: string, msg: string} | null>(null);
+  const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
+  const [replacerError, setReplacerError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) setSessions(parsed);
+      } catch (e) {}
+    }
   }, []);
+
+  useEffect(() => {
+    if (isMounted) localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+  }, [sessions, isMounted]);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err' | 'info') => {
     if (!isMounted) return;
@@ -138,20 +135,55 @@ export default function PODTool() {
     return str.replace(/\.0$/, "");
   };
 
-  const copyToClipboard = (text: string, label: string = "Copied") => {
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      showToast(`${label}: ${text.substring(0, 15)}...`, "ok");
-    }).catch(() => {
-      const textArea = document.createElement("textarea");
-      textArea.value = text;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand("copy");
-      textArea.remove();
-      showToast(`${label}: ${text.substring(0, 15)}...`, "ok");
+  const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
+
+  const getVisibleRows = useCallback(() => {
+    if (!currentSession) return [];
+    let rows = currentSession.data;
+    
+    if (statusFilter === 'pending') rows = rows.filter(r => r.status === 'pending');
+    else if (statusFilter === 'dispatched') rows = rows.filter(r => r.status === 'dispatched' || r.status === 'dispatch');
+    else if (statusFilter === 'rto') rows = rows.filter(r => r.status === 'rto');
+    else if (statusFilter === 'dto') rows = rows.filter(r => r.status === 'dto' || r.status === 'delivered');
+
+    if (activeRemarkChip !== null) {
+      rows = rows.filter(r => (r.remark || '') === activeRemarkChip);
+    }
+    
+    if (searchTerm) {
+      const s = searchTerm.toLowerCase();
+      rows = rows.filter(r => r.awb.includes(s) || r.client.toLowerCase().includes(s) || r.orderId.toLowerCase().includes(s));
+    }
+    
+    return rows;
+  }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
+
+  const filteredRows = useMemo(() => getVisibleRows(), [getVisibleRows]);
+
+  const stats = useMemo(() => {
+    if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0, intact: 0 };
+    return {
+      total: currentSession.data.length,
+      pending: currentSession.data.filter(r => r.status === 'pending').length,
+      dispatched: currentSession.data.filter(r => r.status === 'dispatched' || r.status === 'dispatch').length,
+      rto: currentSession.data.filter(r => r.status === 'rto').length,
+      dto: currentSession.data.filter(r => r.status === 'dto' || r.status === 'delivered').length,
+      intact: currentSession.data.filter(r => r.isIntact).length
+    };
+  }, [currentSession]);
+
+  const pendingRemarkStats = useMemo(() => {
+    if (!currentSession) return [];
+    const pending = currentSession.data.filter(r => r.status === 'pending');
+    const counts: Record<string, number> = {};
+    pending.forEach(r => {
+      const rem = r.remark || '';
+      counts[rem] = (counts[rem] || 0) + 1;
     });
-  };
+    return Object.entries(counts)
+      .map(([text, count]) => ({ text, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [currentSession]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!setupData.feName || !setupData.dspId) {
@@ -164,7 +196,6 @@ export default function PODTool() {
 
     setIsProcessing(true);
     const reader = new FileReader();
-
     reader.onload = (evt) => {
       setTimeout(() => {
         try {
@@ -173,7 +204,7 @@ export default function PODTool() {
           const ws = wb.Sheets[wb.SheetNames[0]];
           const rawData = XLSX.utils.sheet_to_json(ws);
           
-          if (!Array.isArray(rawData) || rawData.length === 0) throw new Error("File empty or invalid");
+          if (!Array.isArray(rawData) || rawData.length === 0) throw new Error("File empty");
 
           const parsedRows: PODRow[] = rawData.map((row: any) => {
             const keys = Object.keys(row);
@@ -184,7 +215,7 @@ export default function PODTool() {
             const awb = fixAWB(findVal(/waybill|awb|awbnumber|waybillno/));
             const statusRaw = String(findVal(/status|currentstatus|current status/)).toLowerCase().trim();
             const status = STATUS_MAP[statusRaw] || "unknown";
-            const remark = String(findVal(/remark|remarks|remark1/));
+            const remark = String(findVal(/remark|remarks|remark1/)).trim();
             const isIntact = /reject|intact|content|barcode/i.test(remark);
 
             return {
@@ -214,10 +245,8 @@ export default function PODTool() {
             setSessions(prev => [newSession, ...prev]);
             setSelectedSessionId(newSession.id);
             showToast(`Imported ${parsedRows.length} rows!`, "ok");
-          } else {
-            showToast("No valid rows found!", "err");
           }
-        } catch (err: any) {
+        } catch (err) {
           showToast("Error parsing file!", "err");
         } finally {
           setIsProcessing(false);
@@ -239,18 +268,10 @@ export default function PODTool() {
     const extension = file.name.split('.').pop()?.toLowerCase();
 
     reader.onload = (evt) => {
-      // Release main thread to show loading state
       setTimeout(() => {
         try {
           const data = evt.target?.result;
-          let wb;
-          
-          if (extension === 'csv' || extension === 'tsv') {
-            wb = XLSX.read(data, { type: 'string' });
-          } else {
-            wb = XLSX.read(data, { type: 'array' });
-          }
-
+          let wb = XLSX.read(data, { type: extension === 'csv' || extension === 'tsv' ? 'string' : 'array' });
           const ws = wb.Sheets[wb.SheetNames[0]];
           const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
           
@@ -261,23 +282,16 @@ export default function PODTool() {
           const remarkKey = headers.find(h => /remarks of nsl|remark|remarks|nsl remark/i.test(h.replace(/[\s_-]/g, "")));
 
           if (!awbKey || !remarkKey) {
-            setReplacerError({
-              title: "Invalid File Format",
-              msg: "This does not appear to be a Delhivery EOD file. Please upload the correct rejection export file containing AWB and Remark columns."
-            });
+            setReplacerError("This does not appear to be a Delhivery EOD file. Please upload the correct rejection export file containing AWB and Remark columns.");
             setIsProcessing(false);
             return;
           }
-
-          let replacedCount = 0;
-          let missingCount = 0;
 
           const processed = rawRows.map((row: any) => {
             const oldRemark = String(row[remarkKey]).trim();
             let newRemark = oldRemark;
             let isReplaced = false;
 
-            // Mapping logic: Exact then Partial
             const exactKey = Object.keys(REMARK_MAPPING).find(k => k.toLowerCase() === oldRemark.toLowerCase());
             if (exactKey) {
               newRemark = REMARK_MAPPING[exactKey];
@@ -290,8 +304,6 @@ export default function PODTool() {
               }
             }
 
-            if (isReplaced) replacedCount++; else missingCount++;
-
             return {
               ...row,
               [remarkKey]: newRemark,
@@ -302,76 +314,23 @@ export default function PODTool() {
           });
 
           setReplacerData(processed);
-          setReplacerMeta({
-            total: processed.length,
-            replaced: replacedCount,
-            missing: missingCount,
-            remarkKey,
-            headers
-          });
-          showToast(`Processed ${processed.length} rows successfully`, "ok");
-        } catch (err: any) {
-          showToast("Could not read file. Please try again.", "err");
+          setReplacerMeta({ headers, remarkKey });
+          showToast(`Processed ${processed.length} rows`, "ok");
+        } catch (err) {
+          showToast("Could not read file.", "err");
         } finally {
           setIsProcessing(false);
         }
       }, 0);
     };
     
-    if (extension === 'csv' || extension === 'tsv') {
-      reader.readAsText(file);
-    } else {
-      reader.readAsArrayBuffer(file);
-    }
+    if (extension === 'csv' || extension === 'tsv') reader.readAsText(file);
+    else reader.readAsArrayBuffer(file);
     e.target.value = "";
   };
 
-  const getVisibleRows = useCallback(() => {
-    const currentSession = sessions.find(s => s.id === selectedSessionId);
-    if (!currentSession) return [];
-    
-    let rows = currentSession.data;
-    if (statusFilter === 'pending') rows = rows.filter(r => r.status === 'pending');
-    else if (statusFilter === 'dispatched') rows = rows.filter(r => r.status === 'dispatched' || r.status === 'dispatch');
-    else if (statusFilter === 'rto') rows = rows.filter(r => r.status === 'rto');
-    else if (statusFilter === 'dto') rows = rows.filter(r => r.status === 'dto' || r.status === 'delivered');
-
-    if (activeRemarkChip !== null) {
-      rows = rows.filter(r => (r.remark || '') === activeRemarkChip);
-    }
-    
-    return rows;
-  }, [sessions, selectedSessionId, statusFilter, activeRemarkChip]);
-
-  const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
-  const filteredRows = useMemo(() => getVisibleRows(), [getVisibleRows]);
-
-  const duplicateAWBs = useMemo(() => {
-    if (!currentSession) return new Set<string>();
-    const seen = new Set<string>();
-    const dupes = new Set<string>();
-    currentSession.data.forEach(r => {
-      if (seen.has(r.awb)) dupes.add(r.awb);
-      seen.add(r.awb);
-    });
-    return dupes;
-  }, [currentSession]);
-
-  const pendingRemarkStats = useMemo(() => {
-    if (!currentSession) return [];
-    const pending = currentSession.data.filter(r => r.status === 'pending');
-    const counts: Record<string, number> = {};
-    pending.forEach(r => {
-      const rem = r.remark || '';
-      counts[rem] = (counts[rem] || 0) + 1;
-    });
-    return Object.entries(counts)
-      .map(([text, count]) => ({ text, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [currentSession]);
-
   const downloadExcel = () => {
-    const rows = getVisibleRows();
+    const rows = filteredRows;
     if (!rows.length || !currentSession) return;
 
     const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
@@ -389,66 +348,39 @@ export default function PODTool() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "POD Report");
     
-    const filterName = activeRemarkChip ? `_${activeRemarkChip.replace(/\s+/g, '')}` : '';
-    const filename = `POD_${currentSession.dspId}_${currentSession.date}_${statusFilter.toUpperCase()}${filterName}.xlsx`;
+    const chipName = activeRemarkChip ? `_${activeRemarkChip.replace(/\s+/g, '')}` : '';
+    const filename = `POD_${currentSession.dspId}_${currentSession.date}_${statusFilter.toUpperCase()}${chipName}.xlsx`;
     XLSX.writeFile(wb, filename);
     showToast(`Downloaded ${rows.length} rows — ${statusFilter.toUpperCase()}`, "ok");
   };
 
   const downloadReplacerExcel = () => {
     if (!replacerData.length || !replacerMeta) return;
-    
     const awbKey = replacerMeta.headers.find(h => /awb|waybill|awb number|awb_number|waybillno/i.test(h.replace(/[\s_-]/g, "")));
 
     const exportData = replacerData.map(row => {
       const { __isReplaced, __oldRemark, ...rest } = row;
       const cleanRow: any = {};
       replacerMeta.headers.forEach(h => {
-        const val = rest[h];
-        if (h === awbKey) {
-          cleanRow[h] = { v: String(val), t: 's', z: '@' };
-        } else {
-          cleanRow[h] = val;
-        }
+        if (h === awbKey) cleanRow[h] = { v: String(rest[h]), t: 's', z: '@' };
+        else cleanRow[h] = rest[h];
       });
       return cleanRow;
     });
 
     const ws = XLSX.utils.json_to_sheet(exportData, { header: replacerMeta.headers });
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Replaced Remarks");
-    
-    const date = new Date().toISOString().split('T')[0];
-    XLSX.writeFile(wb, `EOD_Official_Remarks_${date}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Replaced");
+    XLSX.writeFile(wb, `EOD_Official_Remarks_${new Date().toISOString().split('T')[0]}.xlsx`);
     showToast(`Downloaded ${replacerData.length} rows`, "ok");
   };
 
   const copyTable = () => {
-    const rows = getVisibleRows();
+    const rows = filteredRows;
     if (!rows.length || !currentSession) return;
     const text = rows.map((r, i) => `${r.date}\t${i === 0 ? currentSession.dspId : ""}\t${r.awb}\t${r.client}\t${r.orderId}\t${r.remark}\t${r.feName}`).join("\n");
-    copyToClipboard(text, "Table Data Copied");
+    navigator.clipboard.writeText(text).then(() => showToast(`Copied ${rows.length} rows`, "ok"));
   };
-
-  const clearAllSessions = () => {
-    setSessions([]);
-    setSelectedSessionId(null);
-    setReplacerData([]);
-    setReplacerMeta(null);
-    showToast("System reset successfully!", "ok");
-  };
-
-  const stats = useMemo(() => {
-    if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0, intact: 0 };
-    return {
-      total: currentSession.data.length,
-      pending: currentSession.data.filter(r => r.status === 'pending').length,
-      dispatched: currentSession.data.filter(r => r.status === 'dispatched' || r.status === 'dispatch').length,
-      rto: currentSession.data.filter(r => r.status === 'rto').length,
-      dto: currentSession.data.filter(r => r.status === 'dto' || r.status === 'delivered').length,
-      intact: currentSession.data.filter(r => r.isIntact).length
-    };
-  }, [currentSession]);
 
   const groupedPendingRows = useMemo(() => {
     if (statusFilter !== 'pending' || !filteredRows.length) return null;
@@ -464,7 +396,7 @@ export default function PODTool() {
   if (!isMounted) return null;
 
   return (
-    <div className="min-h-screen bg-[#F0F4FA] font-body text-[#374151] select-auto overflow-x-hidden">
+    <div className="min-h-screen bg-[#F0F4FA] font-body text-[#374151]">
       <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F] sticky top-0 z-[100]" />
       
       <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white shadow-lg relative z-[90]">
@@ -474,15 +406,21 @@ export default function PODTool() {
           </div>
           <div className="flex flex-col">
             <h1 className="text-[15px] font-[800] tracking-tight leading-none uppercase">POD Management Tool</h1>
-            <p className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-wider">
+            <p className="text-[9px] text-[#94A3B8] font-bold mt-1 uppercase tracking-wider">
               Delhivery · Palam Vihar RPC · <span className="text-[#F9A825] font-black italic">By Ashu</span>
             </p>
           </div>
         </div>
+
+        <div className="hidden lg:flex flex-col items-center">
+          <span className="text-[9px] font-black text-[#6B8CAE] uppercase tracking-[0.2em] mb-0.5">Field Operations Dashboard</span>
+          <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Manage · Track · Export</span>
+        </div>
+
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 bg-[#2E7D32]/20 px-3 py-1 rounded-full border border-[#2E7D32]/30">
-            <div className="w-2 h-2 bg-[#2E7D32] rounded-full animate-pulse" />
-            <span className="text-[9px] font-black text-[#6EE7A6] uppercase tracking-[0.1em]">Live</span>
+            <div className="w-1.5 h-1.5 bg-[#2E7D32] rounded-full animate-pulse shadow-[0_0_8px_#2E7D32]" />
+            <span className="text-[9px] font-black text-[#6EE7A6] uppercase tracking-widest">Live</span>
           </div>
           {currentSession && (
             <div className="bg-[#F9A825]/20 px-3 py-1 rounded-full border border-[#F9A825]/30 text-[9px] font-mono font-black text-[#F9A825] uppercase">
@@ -501,7 +439,7 @@ export default function PODTool() {
             key={tab.id}
             onClick={() => { setActiveTab(tab.id as any); setStatusFilter("all"); setActiveRemarkChip(null); }}
             className={cn(
-              "py-3.5 text-[11px] font-black uppercase tracking-[0.08em] transition-all relative outline-none",
+              "py-3 text-[11px] font-black uppercase tracking-[0.08em] transition-all relative outline-none",
               activeTab === tab.id ? "text-white" : "text-[#94A3B8] hover:text-slate-300"
             )}
           >
@@ -511,293 +449,205 @@ export default function PODTool() {
         ))}
       </nav>
 
-      <main className="p-5 max-w-[1360px] mx-auto space-y-6">
+      <main className="p-6 max-w-[1360px] mx-auto space-y-6">
         {activeTab === "eod" ? (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200 space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px] flex items-center gap-2"><Hash className="w-3.5 h-3.5" /> DSP Number</label>
-                  <input 
-                    type="number" 
-                    value={setupData.dspId} 
-                    onChange={(e) => setSetupData({...setupData, dspId: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold text-[#111827] outline-none focus:border-[#1565C0] transition-all" 
-                    placeholder="Enter DSP No..." 
-                  />
+          <div className="space-y-6">
+            <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">DSP Number</label>
+                  <input type="number" value={setupData.dspId} onChange={(e) => setSetupData({...setupData, dspId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold outline-none focus:border-primary transition-all" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px] flex items-center gap-2"><User className="w-3.5 h-3.5" /> FE / Biker Name</label>
-                  <input 
-                    type="text" 
-                    value={setupData.feName} 
-                    onChange={(e) => setSetupData({...setupData, feName: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold text-[#111827] outline-none focus:border-[#1565C0] transition-all" 
-                    placeholder="Enter FE Name..." 
-                  />
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">FE / Biker Name</label>
+                  <input type="text" value={setupData.feName} onChange={(e) => setSetupData({...setupData, feName: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold outline-none focus:border-primary transition-all" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px] flex items-center gap-2"><Calendar className="w-3.5 h-3.5" /> Operation Date</label>
-                  <input 
-                    type="date" 
-                    value={setupData.date} 
-                    onChange={(e) => setSetupData({...setupData, date: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold text-[#111827] outline-none focus:border-[#1565C0]" 
-                  />
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.8px]">Date</label>
+                  <input type="date" value={setupData.date} onChange={(e) => setSetupData({...setupData, date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[13px] font-bold" />
                 </div>
               </div>
-              
-              <div 
-                className={cn(
-                  "border-2 border-dashed rounded-2xl p-8 text-center transition-all relative group overflow-hidden",
-                  (!setupData.feName || !setupData.dspId) ? "bg-slate-50 border-slate-200 opacity-50 cursor-not-allowed" : "border-[#CBD5E1] bg-[#F8FAFC] hover:border-[#1976D2] hover:bg-[#E3F2FD] cursor-pointer"
-                )}
-              >
-                <input 
-                  type="file" 
-                  disabled={!setupData.feName || !setupData.dspId || isProcessing} 
-                  onChange={handleFileUpload} 
-                  className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed z-10" 
-                  accept=".xlsx,.xls,.csv" 
-                />
-                <div className="space-y-3">
-                  {isProcessing ? (
-                    <div className="flex flex-col items-center gap-3">
-                       <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-                       <p className="text-[12px] font-[700] text-blue-600 uppercase tracking-widest">Processing...</p>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform">
-                        <Download className={cn("w-6 h-6", (!setupData.feName || !setupData.dspId) ? "text-slate-300" : "text-[#1565C0]")} />
-                      </div>
-                      <div>
-                        <p className="text-[14px] font-[600] text-[#111827]">
-                          {(!setupData.feName || !setupData.dspId) ? "Complete Setup to Upload" : "Upload Delhivery EOD Export"}
-                        </p>
-                        <p className="text-[11px] text-[#64748B] mt-1 tracking-wide uppercase">Excel or CSV formats</p>
-                      </div>
-                    </>
-                  )}
-                </div>
+              <div className="mt-6 border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD] transition-all cursor-pointer relative">
+                <input type="file" disabled={isProcessing} onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                {isProcessing ? <Loader2 className="w-10 h-10 text-primary animate-spin mx-auto" /> : 
+                  <div className="space-y-2">
+                    <Download className="w-8 h-8 text-primary mx-auto" />
+                    <p className="text-[14px] font-[600]">Upload Delhivery EOD Export</p>
+                    <p className="text-[11px] text-[#64748B]">Excel or CSV</p>
+                  </div>
+                }
               </div>
             </div>
 
             {sessions.length > 0 && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between px-1">
-                  <h2 className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.2em] flex items-center gap-2"><Layers className="w-4 h-4" /> RECENT SESSIONS</h2>
-                  <button onClick={clearAllSessions} className="text-[10px] font-black text-red-600 uppercase tracking-widest hover:underline transition-all">
-                    Clear All Sessions
+                <div className="flex items-center justify-between">
+                  <h2 className="text-[10px] font-black text-[#64748B] uppercase tracking-[0.2em]">ALL FE SESSIONS — SAVED DATA</h2>
+                  <button onClick={() => { setSessions([]); setSelectedSessionId(null); }} className="text-[10px] font-black text-red-600 uppercase tracking-widest flex items-center gap-2 hover:underline">
+                    <Trash2 className="w-3.5 h-3.5" /> Clear All Sessions (New Day)
                   </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {sessions.map(s => {
-                    const sStats = {
-                      total: s.data.length,
-                      pending: s.data.filter(r => r.status === 'pending').length,
-                      rto: s.data.filter(r => r.status === 'rto').length,
-                      dto: s.data.filter(r => r.status === 'dto' || r.status === 'delivered').length,
-                      intact: s.data.filter(r => r.isIntact).length
-                    };
-                    return (
-                      <div 
-                        key={s.id} 
-                        onClick={() => { setSelectedSessionId(s.id); setStatusFilter("all"); setActiveRemarkChip(null); }}
-                        className={cn(
-                          "bg-white p-4 rounded-xl border border-slate-200 border-l-[6px] transition-all cursor-pointer relative group flex flex-col justify-between shadow-sm hover:shadow-md",
-                          selectedSessionId === s.id ? "border-l-[#1565C0] ring-1 ring-[#1565C0]/10" : "border-l-slate-300 hover:border-l-blue-400"
-                        )}
-                      >
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); if(selectedSessionId === s.id) setSelectedSessionId(null); }}
-                          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1 text-slate-300 hover:text-red-600 transition-all"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                        <div>
-                          <p className="text-[12px] font-[800] truncate text-[#1C2333] uppercase">{s.feName}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                             <span className="text-[9px] font-mono font-bold text-slate-400">DSP: {s.dspId}</span>
-                             <span className="text-[9px] font-mono font-bold text-slate-400">·</span>
-                             <span className="text-[9px] font-mono font-bold text-slate-400">{s.date}</span>
-                          </div>
-                        </div>
-                        <div className="mt-4 grid grid-cols-5 gap-1">
-                          <div className="text-[9px] font-black py-1 rounded text-center bg-slate-100 text-slate-600">{sStats.total}</div>
-                          <div className="text-[9px] font-black py-1 rounded text-center bg-amber-50 text-amber-700">{sStats.pending}</div>
-                          <div className="text-[9px] font-black py-1 rounded text-center bg-red-50 text-red-700">{sStats.rto}</div>
-                          <div className="text-[9px] font-black py-1 rounded text-center bg-green-50 text-green-700">{sStats.dto}</div>
-                          <div className="text-[9px] font-black py-1 rounded text-center bg-rose-50 text-rose-700">{sStats.intact}</div>
-                        </div>
+                  {sessions.map(s => (
+                    <div 
+                      key={s.id} 
+                      onClick={() => setSelectedSessionId(s.id)}
+                      className={cn(
+                        "bg-white p-4 rounded-xl border-l-[3px] shadow-sm cursor-pointer relative transition-all",
+                        selectedSessionId === s.id ? "border-l-primary bg-[#F0F7FF] ring-1 ring-primary/20" : "border-l-slate-300 border-t border-r border-b border-slate-200"
+                      )}
+                    >
+                      <button onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); if(selectedSessionId === s.id) setSelectedSessionId(null); }} className="absolute top-3 right-3 text-slate-300 hover:text-red-500"><X className="w-4 h-4" /></button>
+                      <p className="text-[14px] font-[800] uppercase truncate pr-6">{s.feName}</p>
+                      <p className="text-[10px] font-mono font-bold text-slate-400 mt-0.5">{s.dspId} · {s.date}</p>
+                      <div className="flex flex-wrap gap-1.5 mt-3">
+                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-black text-slate-600">{s.data.length} total</span>
+                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-[10px] font-black text-amber-600">{s.data.filter(r => r.status === 'pending').length} pending</span>
+                        <span className="px-1.5 py-0.5 rounded bg-red-50 text-[10px] font-black text-red-600">{s.data.filter(r => r.status === 'rto').length} RTO</span>
+                        <span className="px-1.5 py-0.5 rounded bg-green-50 text-[10px] font-black text-green-600">{s.data.filter(r => r.status === 'dto' || r.status === 'delivered').length} DTO</span>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
             {currentSession && (
-              <div className="space-y-6">
-                <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap gap-4 items-center justify-between">
-                    <div className="flex gap-3">
-                      <button onClick={downloadExcel} className="bg-[#2E7D32] hover:bg-[#1B5E20] text-white px-5 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all hover:-translate-y-0.5"><Download className="w-4 h-4" /> Download Excel</button>
-                      <button onClick={copyTable} className="bg-[#1565C0] hover:bg-[#0D47A1] text-white px-5 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all hover:-translate-y-0.5"><Copy className="w-4 h-4" /> Copy Table</button>
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
+                  CURRENT: {currentSession.feName.toUpperCase()} — {currentSession.dspId}
+                </p>
+                <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden flex divide-x divide-slate-100">
+                  {[
+                    { id: 'all', label: 'All', val: stats.total, color: 'blue' },
+                    { id: 'pending', label: 'Pending', val: stats.pending, color: 'amber' },
+                    { id: 'dispatched', label: 'Dispatch', val: stats.dispatched, color: 'blue' },
+                    { id: 'rto', label: 'RTO', val: stats.rto, color: 'red' },
+                    { id: 'dto', label: 'DTO', val: stats.dto, color: 'green' }
+                  ].map(t => (
+                    <button 
+                      key={t.id} 
+                      onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); }}
+                      className={cn(
+                        "flex-1 py-5 flex flex-col items-center justify-center transition-all border-b-[3px]",
+                        statusFilter === t.id 
+                          ? (t.id === 'pending' ? 'bg-[#FFFDE7] border-amber-500' : 
+                             t.id === 'rto' ? 'bg-red-50/50 border-red-500' : 
+                             t.id === 'dto' ? 'bg-green-50/50 border-green-500' : 'bg-white border-primary')
+                          : "border-transparent text-slate-400"
+                      )}
+                    >
+                      <span className={cn("text-[26px] font-[800] leading-none", statusFilter === t.id ? (t.id === 'pending' ? 'text-amber-600' : t.id === 'rto' ? 'text-red-600' : t.id === 'dto' ? 'text-green-600' : 'text-primary') : 'text-slate-400')}>{t.val}</span>
+                      <span className="text-[9px] font-black uppercase mt-1 tracking-wider">{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex gap-2">
+                    <button onClick={downloadExcel} className="bg-[#388E3C] hover:bg-[#2E7D32] text-white px-5 py-2 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all"><Download className="w-4 h-4" /> Download Excel</button>
+                    <button onClick={copyTable} className="bg-[#1976D2] hover:bg-[#1565C0] text-white px-5 py-2 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all"><Copy className="w-4 h-4" /> Copy Table</button>
+                  </div>
+                  <button onClick={() => { setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: []} : s)); }} className="text-[11px] font-bold text-slate-400 hover:text-red-500 uppercase tracking-widest px-4">Clear Session</button>
+                </div>
+
+                {statusFilter === 'pending' && pendingRemarkStats.length > 0 && (
+                  <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200 space-y-4">
+                    <div>
+                      <h3 className="text-[10px] font-black text-[#1C2333] uppercase tracking-wider">Remark Breakdown — Pending</h3>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Click any remark chip to filter</p>
                     </div>
-                    <div className="flex items-center gap-1.5 p-1 bg-white rounded-2xl border border-slate-200">
-                      {[
-                        { id: 'all', label: 'All', val: stats.total, color: 'blue' },
-                        { id: 'pending', label: 'Pending', val: stats.pending, color: 'amber' },
-                        { id: 'dispatched', label: 'Disp', val: stats.dispatched, color: 'blue' },
-                        { id: 'rto', label: 'RTO', val: stats.rto, color: 'red' },
-                        { id: 'dto', label: 'DTO', val: stats.dto, color: 'green' }
-                      ].map(t => (
-                        <button 
-                          key={t.id} 
-                          onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); }}
-                          className={cn(
-                            "px-4 py-2.5 rounded-xl transition-all text-center min-w-[75px] border-b-[3px]",
-                            statusFilter === t.id 
-                              ? `bg-${t.color}-50 border-${t.color}-500 shadow-sm` 
-                              : `border-transparent text-[#64748B] hover:bg-slate-50`
-                          )}
-                        >
-                          <p className={cn("text-[20px] font-black leading-none", statusFilter === t.id ? `text-${t.color}-700` : "text-slate-400")}>{t.val}</p>
-                          <p className="text-[8px] font-black uppercase mt-1 tracking-tighter">{t.label}</p>
-                        </button>
-                      ))}
+                    <div className="flex flex-wrap gap-2">
+                      {pendingRemarkStats.map((stat, i) => {
+                        const isReject = /reject|intact|content|barcode/i.test(stat.text);
+                        const isActive = activeRemarkChip === stat.text;
+                        return (
+                          <button 
+                            key={i} 
+                            onClick={() => setActiveRemarkChip(isActive ? null : stat.text)}
+                            className={cn(
+                              "flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wide transition-all",
+                              isActive 
+                                ? "bg-primary text-white border-primary shadow-lg scale-105" 
+                                : "bg-[#F3F4F6] border-[#E5E7EB] text-[#374151] hover:border-primary hover:text-primary hover:bg-[#F0F7FF]"
+                            )}
+                          >
+                            <span>{stat.text || "No Remark"}</span>
+                            <span className={cn("px-1.5 rounded-full text-[9px]", isActive ? "bg-white/20 text-white" : "bg-white text-slate-500")}>{stat.count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-black text-[#1C2333] uppercase tracking-widest">{statusFilter.toUpperCase()} SHIPMENTS</span>
+                      <span className="px-2 py-0.5 bg-slate-100 rounded text-[9px] font-black text-slate-500 uppercase">{filteredRows.length} ROWS</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input type="text" placeholder="Search AWB / Client..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-full pl-9 pr-4 py-1.5 text-[11px] font-bold outline-none focus:border-primary w-[220px]" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input type="checkbox" className="accent-primary" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select All</span>
+                      </div>
                     </div>
                   </div>
 
-                  {statusFilter === 'pending' && pendingRemarkStats.length > 0 && (
-                    <div className="p-5 border-b border-slate-100 animate-in fade-in slide-in-from-top-2 duration-300">
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <h3 className="text-[11px] font-black text-[#1C2333] uppercase tracking-wider flex items-center gap-2">
-                             <Filter className="w-3.5 h-3.5 text-blue-500" /> REMARK BREAKDOWN — PENDING
-                          </h3>
-                          <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">
-                            {activeRemarkChip ? `Showing: ${activeRemarkChip || 'No Remark'}` : 'Click any remark chip to filter'}
-                          </p>
-                        </div>
-                        {activeRemarkChip !== null && (
-                          <button onClick={() => setActiveRemarkChip(null)} className="text-[10px] font-black text-blue-600 uppercase flex items-center gap-1 hover:underline">
-                            ← All Pending
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {pendingRemarkStats.map((stat, i) => {
-                          const isReject = /reject|intact|content|barcode/i.test(stat.text);
-                          const isActive = activeRemarkChip === stat.text;
-                          return (
-                            <button 
-                              key={i} 
-                              onClick={() => setActiveRemarkChip(isActive ? null : stat.text)}
-                              className={cn(
-                                "flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wide transition-all",
-                                isReject ? (isActive ? "bg-red-600 border-red-700 text-white" : "bg-red-50 border-red-100 text-red-600 hover:bg-red-100") : 
-                                isActive ? "bg-[#1565C0] border-[#1565C0] text-white shadow-md" : 
-                                "bg-slate-50 border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600"
-                              )}
-                            >
-                              <span>{stat.text || "No Remark"}</span>
-                              <span className={cn(
-                                "px-1.5 rounded-full text-[9px]",
-                                isActive ? "bg-white/20" : "bg-slate-200 text-slate-500"
-                              )}>{stat.count}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
+                  <div className="overflow-x-auto max-h-[700px] custom-scrollbar">
                     <table className="w-full text-left border-collapse">
-                      <thead className="sticky top-0 z-30">
-                        <tr className="bg-[#1C2333] text-white text-[10px] font-black uppercase tracking-widest">
-                          <th className="p-4 w-[50px] border-r border-white/5 text-center"><input type="checkbox" className="accent-blue-500" /></th>
-                          <th className="p-4 w-[100px] border-r border-white/5">DSP ID</th>
-                          <th className="p-4 w-[160px] border-r border-white/5">AWB Number</th>
-                          <th className="p-4 w-[160px] border-r border-white/5">Client</th>
-                          <th className="p-4 w-[160px] border-r border-white/5">Order ID</th>
-                          <th className="p-4 border-r border-white/5">Remark</th>
-                          <th className="p-4 w-[140px]">FE Name</th>
-                          <th className="p-4 w-[60px] text-center">Action</th>
+                      <thead>
+                        <tr className="bg-[#1C2333] text-white">
+                          <th className="p-4 w-[40px] text-center border-r border-white/5"><input type="checkbox" /></th>
+                          <th className="p-4 w-[40px] border-r border-white/5 text-center"><X className="w-3.5 h-3.5 mx-auto" /></th>
+                          <th className="p-4 w-[80px] text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">DSP ID</th>
+                          <th className="p-4 w-[160px] text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">AWB Number</th>
+                          <th className="p-4 w-[140px] text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">Client</th>
+                          <th className="p-4 w-[140px] text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">Order ID</th>
+                          <th className="p-4 text-[9.5px] uppercase font-[700] tracking-widest border-r border-white/5">Remark</th>
+                          <th className="p-4 w-[120px] text-[9.5px] uppercase font-[700] tracking-widest">FE Name</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="bg-gradient-to-r from-[#0D1B2E] to-[#1A2F4A] border-y border-white/10">
-                           <td colSpan={8} className="p-3">
-                              <div className="flex items-center justify-between">
-                                 <div className="flex items-center gap-3">
-                                    <div className="px-3 py-1 bg-yellow-500/20 rounded-lg border border-yellow-500/30 text-[11px] font-mono font-black text-yellow-500">
-                                       DSP: {currentSession.dspId}
-                                    </div>
-                                    <div className="px-2 py-0.5 bg-amber-500 text-white rounded text-[10px] font-black uppercase">
-                                       {filteredRows.length} PACKETS
-                                    </div>
-                                 </div>
-                                 <div className="flex items-center gap-4">
-                                    <span className="text-[10px] font-black text-blue-300 uppercase tracking-widest">{currentSession.feName}</span>
-                                    <span className="text-[10px] font-mono text-slate-400">{currentSession.date}</span>
-                                 </div>
-                              </div>
-                           </td>
-                        </tr>
-
                         {statusFilter === 'pending' && groupedPendingRows ? (
                           groupedPendingRows.map(([remark, rows]) => (
                             <React.Fragment key={remark}>
-                              <tr className="bg-[#1E293B] border-y border-white/5">
-                                <td colSpan={8} className="p-2 px-4">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-black text-white uppercase tracking-widest">{remark}</span>
-                                    <span className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-[9px] font-black">{rows.length} PKT</span>
+                              <tr className="bg-gradient-to-r from-[#0D1B2E] to-[#1A2F4A] border-y border-white/5">
+                                <td colSpan={8} className="p-3 px-5">
+                                  <div className="flex items-center gap-3">
+                                    <Star className="w-3.5 h-3.5 text-yellow-500 fill-current" />
+                                    <span className="text-[10px] font-black text-white uppercase tracking-[0.1em]">{remark}</span>
+                                    <span className="px-2 py-0.5 bg-amber-500 text-white rounded text-[9px] font-black uppercase shadow-sm">{rows.length} PKT</span>
                                   </div>
                                 </td>
                               </tr>
-                              {rows.map((row, idx) => (
-                                <PODRowItem 
-                                  key={row.id} 
-                                  row={row} 
-                                  idx={idx} 
-                                  isFirstInGroup={idx === 0} 
-                                  isAWBDupe={duplicateAWBs.has(row.awb)}
-                                  onDelete={() => {
-                                    setSessions(prev => prev.map(s => {
-                                      if (s.id === selectedSessionId) {
-                                        return { ...s, data: s.data.filter(r => r.id !== row.id) };
-                                      }
-                                      return s;
-                                    }));
-                                  }}
-                                  copyToClipboard={copyToClipboard}
-                                />
-                              ))}
+                              {rows.map((row, idx) => <DataRow key={row.id} row={row} idx={idx} isFirstInGroup={idx === 0} />)}
                             </React.Fragment>
                           ))
                         ) : (
-                          filteredRows.map((row, idx) => (
-                            <PODRowItem 
-                              key={row.id} 
-                              row={row} 
-                              idx={idx} 
-                              isFirstInGroup={idx === 0} 
-                              isAWBDupe={duplicateAWBs.has(row.awb)}
-                              onDelete={() => {
-                                setSessions(prev => prev.map(s => {
-                                  if (s.id === selectedSessionId) {
-                                    return { ...s, data: s.data.filter(r => r.id !== row.id) };
-                                  }
-                                  return s;
-                                }));
-                              }}
-                              copyToClipboard={copyToClipboard}
-                            />
-                          ))
+                          <>
+                            <tr className="bg-gradient-to-r from-[#0D1B2E] to-[#1A2F4A] border-y border-white/5">
+                              <td colSpan={8} className="p-3 px-5">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-[14px] font-mono font-black text-[#F9A825]">{currentSession.dspId}</span>
+                                    <span className="px-2 py-0.5 bg-amber-500 text-white rounded text-[9px] font-black uppercase">{filteredRows.length} PKT</span>
+                                  </div>
+                                  <div className="flex items-center gap-4 text-[#6B8CAE] text-[10px] font-bold uppercase tracking-widest">
+                                    <span>{currentSession.feName}</span>
+                                    <span className="w-1.5 h-1.5 bg-[#6B8CAE] rounded-full opacity-30" />
+                                    <span>{currentSession.date}</span>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                            {filteredRows.map((row, idx) => <DataRow key={row.id} row={row} idx={idx} isFirstInGroup={idx === 0} />)}
+                          </>
                         )}
                       </tbody>
                     </table>
@@ -809,72 +659,35 @@ export default function PODTool() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
             <div className="lg:col-span-7 space-y-6">
-              <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200 space-y-5">
-                <h2 className="text-[14px] font-[800] text-[#1C2333] flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-[#2E7D32]" /> Remark Replacer Dashboard</h2>
+              <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200">
+                <h2 className="text-[14px] font-[800] text-[#1C2333] flex items-center gap-2 mb-6"><FileSpreadsheet className="w-5 h-5 text-[#2E7D32]" /> Remark Replacer Dashboard</h2>
                 
                 {replacerError ? (
-                  <div className="p-6 border-2 border-red-100 bg-red-50/50 rounded-2xl space-y-4 animate-in zoom-in-95 duration-200">
+                  <div className="p-6 border-2 border-red-100 bg-red-50/50 rounded-2xl space-y-4">
                      <div className="flex items-center gap-3 text-red-600">
-                        <AlertCircle className="w-8 h-8" />
+                        <CheckCircle2 className="w-8 h-8 rotate-180" />
                         <div>
-                           <p className="text-[14px] font-black uppercase tracking-wide">{replacerError.title}</p>
-                           <p className="text-[11px] font-medium mt-1">{replacerError.msg}</p>
+                           <p className="text-[14px] font-black uppercase tracking-wide">Invalid File Format</p>
+                           <p className="text-[11px] font-medium mt-1">{replacerError}</p>
                         </div>
                      </div>
-                     <button 
-                       onClick={() => setReplacerError(null)}
-                       className="w-full bg-red-600 text-white font-black text-[11px] py-2.5 rounded-xl uppercase tracking-widest hover:bg-red-700 transition-all"
-                     >
-                        Try Again
-                     </button>
+                     <button onClick={() => setReplacerError(null)} className="w-full bg-red-600 text-white font-black text-[11px] py-2.5 rounded-xl uppercase tracking-widest hover:bg-red-700 transition-all">Try Again</button>
                   </div>
                 ) : (
-                  <div 
-                    className={cn(
-                      "border-2 border-dashed rounded-2xl p-10 text-center transition-all relative group overflow-hidden",
-                      isProcessing ? "bg-slate-50 border-slate-200 opacity-50 cursor-not-allowed" : "border-[#CBD5E1] bg-[#F8FAFC] hover:border-[#1976D2] hover:bg-[#E3F2FD] cursor-pointer"
-                    )}
-                  >
-                    <input 
-                      type="file" 
-                      disabled={isProcessing} 
-                      onChange={handleReplacerUpload} 
-                      className="absolute inset-0 opacity-0 cursor-pointer z-20" 
-                      accept=".xlsx,.xls,.csv,.tsv,.ods" 
-                    />
+                  <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center bg-[#F8FAFC] hover:border-primary hover:bg-[#E3F2FD] transition-all cursor-pointer relative">
+                    <input type="file" disabled={isProcessing} onChange={handleReplacerUpload} className="absolute inset-0 opacity-0 cursor-pointer z-20" accept=".xlsx,.xls,.csv,.tsv" />
                     {isProcessing ? (
                       <div className="flex flex-col items-center gap-3">
                          <Loader2 className="w-10 h-10 text-green-600 animate-spin" />
-                         <p className="text-[12px] font-[700] text-green-600 uppercase tracking-widest">Processing file...</p>
+                         <p className="text-[12px] font-[700] text-green-600 uppercase tracking-widest">Processing...</p>
                       </div>
                     ) : (
-                      <>
-                        <div className="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-                          <Download className="w-6 h-6 text-[#1565C0]" />
-                        </div>
-                        <div>
-                          <p className="text-[15px] font-[700] text-[#111827]">Upload EOD Rejection File</p>
-                          <p className="text-[11px] text-[#64748B] mt-1 tracking-wide">Excel, CSV or ODS formats supported</p>
-                        </div>
-                      </>
+                      <div className="space-y-3">
+                        <Download className="w-10 h-10 text-primary mx-auto" />
+                        <p className="text-[15px] font-[700] text-[#111827]">Upload EOD Rejection File</p>
+                        <p className="text-[11px] text-[#64748B] mt-1 tracking-wide">Excel or CSV formats supported</p>
+                      </div>
                     )}
-                  </div>
-                )}
-
-                {replacerMeta && (
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
-                       <p className="text-2xl font-black text-[#1C2333]">{replacerMeta.total}</p>
-                       <p className="text-[9px] font-black text-[#64748B] uppercase tracking-[0.2em] mt-1">Total Packets</p>
-                    </div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
-                       <p className="text-2xl font-black text-[#2E7D32]">{replacerMeta.replaced}</p>
-                       <p className="text-[9px] font-black text-[#64748B] uppercase tracking-[0.2em] mt-1">Remarks Replaced</p>
-                    </div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
-                       <p className="text-2xl font-black text-[#F57F17]">{replacerMeta.missing}</p>
-                       <p className="text-[9px] font-black text-[#64748B] uppercase tracking-[0.2em] mt-1">No Mapping Found</p>
-                    </div>
                   </div>
                 )}
               </div>
@@ -882,41 +695,24 @@ export default function PODTool() {
               {replacerData.length > 0 && (
                 <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <div className="flex gap-3">
-                      <button onClick={downloadReplacerExcel} className="bg-[#2E7D32] hover:bg-[#1B5E20] text-white px-6 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all hover:-translate-y-0.5"><Download className="w-4 h-4" /> Download Official Excel</button>
-                    </div>
+                    <button onClick={downloadReplacerExcel} className="bg-[#2E7D32] hover:bg-[#1B5E20] text-white px-6 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all"><Download className="w-4 h-4" /> Download Official Excel</button>
                     <button onClick={() => { setReplacerData([]); setReplacerMeta(null); }} className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:underline px-4">Clear Preview</button>
                   </div>
-                  
-                  <div className="overflow-x-auto max-h-[500px] custom-scrollbar">
-                    <table className="w-full text-left border-collapse">
+                  <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
+                    <table className="w-full text-left border-collapse text-[11px]">
                       <thead className="sticky top-0 z-30">
-                        <tr className="bg-[#1C2333] text-white text-[10px] font-black uppercase tracking-widest">
-                          {replacerMeta?.headers.map((h, i) => (
-                            <th key={i} className="p-4 border-r border-white/5 whitespace-nowrap">{h}</th>
-                          ))}
+                        <tr className="bg-[#1C2333] text-white">
+                          {replacerMeta?.headers.map((h, i) => <th key={i} className="p-4 font-black uppercase tracking-widest border-r border-white/5 whitespace-nowrap">{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
                         {replacerData.map((row, idx) => (
-                          <tr key={idx} className={cn(
-                            "border-b border-slate-100 transition-colors",
-                            row.__isReplaced ? "bg-[#F0FDF4]" : "bg-[#FFFDE7]"
-                          )}>
-                            {replacerMeta?.headers.map((h, i) => {
-                              const isRemarkCol = h === replacerMeta.remarkKey;
-                              const isAWBCol = /awb|waybill|awb number|awb_number|waybillno/i.test(h.replace(/[\s_-]/g, ""));
-                              return (
-                                <td key={i} className={cn(
-                                  "p-3 text-[11px] font-medium border-r border-slate-100 whitespace-nowrap",
-                                  isAWBCol ? "font-mono text-[#1565C0] font-black" : "text-[#374151]",
-                                  isRemarkCol && row.__isReplaced ? "text-[#2E7D32] font-black" : 
-                                  isRemarkCol && !row.__isReplaced ? "text-[#D97706] font-black" : ""
-                                )}>
-                                  {row[h]}
-                                </td>
-                              );
-                            })}
+                          <tr key={idx} className={cn("border-b border-slate-100", row.__isReplaced ? "bg-[#F0FDF4]" : "bg-[#FFFDE7]")}>
+                            {replacerMeta?.headers.map((h, i) => (
+                              <td key={i} className={cn("p-3 whitespace-nowrap", h === replacerMeta.remarkKey && row.__isReplaced ? "text-[#2E7D32] font-black" : h === replacerMeta.remarkKey ? "text-[#D97706] font-black" : "text-slate-600")}>
+                                {row[h]}
+                              </td>
+                            ))}
                           </tr>
                         ))}
                       </tbody>
@@ -929,28 +725,20 @@ export default function PODTool() {
             <div className="lg:col-span-5">
               <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden sticky top-[130px]">
                 <div className="bg-[#2E7D32] p-4 text-white">
-                  <h3 className="text-[12px] font-[800] uppercase tracking-widest flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5" /> Built-in Remark Mapping
-                  </h3>
-                  <p className="text-[10px] text-green-100 mt-1 font-medium">Auto-replace NSL Remarks with Official Delhivery Remarks</p>
+                  <h3 className="text-[11px] font-[800] uppercase tracking-widest flex items-center gap-2">Built-in Remark Mapping</h3>
+                  <p className="text-[9px] text-green-100 mt-0.5">Auto-replace NSL Remarks with Official Remarks</p>
                 </div>
                 <div className="p-4 overflow-y-auto max-h-[70vh] space-y-3 custom-scrollbar">
                   {Object.entries(REMARK_MAPPING).map(([nsl, official]) => (
-                    <div key={nsl} className="p-4 bg-[#F8FAFC] rounded-xl border border-slate-100 space-y-3 hover:border-green-200 transition-all">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[8px] font-black text-[#64748B] uppercase tracking-widest">NSL REMARK</span>
-                        <div className="bg-amber-100 text-amber-800 px-3 py-1.5 rounded-lg text-[10px] font-[700] border border-amber-200 inline-block w-fit">
-                          {nsl}
-                        </div>
+                    <div key={nsl} className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[8px] font-black text-slate-400 uppercase">NSL Remark</span>
+                        <span className="bg-[#FFFDE7] text-[#D97706] border border-[#FDE68A] px-2 py-1 rounded-md text-[10px] font-bold">{nsl}</span>
                       </div>
-                      <div className="flex items-center justify-center">
-                        <ChevronRight className="w-5 h-5 text-green-500" />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[8px] font-black text-[#64748B] uppercase tracking-widest">OFFICIAL REMARK</span>
-                        <div className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-[700] border border-green-700 inline-block w-fit shadow-md">
-                          {official}
-                        </div>
+                      <div className="flex justify-center text-green-600"><CheckCircle2 className="w-4 h-4" /></div>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[8px] font-black text-slate-400 uppercase">Official Remark</span>
+                        <span className="bg-[#F0FDF4] text-[#2E7D32] border border-green-200 px-2 py-1 rounded-md text-[10px] font-bold">{official}</span>
                       </div>
                     </div>
                   ))}
@@ -963,65 +751,34 @@ export default function PODTool() {
 
       <style jsx global>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap');
-        
-        body { font-family: 'Inter', sans-serif; background: #F0F4FA; color: #374151; }
-        
-        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        body { font-family: 'Inter', sans-serif; background: #F0F4FA; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #F1F5F9; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; border: 3px solid #F1F5F9; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
-
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        
-        ::selection { background: #BFDBFE; color: #1E40AF; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
+        input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
       `}</style>
     </div>
   );
 }
 
-function PODRowItem({ row, idx, isFirstInGroup, isAWBDupe, onDelete, copyToClipboard }: { 
-  row: PODRow, 
-  idx: number, 
-  isFirstInGroup: boolean, 
-  isAWBDupe: boolean,
-  onDelete: () => void,
-  copyToClipboard: (text: string, label: string) => void
-}) {
+function DataRow({ row, idx, isFirstInGroup }: { row: PODRow, idx: number, isFirstInGroup: boolean }) {
   return (
-    <tr className={cn(
-      "border-b border-slate-100 hover:bg-blue-50/50 transition-colors",
-      row.isIntact ? "bg-red-50/40" : ""
-    )}>
-      <td className="p-3 text-center"><input type="checkbox" className="accent-blue-500" /></td>
-      <td className="p-3 font-mono text-[11px] font-bold text-slate-400">
-        {isFirstInGroup ? row.dspId : ""}
-      </td>
-      <td 
-        className={cn(
-          "p-3 font-mono text-[13px] font-black tracking-wider cursor-pointer hover:underline",
-          isAWBDupe ? "text-red-600" : "text-[#1565C0]"
-        )}
-        onClick={() => copyToClipboard(row.awb, "AWB")}
-      >
-        {row.awb}
-      </td>
-      <td className="p-3 text-[11px] font-bold text-[#374151] truncate max-w-[160px]">{row.client}</td>
-      <td className="p-3 text-[11px] text-slate-500 font-medium truncate max-w-[160px]">{row.orderId}</td>
+    <tr className={cn("border-b border-slate-100 transition-colors", row.isIntact ? "bg-[#FFF5F5]" : "hover:bg-[#F0F7FF]")}>
+      <td className="p-3 text-center"><input type="checkbox" className="accent-primary" /></td>
+      <td className="p-3 text-center text-slate-300 hover:text-red-500 cursor-pointer"><Trash2 className="w-3.5 h-3.5 mx-auto" /></td>
+      <td className="p-3 font-mono text-[11.5px] font-bold text-slate-400">{isFirstInGroup ? row.dspId : ""}</td>
+      <td className="p-3 font-mono text-[11.5px] font-[600] text-[#1565C0]">{row.awb}</td>
+      <td className="p-3 text-[11px] font-[500] text-[#374151] truncate max-w-[140px]">{row.client}</td>
+      <td className="p-3 text-[11px] font-[500] text-[#374151] truncate max-w-[140px]">{row.orderId}</td>
       <td className="p-3">
         <span className={cn(
-          "px-2 py-1 rounded text-[10px] font-black uppercase tracking-tight",
-          row.isIntact ? "bg-[#FFF5F5] text-[#D32F2F] border border-red-100" : "bg-[#FFFDE7] text-amber-700 border border-amber-100"
+          "px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-tight border",
+          row.isIntact ? "bg-[#FFF5F5] text-[#D32F2F] border-[#FFCDD2]" : "bg-[#FFFDE7] text-[#D97706] border-[#FDE68A]"
         )}>
           {row.remark || "N/A"}
         </span>
       </td>
-      <td className="p-3 text-[11px] font-black text-[#64748B] truncate">{row.feName}</td>
-      <td className="p-3 text-center">
-        <button onClick={onDelete} className="p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all">
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </td>
+      <td className="p-3 text-[11px] font-bold text-slate-400">{row.feName}</td>
     </tr>
   );
 }
