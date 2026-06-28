@@ -95,7 +95,6 @@ export default function PODTool() {
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
   const [isMounted, setIsMounted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   
   // Module 2 State
   const [replacerData, setReplacerData] = useState<any[]>([]);
@@ -105,22 +104,7 @@ export default function PODTool() {
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) setSessions(parsed);
-      } catch (e) {
-        localStorage.removeItem(STORAGE_KEY);
-      }
-    }
   }, []);
-
-  useEffect(() => {
-    if (isMounted) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-    }
-  }, [sessions, isMounted]);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err' | 'info') => {
     if (!isMounted) return;
@@ -179,11 +163,10 @@ export default function PODTool() {
     if (!file) return;
 
     setIsProcessing(true);
-    setUploadError(null);
-
     const reader = new FileReader();
+
     reader.onload = (evt) => {
-      setTimeout(() => { // Prevent browser freeze
+      setTimeout(() => {
         try {
           const bstr = evt.target?.result;
           const wb = XLSX.read(bstr, { type: 'binary' });
@@ -235,7 +218,7 @@ export default function PODTool() {
             showToast("No valid rows found!", "err");
           }
         } catch (err: any) {
-          showToast("Error parsing file! Please upload valid Delhivery export.", "err");
+          showToast("Error parsing file!", "err");
         } finally {
           setIsProcessing(false);
         }
@@ -248,45 +231,48 @@ export default function PODTool() {
   const handleReplacerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     setIsProcessing(true);
     setReplacerError(null);
 
     const reader = new FileReader();
+    const extension = file.name.split('.').pop()?.toLowerCase();
+
     reader.onload = (evt) => {
+      // Release main thread to show loading state
       setTimeout(() => {
         try {
-          const bstr = evt.target?.result;
-          const extension = file.name.split('.').pop()?.toLowerCase();
+          const data = evt.target?.result;
           let wb;
           
-          if (['csv', 'tsv'].includes(extension || '')) {
-            wb = XLSX.read(bstr, { type: 'string' });
+          if (extension === 'csv' || extension === 'tsv') {
+            wb = XLSX.read(data, { type: 'string' });
           } else {
-            wb = XLSX.read(bstr, { type: 'binary' });
+            wb = XLSX.read(data, { type: 'array' });
           }
 
           const ws = wb.Sheets[wb.SheetNames[0]];
-          const rawData: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+          const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
           
-          if (!rawData.length) throw new Error("File empty");
+          if (rawRows.length === 0) throw new Error("Empty file");
 
-          const keys = Object.keys(rawData[0]);
-          const remarkKey = keys.find(k => /remarksof nsl|remark|remarks|nsl remark/i.test(k.replace(/[\s_-]/g, "")));
-          const awbKey = keys.find(k => /waybill|awb|awbnumber|waybillno/i.test(k.replace(/[\s_-]/g, "")));
+          const headers = Object.keys(rawRows[0]);
+          const awbKey = headers.find(h => /awb|waybill|awb number|awb_number|waybillno/i.test(h.replace(/[\s_-]/g, "")));
+          const remarkKey = headers.find(h => /remarks of nsl|remark|remarks|nsl remark/i.test(h.replace(/[\s_-]/g, "")));
 
-          if (!remarkKey) {
-            setReplacerError({title: "Remark Column Not Found", msg: "Please ensure the file has a column named 'Remarks Of NSL' or 'Remark'."});
-            throw new Error("Remark column missing");
-          }
-          if (!awbKey) {
-             setReplacerError({title: "AWB Column Not Found", msg: "Please ensure the file has a column named 'AWB Number' or 'Waybill'."});
-             throw new Error("AWB column missing");
+          if (!awbKey || !remarkKey) {
+            setReplacerError({
+              title: "Invalid File Format",
+              msg: "This does not appear to be a Delhivery EOD file. Please upload the correct rejection export file containing AWB and Remark columns."
+            });
+            setIsProcessing(false);
+            return;
           }
 
           let replacedCount = 0;
           let missingCount = 0;
 
-          const processed = rawData.map((row: any) => {
+          const processed = rawRows.map((row: any) => {
             const oldRemark = String(row[remarkKey]).trim();
             let newRemark = oldRemark;
             let isReplaced = false;
@@ -321,21 +307,21 @@ export default function PODTool() {
             replaced: replacedCount,
             missing: missingCount,
             remarkKey,
-            headers: keys
+            headers
           });
           showToast(`Processed ${processed.length} rows successfully`, "ok");
         } catch (err: any) {
-          if (!replacerError) showToast(err.message || "Replacer error!", "err");
+          showToast("Could not read file. Please try again.", "err");
         } finally {
           setIsProcessing(false);
         }
       }, 0);
     };
     
-    if (file.name.endsWith('.csv') || file.name.endsWith('.tsv')) {
+    if (extension === 'csv' || extension === 'tsv') {
       reader.readAsText(file);
     } else {
-      reader.readAsBinaryString(file);
+      reader.readAsArrayBuffer(file);
     }
     e.target.value = "";
   };
@@ -412,22 +398,23 @@ export default function PODTool() {
   const downloadReplacerExcel = () => {
     if (!replacerData.length || !replacerMeta) return;
     
+    const awbKey = replacerMeta.headers.find(h => /awb|waybill|awb number|awb_number|waybillno/i.test(h.replace(/[\s_-]/g, "")));
+
     const exportData = replacerData.map(row => {
       const { __isReplaced, __oldRemark, ...rest } = row;
       const cleanRow: any = {};
-      Object.keys(rest).forEach(k => {
-        if (k === replacerMeta.remarkKey) {
-          cleanRow[k] = rest[k];
-        } else if (/waybill|awb|awbnumber|waybillno/i.test(k.replace(/[\s_-]/g, ""))) {
-          cleanRow[k] = { v: String(rest[k]), t: 's', z: '@' };
+      replacerMeta.headers.forEach(h => {
+        const val = rest[h];
+        if (h === awbKey) {
+          cleanRow[h] = { v: String(val), t: 's', z: '@' };
         } else {
-          cleanRow[k] = rest[k];
+          cleanRow[h] = val;
         }
       });
       return cleanRow;
     });
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
+    const ws = XLSX.utils.json_to_sheet(exportData, { header: replacerMeta.headers });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Replaced Remarks");
     
@@ -444,14 +431,11 @@ export default function PODTool() {
   };
 
   const clearAllSessions = () => {
-    if (confirm("Are you sure you want to clear all data? This will freshly reset the tool.")) {
-      setSessions([]);
-      setSelectedSessionId(null);
-      setReplacerData([]);
-      setReplacerMeta(null);
-      localStorage.removeItem(STORAGE_KEY);
-      showToast("System reset successfully!", "ok");
-    }
+    setSessions([]);
+    setSelectedSessionId(null);
+    setReplacerData([]);
+    setReplacerMeta(null);
+    showToast("System reset successfully!", "ok");
   };
 
   const stats = useMemo(() => {
@@ -466,7 +450,6 @@ export default function PODTool() {
     };
   }, [currentSession]);
 
-  // Grouping logic for Pending Tab
   const groupedPendingRows = useMemo(() => {
     if (statusFilter !== 'pending' || !filteredRows.length) return null;
     const groups: Record<string, PODRow[]> = {};
@@ -482,10 +465,8 @@ export default function PODTool() {
 
   return (
     <div className="min-h-screen bg-[#F0F4FA] font-body text-[#374151] select-auto overflow-x-hidden">
-      {/* Rainbow Stripe */}
       <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F] sticky top-0 z-[100]" />
       
-      {/* Header */}
       <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white shadow-lg relative z-[90]">
         <div className="flex items-center gap-3">
           <div className="bg-gradient-to-br from-blue-500 to-blue-700 p-1.5 rounded-xl shadow-lg">
@@ -511,7 +492,6 @@ export default function PODTool() {
         </div>
       </header>
 
-      {/* Navigation */}
       <nav className="bg-[#1C2333] px-6 flex gap-8 border-t border-white/5 shadow-md sticky top-[58px] z-[85]">
         {[
           { id: "eod", label: "Daily EOD Rejection" },
@@ -534,7 +514,6 @@ export default function PODTool() {
       <main className="p-5 max-w-[1360px] mx-auto space-y-6">
         {activeTab === "eod" ? (
           <div className="space-y-6 animate-in fade-in duration-300">
-            {/* Setup Section */}
             <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200 space-y-5">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div className="space-y-2">
@@ -585,7 +564,7 @@ export default function PODTool() {
                   {isProcessing ? (
                     <div className="flex flex-col items-center gap-3">
                        <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-                       <p className="text-[12px] font-[700] text-blue-600 uppercase tracking-widest">Processing Data...</p>
+                       <p className="text-[12px] font-[700] text-blue-600 uppercase tracking-widest">Processing...</p>
                     </div>
                   ) : (
                     <>
@@ -604,7 +583,6 @@ export default function PODTool() {
               </div>
             </div>
 
-            {/* Sessions Grid */}
             {sessions.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between px-1">
@@ -659,7 +637,6 @@ export default function PODTool() {
               </div>
             )}
 
-            {/* Module 1 Dashboard */}
             {currentSession && (
               <div className="space-y-6">
                 <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden">
@@ -693,7 +670,6 @@ export default function PODTool() {
                     </div>
                   </div>
 
-                  {/* Pending Remark Breakdown Chips */}
                   {statusFilter === 'pending' && pendingRemarkStats.length > 0 && (
                     <div className="p-5 border-b border-slate-100 animate-in fade-in slide-in-from-top-2 duration-300">
                       <div className="flex items-center justify-between mb-4">
@@ -753,7 +729,6 @@ export default function PODTool() {
                         </tr>
                       </thead>
                       <tbody>
-                        {/* DSP Group Header Row */}
                         <tr className="bg-gradient-to-r from-[#0D1B2E] to-[#1A2F4A] border-y border-white/10">
                            <td colSpan={8} className="p-3">
                               <div className="flex items-center justify-between">
@@ -776,7 +751,6 @@ export default function PODTool() {
                         {statusFilter === 'pending' && groupedPendingRows ? (
                           groupedPendingRows.map(([remark, rows]) => (
                             <React.Fragment key={remark}>
-                              {/* Remark Group Header */}
                               <tr className="bg-[#1E293B] border-y border-white/5">
                                 <td colSpan={8} className="p-2 px-4">
                                   <div className="flex items-center gap-2">
@@ -834,7 +808,6 @@ export default function PODTool() {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
-            {/* Left Side: Upload & Preview */}
             <div className="lg:col-span-7 space-y-6">
               <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200 space-y-5">
                 <h2 className="text-[14px] font-[800] text-[#1C2333] flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-[#2E7D32]" /> Remark Replacer Dashboard</h2>
@@ -872,7 +845,7 @@ export default function PODTool() {
                     {isProcessing ? (
                       <div className="flex flex-col items-center gap-3">
                          <Loader2 className="w-10 h-10 text-green-600 animate-spin" />
-                         <p className="text-[12px] font-[700] text-green-600 uppercase tracking-widest">Replacing Remarks...</p>
+                         <p className="text-[12px] font-[700] text-green-600 uppercase tracking-widest">Processing file...</p>
                       </div>
                     ) : (
                       <>
@@ -881,7 +854,7 @@ export default function PODTool() {
                         </div>
                         <div>
                           <p className="text-[15px] font-[700] text-[#111827]">Upload EOD Rejection File</p>
-                          <p className="text-[11px] text-[#64748B] mt-1 tracking-wide">Excel or CSV formats supported</p>
+                          <p className="text-[11px] text-[#64748B] mt-1 tracking-wide">Excel, CSV or ODS formats supported</p>
                         </div>
                       </>
                     )}
@@ -932,7 +905,7 @@ export default function PODTool() {
                           )}>
                             {replacerMeta?.headers.map((h, i) => {
                               const isRemarkCol = h === replacerMeta.remarkKey;
-                              const isAWBCol = /waybill|awb|awbnumber|waybillno/i.test(h.replace(/[\s_-]/g, ""));
+                              const isAWBCol = /awb|waybill|awb number|awb_number|waybillno/i.test(h.replace(/[\s_-]/g, ""));
                               return (
                                 <td key={i} className={cn(
                                   "p-3 text-[11px] font-medium border-r border-slate-100 whitespace-nowrap",
@@ -953,7 +926,6 @@ export default function PODTool() {
               )}
             </div>
 
-            {/* Right Side: Mapping Reference */}
             <div className="lg:col-span-5">
               <div className="bg-white rounded-[14px] shadow-sm border border-slate-200 overflow-hidden sticky top-[130px]">
                 <div className="bg-[#2E7D32] p-4 text-white">
@@ -1003,12 +975,6 @@ export default function PODTool() {
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         
         ::selection { background: #BFDBFE; color: #1E40AF; }
-
-        @keyframes pulse-dot {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.3); opacity: 0.7; }
-        }
-        .animate-live-pulse { animation: pulse-dot 2s infinite; }
       `}</style>
     </div>
   );
@@ -1059,4 +1025,3 @@ function PODRowItem({ row, idx, isFirstInGroup, isAWBDupe, onDelete, copyToClipb
     </tr>
   );
 }
-
