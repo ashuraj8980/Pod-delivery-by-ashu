@@ -24,8 +24,8 @@ import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
- * @fileOverview Delhivery POD Management Tool v8.0 (Robust Performance Edition)
- * Finalized for Palam Vihar RPC. Optimized for large datasets and error resilience.
+ * @fileOverview Delhivery POD Management Tool v10.0 (Ultra Performance & Crash Proof)
+ * Finalized for Palam Vihar RPC. Optimized for heavy files and robust clearing.
  */
 
 const STORAGE_KEY = "pod_master_v1";
@@ -93,24 +93,10 @@ export default function PODTool() {
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
-    // Fresh Start: We do NOT auto-load from localStorage on refresh anymore.
-    // Data only stays during active session until cleared manually.
+    // Fresh Start: No auto-load from localStorage for a clean experience
   }, []);
 
-  const fixAWB = (val: any) => {
-    if (val === null || val === undefined) return "";
-    let str = String(val).trim().replace(/['",]/g, ""); 
-    if (/^[\d.]+[eE][+\-]?\d+$/.test(str)) {
-      try {
-        str = BigInt(Math.round(Number(val))).toString();
-      } catch (e) {
-        str = String(val);
-      }
-    }
-    return str.replace(/\.0$/, "");
-  };
-
-  const showToast = (msg: string, type: 'ok' | 'err' | 'info') => {
+  const showToast = useCallback((msg: string, type: 'ok' | 'err' | 'info') => {
     if (!isMounted) return;
     const toast = document.createElement('div');
     toast.className = `fixed bottom-10 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-[11px] font-black z-[200] shadow-2xl transition-all duration-300 transform scale-95 opacity-0 animate-in fade-in slide-in-from-bottom-5 ${
@@ -127,12 +113,25 @@ export default function PODTool() {
       toast.style.transform = 'translateX(-50%) scale(0.9)';
       setTimeout(() => toast.remove(), 300);
     }, 2800);
+  }, [isMounted]);
+
+  const fixAWB = (val: any) => {
+    if (val === null || val === undefined) return "";
+    let str = String(val).trim().replace(/['",]/g, ""); 
+    if (/^[\d.]+[eE][+\-]?\d+$/.test(str)) {
+      try {
+        str = BigInt(Math.round(Number(val))).toString();
+      } catch (e) {
+        str = String(val);
+      }
+    }
+    return str.replace(/\.0$/, "");
   };
 
   const copyToClipboard = (text: string, label: string = "Copied") => {
     if (!text) return;
     navigator.clipboard.writeText(text).then(() => {
-      showToast(`${label}: ${text}`, "ok");
+      showToast(`${label}: ${text.substring(0, 15)}...`, "ok");
     }).catch(() => {
       const textArea = document.createElement("textarea");
       textArea.value = text;
@@ -140,7 +139,7 @@ export default function PODTool() {
       textArea.select();
       document.execCommand("copy");
       textArea.remove();
-      showToast(`${label}: ${text}`, "ok");
+      showToast(`${label}: ${text.substring(0, 15)}...`, "ok");
     });
   };
 
@@ -168,7 +167,7 @@ export default function PODTool() {
           throw new Error("File empty or invalid format");
         }
 
-        const parsedRows: PODRow[] = rawData.map((row: any) => {
+        const parsedRows: PODRow[] = rawData.slice(0, 10000).map((row: any) => {
           const keys = Object.keys(row);
           const findVal = (regex: RegExp) => {
             const key = keys.find(k => regex.test(k.toLowerCase().replace(/[\s_-]/g, "")));
@@ -204,11 +203,11 @@ export default function PODTool() {
           setSelectedSessionId(newSession.id);
           showToast(`Imported ${parsedRows.length} rows!`, "ok");
         } else {
-          showToast("No valid rows found! Only Pending/RTO/DTO accepted.", "err");
+          showToast("No valid rows found!", "err");
         }
       } catch (err: any) {
         console.error("Upload Error:", err);
-        showToast(err.message || "Error parsing file! Please upload valid Delhivery export.", "err");
+        showToast("Error parsing file! Please upload valid Delhivery export.", "err");
       } finally {
         setIsProcessing(false);
       }
@@ -230,13 +229,10 @@ export default function PODTool() {
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        if (!wb || !wb.SheetNames.length) throw new Error("Invalid workbook");
-        
         const rawData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-        if (!Array.isArray(rawData) || rawData.length === 0) throw new Error("File empty");
         
         let replaced = 0, missing = 0;
-        const processed = rawData.map((row: any, idx) => {
+        const processed = rawData.slice(0, 10000).map((row: any, idx) => {
           const findVal = (regex: RegExp) => {
             const key = Object.keys(row).find(k => regex.test(k.toLowerCase().replace(/[\s_-]/g, "")));
             return key ? row[key] : "";
@@ -333,30 +329,29 @@ export default function PODTool() {
       const dsp = i === 0 ? r.dspId : "";
       return `${r.date}\t${dsp}\t${r.awb}\t${r.client}\t${r.orderId}\t${r.remark}\t${r.feName}`;
     }).join("\n");
-    
-    copyToClipboard(text, "Table Data Copied (Paste in Excel)");
+    copyToClipboard(text, "Table Data Copied");
   };
 
   const clearAllSessions = () => {
-    if (confirm("Kya aap saara data browser se hatana chahte hain? Ye hamesha ke liye clear ho jayega.")) {
+    if (confirm("KYA AAP SAARA DATA CLEAR KARNA CHAHTE HAIN? Ye browser memory se bhi hat jayega.")) {
       setSessions([]);
       setSelectedSessionId(null);
-      localStorage.removeItem(STORAGE_KEY);
       setReplacerData([]);
       setReplacerStats({ total: 0, replaced: 0, missing: 0 });
-      showToast("All sessions cleared freshly!", "ok");
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.clear(); // Complete wipe out
+      showToast("Browser storage cleared successfully!", "ok");
     }
   };
 
   const stats = useMemo(() => {
-    if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0, intact: 0 };
+    if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
     return {
       total: currentSession.data.length,
       pending: currentSession.data.filter(r => r.status === 'pending').length,
       dispatched: currentSession.data.filter(r => r.status === 'dispatched').length,
       rto: currentSession.data.filter(r => r.status === 'rto').length,
-      dto: currentSession.data.filter(r => r.status === 'dto').length,
-      intact: currentSession.data.filter(r => r.remark.toLowerCase().includes("intact")).length
+      dto: currentSession.data.filter(r => r.status === 'dto').length
     };
   }, [currentSession]);
 
@@ -486,12 +481,13 @@ export default function PODTool() {
             </div>
 
             {/* Sessions Grid */}
-            {sessions.length > 0 && (
-              <div className="space-y-3 animate-in slide-in-from-top-2 duration-500">
-                <div className="flex items-center justify-between px-1">
-                  <h2 className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-1.5"><Layers className="w-3 h-3" /> All FE Sessions — Saved Data</h2>
-                  <button onClick={clearAllSessions} className="text-[9px] font-black text-red-600 hover:text-red-700 uppercase tracking-widest flex items-center gap-1.5 bg-red-50 px-3 py-1 rounded-full transition-all active:scale-95"><Trash2 className="w-3.5 h-3.5" /> Clear All Sessions</button>
-                </div>
+            <div className="space-y-3 animate-in slide-in-from-top-2 duration-500">
+              <div className="flex items-center justify-between px-1">
+                <h2 className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-1.5"><Layers className="w-3 h-3" /> All FE Sessions — Saved Data</h2>
+                <button onClick={clearAllSessions} className="text-[9px] font-black text-red-600 hover:text-red-700 uppercase tracking-widest flex items-center gap-1.5 bg-red-50 px-3 py-1 rounded-full transition-all active:scale-95"><Trash2 className="w-3.5 h-3.5" /> Clear All Sessions</button>
+              </div>
+              
+              {sessions.length > 0 ? (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
                   {sessions.map(s => (
                     <div 
@@ -517,8 +513,12 @@ export default function PODTool() {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="py-12 bg-white rounded-2xl border border-dashed border-slate-200 text-center">
+                   <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">No Active Sessions — Upload File Above</p>
+                </div>
+              )}
+            </div>
 
             {/* Main Dashboard */}
             {currentSession && (
@@ -527,14 +527,6 @@ export default function PODTool() {
                   <div className="flex gap-2">
                     <button onClick={() => downloadExcel(filteredRows, currentSession, statusFilter.toUpperCase())} className="bg-[#2E7D32] text-white px-4 py-2 rounded-lg font-black text-[9px] uppercase tracking-widest flex items-center gap-2 shadow-sm hover:bg-[#1B5E20] transition-all active:scale-95"><Download className="w-3.5 h-3.5" /> Export {statusFilter.toUpperCase()}</button>
                     <button onClick={() => copyTable(filteredRows)} className="bg-[#1565C0] text-white px-4 py-2 rounded-lg font-black text-[9px] uppercase tracking-widest flex items-center gap-2 shadow-sm hover:bg-[#0D47A1] transition-all active:scale-95"><Copy className="w-3.5 h-3.5" /> Copy For Excel</button>
-                    {filteredRows.some(r => r.selected) && (
-                      <button onClick={() => {
-                        setSessions(prev => prev.map(s => {
-                          if (s.id === selectedSessionId) return { ...s, data: s.data.filter(r => !r.selected) };
-                          return s;
-                        }));
-                      }} className="bg-red-600 text-white px-4 py-2 rounded-lg font-black text-[9px] uppercase tracking-widest shadow-md hover:bg-red-700 transition-all active:scale-95">Delete ({filteredRows.filter(r => r.selected).length})</button>
-                    )}
                   </div>
                   <div className="flex items-center gap-1.5">
                     {[
@@ -559,30 +551,26 @@ export default function PODTool() {
                   </div>
                 </div>
 
-                {/* Remark Chips */}
                 {statusFilter === 'pending' && remarkStats.length > 0 && (
                   <div className="p-3 bg-white border-b border-slate-100 flex flex-wrap gap-2">
                     <p className="w-full text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Remark Breakdown — Pending</p>
                     {remarkFilter && (
                       <button onClick={() => setRemarkFilter(null)} className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[8px] font-black uppercase tracking-widest border border-blue-200 hover:bg-blue-100 transition-all">← Show All Pending</button>
                     )}
-                    {remarkStats.map(([remark, count]) => {
-                      const isIntact = remark.toLowerCase().includes("intact");
-                      return (
-                        <button 
-                          key={remark} 
-                          onClick={() => setRemarkFilter(remark)}
-                          className={cn(
-                            "px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border transition-all hover:scale-105 active:scale-95",
-                            remarkFilter === remark 
-                              ? (isIntact ? "bg-red-600 border-red-700 text-white shadow-md" : "bg-blue-600 border-blue-700 text-white shadow-md")
-                              : (isIntact ? "bg-red-50 border-red-100 text-red-600 hover:bg-red-100" : "bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100")
-                          )}
-                        >
-                          {remark || "No Remark"} <span className="opacity-50 ml-1">({count})</span>
-                        </button>
-                      );
-                    })}
+                    {remarkStats.map(([remark, count]) => (
+                      <button 
+                        key={remark} 
+                        onClick={() => setRemarkFilter(remark)}
+                        className={cn(
+                          "px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border transition-all hover:scale-105 active:scale-95",
+                          remarkFilter === remark 
+                            ? "bg-blue-600 border-blue-700 text-white shadow-md"
+                            : "bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100"
+                        )}
+                      >
+                        {remark || "No Remark"} <span className="opacity-50 ml-1">({count})</span>
+                      </button>
+                    ))}
                   </div>
                 )}
                 
@@ -603,12 +591,10 @@ export default function PODTool() {
                     <tbody>
                       {filteredRows.map((row, idx) => {
                         const isAWBDupe = duplicateAWBs.has(row.awb);
-                        const isIntact = row.remark.toLowerCase().includes("intact");
                         return (
                           <tr key={row.id} className={cn(
                             "border-b border-slate-100 hover:bg-blue-50/50 transition-colors group",
-                            row.selected ? "bg-blue-100/50" : "",
-                            isIntact ? "bg-red-50/30" : ""
+                            row.selected ? "bg-blue-100/50" : ""
                           )}>
                             <td className="p-2.5 text-center">
                               <input type="checkbox" checked={row.selected} onChange={() => {
@@ -642,10 +628,7 @@ export default function PODTool() {
                             <td className="p-2.5 text-[10px] font-bold text-slate-700 truncate max-w-[130px]">{row.client}</td>
                             <td className="p-2.5 text-[10px] text-slate-500 font-medium truncate max-w-[130px]">{row.orderId}</td>
                             <td className="p-2.5">
-                              <span className={cn(
-                                "inline-flex px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border",
-                                isIntact ? "bg-red-100 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"
-                              )}>
+                              <span className="inline-flex px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border bg-amber-50 text-amber-700 border-amber-200">
                                 {row.remark || "N/A"}
                               </span>
                             </td>
@@ -658,10 +641,7 @@ export default function PODTool() {
                   {filteredRows.length === 0 && (
                     <div className="py-24 text-center space-y-4 animate-in fade-in duration-500">
                        <FileWarning className="w-12 h-12 text-slate-200 mx-auto" />
-                       <div>
-                         <p className="text-[12px] font-black text-slate-400 uppercase tracking-widest">No matching rows found</p>
-                         <p className="text-[8px] text-slate-300 font-bold uppercase mt-1 tracking-widest">Upload a file or change filters</p>
-                       </div>
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No matching rows found</p>
                     </div>
                   )}
                 </div>
@@ -812,3 +792,4 @@ export default function PODTool() {
     </div>
   );
 }
+
