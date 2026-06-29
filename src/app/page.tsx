@@ -338,52 +338,34 @@ export default function PODTool() {
   }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
 
   // CLIPBOARD COPY LOGIC - DUAL FORMAT (HTML + TEXT)
-  // Using HTML format with mso-number-format ensures precision in Excel/WPS without visible quote prefixes.
+  // Using tight HTML format with mso-number-format ensures precision in Excel/WPS without tall rows or wrapping.
   const copyTableToClipboard = useCallback(async (isShortcut = false) => {
     if (!filteredRows.length || !currentSession) return;
     
+    // Sanitize values to remove any newlines that might cause tall rows in Excel
+    const cleanValue = (val: any) => String(val || "").replace(/[\r\n]+/g, " ").trim();
+
     // 1. Plain Text Version (Standard fallback)
     const clipboardText = filteredRows.map((r, i) => {
       const dspVal = i === 0 ? currentSession.dspId : "";
       return [
-        r.date,
-        dspVal,
-        r.awb,
-        r.client,
-        r.orderId,
-        r.remark,
-        r.feName
+        cleanValue(r.date),
+        cleanValue(dspVal),
+        cleanValue(r.awb),
+        cleanValue(r.client),
+        cleanValue(r.orderId),
+        cleanValue(r.remark),
+        cleanValue(r.feName)
       ].join("\t");
     }).join("\n");
 
-    // 2. HTML Version (Strict Text for Excel/WPS)
-    const htmlTable = `
-      <html>
-      <head>
-        <style>
-          td { mso-number-format: "\\@"; }
-        </style>
-      </head>
-      <body>
-        <table>
-          ${filteredRows.map((r, i) => {
-            const dspVal = i === 0 ? currentSession.dspId : "";
-            return `
-              <tr>
-                <td>${r.date}</td>
-                <td>${dspVal}</td>
-                <td>${r.awb}</td>
-                <td>${r.client}</td>
-                <td>${r.orderId}</td>
-                <td>${r.remark}</td>
-                <td>${r.feName}</td>
-              </tr>
-            `;
-          }).join('')}
-        </table>
-      </body>
-      </html>
-    `;
+    // 2. Tight HTML Version (Precise Text for Excel/WPS with zero extra whitespace)
+    const rowsHtml = filteredRows.map((r, i) => {
+      const dspVal = i === 0 ? currentSession.dspId : "";
+      return `<tr><td>${cleanValue(r.date)}</td><td>${cleanValue(dspVal)}</td><td>${cleanValue(r.awb)}</td><td>${cleanValue(r.client)}</td><td>${cleanValue(r.orderId)}</td><td>${cleanValue(r.remark)}</td><td>${cleanValue(r.feName)}</td></tr>`;
+    }).join("");
+
+    const htmlTable = `<html><head><meta charset="utf-8"><style>td{mso-number-format:"\\@";white-space:nowrap;vertical-align:middle;padding:2px;font-family:Calibri,sans-serif;font-size:11pt;}</style></head><body><table>${rowsHtml}</table></body></html>`;
 
     try {
       if (navigator.clipboard && navigator.clipboard.write) {
