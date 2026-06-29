@@ -1,4 +1,3 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -11,20 +10,20 @@
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 221 83% 53%; /* Blue */
+    --primary: 221 83% 53%;
     --primary-foreground: 210 40% 98%;
-    --secondary: 142 71% 45%; /* Green */
-    --secondary-foreground: 210 40% 98%;
-    --muted: 210 40% 94%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 48 96% 53%; /* Yellow */
-    --accent-foreground: 222 47% 11%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222 47% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222 47% 11.2%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 221 83% 53%;
-    --radius: 1.5rem;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
   }
 }
 
@@ -33,39 +32,30 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground antialiased selection:bg-blue-600/20 selection:text-blue-700;
+    @apply bg-[#F8FAFC] text-[#111827] antialiased selection:bg-blue-600/10 selection:text-blue-700;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.5;
   }
 }
 
-.font-headline {
-  font-family: 'Plus Jakarta Sans', sans-serif;
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
 }
 
-@keyframes pulse-custom {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4);
-  }
-  50% {
-    transform: scale(1.02);
-    box-shadow: 0 0 20px 5px rgba(37, 99, 235, 0.2);
-  }
+/* Ensure no blurry text on zoom */
+* {
+  text-rendering: optimizeLegibility;
 }
-
-.animate-cta-pulse {
-  animation: pulse-custom 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Custom shadow for HD look */
-.shadow-hd {
-  box-shadow: 0 10px 50px -12px rgba(0, 0, 0, 0.15);
-}
-
-.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { 
-  background: #cbd5e1; 
-  border-radius: 20px;
-  border: 2px solid white;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
