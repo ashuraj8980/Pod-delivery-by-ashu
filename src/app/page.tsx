@@ -182,7 +182,7 @@ export default function PODTool() {
 
           if (parsedRows.length === 0) throw new Error("No valid shipments found.");
 
-          // UNQIUE SESSION LOGIC: Based on DSP ID
+          // UNQIUE SESSION LOGIC: Based on DSP ID only
           const existingSession = sessions.find(s => s.dspId === setupData.dspId);
           
           if (existingSession) {
@@ -253,6 +253,7 @@ export default function PODTool() {
             throw new Error("This file does not have Remarks Of NSL column. Please upload the correct Delhivery EOD rejection sheet.");
           }
 
+          // Strict 7 Column Output Preservation
           const targetHeaders = ["Date", "DSP No", "Awb", "Client Name", "Order- No", "Remarks Of NSL", "Fe Name"];
 
           let replacedCount = 0;
@@ -358,7 +359,15 @@ export default function PODTool() {
   const downloadExcel = () => {
     if (!filteredRows.length || !currentSession) return;
     const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
-    const excelData = filteredRows.map((r, i) => [r.date, i === 0 ? currentSession.dspId : "", { v: String(r.awb), t: 's', z: '@' }, r.client, r.orderId, r.remark, r.feName]);
+    const excelData = filteredRows.map((r, i) => [
+      r.date, 
+      { v: String(currentSession.dspId), t: 's', z: '@' }, 
+      { v: String(r.awb), t: 's', z: '@' }, 
+      r.client, 
+      r.orderId, 
+      r.remark, 
+      r.feName
+    ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Report");
@@ -366,10 +375,24 @@ export default function PODTool() {
     showToast(`Downloaded ${filteredRows.length} rows — ${statusFilter}`, "ok");
   };
 
-  const copyTable = () => {
+  const copyTableAsExcel = () => {
     if (!filteredRows.length || !currentSession) return;
-    const text = filteredRows.map((r, i) => `${r.date}\t${i === 0 ? currentSession.dspId : ""}\t${r.awb}\t${r.client}\t${r.orderId}\t${r.remark}\t${r.feName}`).join("\n");
-    navigator.clipboard.writeText(text).then(() => showToast(`Copied ${filteredRows.length} rows`, "ok"));
+    const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
+    const data = filteredRows.map((r, i) => [
+      r.date,
+      { v: String(currentSession.dspId), t: 's', z: '@' },
+      { v: String(r.awb), t: 's', z: '@' },
+      r.client,
+      r.orderId,
+      r.remark,
+      r.feName
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Clipboard");
+    const dateStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `Clipboard_${currentSession.dspId}_${dateStr}.xlsx`);
+    showToast("Excel Downloaded for WPS Copy", "ok");
   };
 
   const downloadOfficialExcel = () => {
@@ -532,7 +555,7 @@ export default function PODTool() {
                 <div className="flex items-center justify-between">
                   <div className="flex gap-2">
                     <button onClick={downloadExcel} className="bg-[#388E3C] hover:bg-[#2E7D32] text-white px-5 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-transform active:scale-95"><Download className="w-4 h-4" /> Download Excel</button>
-                    <button onClick={copyTable} className="bg-[#1976D2] hover:bg-[#1565C0] text-white px-5 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-transform active:scale-95"><Copy className="w-4 h-4" /> Copy Table</button>
+                    <button onClick={copyTableAsExcel} className="bg-[#1976D2] hover:bg-[#1565C0] text-white px-5 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-transform active:scale-95"><Copy className="w-4 h-4" /> Copy as Excel</button>
                   </div>
                   <button onClick={() => setSessions([])} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">Clear All Sessions</button>
                 </div>
