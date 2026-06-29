@@ -5,7 +5,7 @@
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
+    --background: 0 0% 100%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
@@ -33,12 +33,12 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-body antialiased;
+    @apply bg-background text-foreground antialiased selection:bg-blue-600/20 selection:text-blue-700;
   }
 }
 
 .font-headline {
-  font-family: 'Literata', serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
 @keyframes pulse-custom {
@@ -55,3 +55,17 @@
 .animate-cta-pulse {
   animation: pulse-custom 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Custom shadow for HD look */
+.shadow-hd {
+  box-shadow: 0 10px 50px -12px rgba(0, 0, 0, 0.15);
+}
+
+.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { 
+  background: #cbd5e1; 
+  border-radius: 20px;
+  border: 2px solid white;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
