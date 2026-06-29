@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
  * Features: Zero-Freeze Remark Replacer, Strict Column Preservation, Text-Format Excel Exports.
  * SESSION LOGIC: Uniqueness based on DSP ID only.
  * RESET ON RELOAD: No persistent storage.
- * CLIPBOARD: AWB prefixed with ' for WPS compatibility. Ctrl+T Shortcut support.
+ * CLIPBOARD: Clean AWB (no prefix). Ctrl+T Shortcut support.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -335,18 +335,19 @@ export default function PODTool() {
     return rows;
   }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
 
-  // CLIPBOARD COPY LOGIC
+  // CLIPBOARD COPY LOGIC - CLEAN FORMAT
   const copyTableToClipboard = useCallback((isShortcut = false) => {
     if (!filteredRows.length || !currentSession) return;
     
     // Headerless tab-separated string
-    // Format: date TAB dsp TAB 'awb TAB client TAB order TAB remark TAB fename
+    // Format: date TAB dsp TAB awb TAB client TAB order TAB remark TAB fename
+    // DSP only on first row, rest empty. Clean AWB (no quote prefix as requested).
     const clipboardText = filteredRows.map((r, i) => {
       const dspVal = i === 0 ? currentSession.dspId : "";
       return [
         r.date,
         dspVal,
-        `'${r.awb}`, // Quote prefix trick for WPS/Excel
+        r.awb, // Clean AWB number for direct pasting
         r.client,
         r.orderId,
         r.remark,
