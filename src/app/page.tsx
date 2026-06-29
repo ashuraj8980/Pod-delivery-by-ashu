@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -25,7 +26,8 @@ import { cn } from "@/lib/utils";
  * Features: Zero-Freeze Remark Replacer, Strict Column Preservation, Text-Format Excel Exports.
  * SESSION LOGIC: Uniqueness based on DSP ID only.
  * RESET ON RELOAD: No persistent storage.
- * CLIPBOARD: Clean AWB (no prefix). Ctrl+T Shortcut support.
+ * CLIPBOARD: Dual-format (HTML+Text) for WPS precision without visible quote prefixes.
+ * SHORTCUT: Ctrl+T for instant copy.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -335,19 +337,18 @@ export default function PODTool() {
     return rows;
   }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
 
-  // CLIPBOARD COPY LOGIC - CLEAN FORMAT
-  const copyTableToClipboard = useCallback((isShortcut = false) => {
+  // CLIPBOARD COPY LOGIC - DUAL FORMAT (HTML + TEXT)
+  // Using HTML format with mso-number-format ensures precision in Excel/WPS without visible quote prefixes.
+  const copyTableToClipboard = useCallback(async (isShortcut = false) => {
     if (!filteredRows.length || !currentSession) return;
     
-    // Headerless tab-separated string
-    // Format: date TAB dsp TAB awb TAB client TAB order TAB remark TAB fename
-    // DSP only on first row, rest empty. Clean AWB (no quote prefix as requested).
+    // 1. Plain Text Version (Standard fallback)
     const clipboardText = filteredRows.map((r, i) => {
       const dspVal = i === 0 ? currentSession.dspId : "";
       return [
         r.date,
         dspVal,
-        r.awb, // Clean AWB number for direct pasting
+        r.awb,
         r.client,
         r.orderId,
         r.remark,
@@ -355,14 +356,48 @@ export default function PODTool() {
       ].join("\t");
     }).join("\n");
 
+    // 2. HTML Version (Strict Text for Excel/WPS)
+    const htmlTable = `
+      <html>
+      <head>
+        <style>
+          td { mso-number-format: "\\@"; }
+        </style>
+      </head>
+      <body>
+        <table>
+          ${filteredRows.map((r, i) => {
+            const dspVal = i === 0 ? currentSession.dspId : "";
+            return `
+              <tr>
+                <td>${r.date}</td>
+                <td>${dspVal}</td>
+                <td>${r.awb}</td>
+                <td>${r.client}</td>
+                <td>${r.orderId}</td>
+                <td>${r.remark}</td>
+                <td>${r.feName}</td>
+              </tr>
+            `;
+          }).join('')}
+        </table>
+      </body>
+      </html>
+    `;
+
     try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(clipboardText).then(() => {
-          showToast(
-            isShortcut ? `Ctrl+T — Copied ${filteredRows.length} rows to clipboard` : `Copied ${filteredRows.length} rows — paste in WPS with Ctrl+V`, 
-            "ok"
-          );
-        });
+      if (navigator.clipboard && navigator.clipboard.write) {
+        const textBlob = new Blob([clipboardText], { type: 'text/plain' });
+        const htmlBlob = new Blob([htmlTable], { type: 'text/html' });
+        const data = [new ClipboardItem({
+          'text/plain': textBlob,
+          'text/html': htmlBlob
+        })];
+        await navigator.clipboard.write(data);
+        showToast(
+          isShortcut ? `Ctrl+T — Copied ${filteredRows.length} rows to clipboard` : `Copied ${filteredRows.length} rows — paste in WPS with Ctrl+V`, 
+          "ok"
+        );
       } else {
         // Fallback for older browsers
         const textArea = document.createElement("textarea");
@@ -371,9 +406,10 @@ export default function PODTool() {
         textArea.select();
         document.execCommand('copy');
         document.body.removeChild(textArea);
-        showToast(`Copied ${filteredRows.length} rows — paste in WPS with Ctrl+V`, "ok");
+        showToast(`Copied ${filteredRows.length} rows (Text format only)`, "info");
       }
     } catch (err) {
+      console.error("Clipboard Error:", err);
       showToast("Copy failed!", "err");
     }
   }, [filteredRows, currentSession, showToast]);
@@ -382,7 +418,7 @@ export default function PODTool() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && (e.key === 't' || e.key === 'T')) {
-        e.preventDefault(); // Stop browser new tab
+        e.preventDefault(); 
         copyTableToClipboard(true);
       }
     };
