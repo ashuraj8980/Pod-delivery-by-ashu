@@ -14,14 +14,15 @@ import {
   ArrowRight,
   Info,
   Filter,
-  BarChart3
+  BarChart3,
+  CheckCircle2
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Professional UI with Remark Breakdown Counters & AWB Protection.
+ * Professional UI with Fixed Table Layout & Orange Accents.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -124,21 +125,13 @@ export default function PODTool() {
     return str.replace(/\.0$/, "");
   };
 
-  /**
-   * Professional Clipboard Copy with AWB Digit Protection
-   */
   const copyDataProfessional = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
     
-    const cleanValue = (val: any) => String(val || "").replace(/[\r\n\t]+/g, " ").trim();
-    const plainText = rows.map(r => headers.map(h => cleanValue(r[h])).join("\t")).join("\n");
-
     const rowsHtml = rows.map(r => {
       const cells = headers.map(h => {
-        const val = cleanValue(r[h]);
-        // Apply mso-number-format for AWB and other numeric IDs to prevent scientific notation in Excel/WPS
-        const isNumeric = /awb|dsp|order/i.test(h);
-        const style = isNumeric ? 'style=\'mso-number-format:"\\@"\'' : '';
+        const val = String(r[h] || "").replace(/[\r\n\t]+/g, " ").trim();
+        const style = /awb|dsp|order/i.test(h) ? 'style=\'mso-number-format:"\\@"\'' : '';
         return `<td ${style}>${val}</td>`;
       }).join("");
       return `<tr>${cells}</tr>`;
@@ -147,14 +140,13 @@ export default function PODTool() {
     const htmlTable = `<html><head><meta charset="utf-8"></head><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
 
     try {
-      const textBlob = new Blob([plainText], { type: 'text/plain' });
       const htmlBlob = new Blob([htmlTable], { type: 'text/html' });
-      const data = [new ClipboardItem({ 'text/plain': textBlob, 'text/html': htmlBlob })];
+      const textBlob = new Blob([rows.map(r => headers.map(h => String(r[h] || "").trim()).join("\t")).join("\n")], { type: 'text/plain' });
+      const data = [new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })];
       await navigator.clipboard.write(data);
       return true;
     } catch (err) {
-      await navigator.clipboard.writeText(plainText);
-      return true;
+      return false;
     }
   }, []);
 
@@ -290,14 +282,11 @@ export default function PODTool() {
               noMappingCount++;
             }
 
-            const cleanAwb = fixValueToString(row[awbKey]);
-            const cleanDsp = fixValueToString(row["DSP No"]);
-            
             const cleanRow: any = { __isReplaced: isReplaced, __id: crypto.randomUUID() };
             targetHeaders.forEach(h => {
               if (h === "Remarks Of NSL") cleanRow[h] = finalRemark;
-              else if (h === "Awb") cleanRow[h] = cleanAwb;
-              else if (h === "DSP No") cleanRow[h] = cleanDsp;
+              else if (h === "Awb") cleanRow[h] = fixValueToString(row[awbKey]);
+              else if (h === "DSP No") cleanRow[h] = fixValueToString(row["DSP No"]);
               else {
                 const inputKey = allHeaders.find(key => key.trim().toLowerCase() === h.toLowerCase());
                 cleanRow[h] = inputKey ? row[inputKey] : "";
@@ -341,9 +330,6 @@ export default function PODTool() {
     return rows;
   }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
 
-  /**
-   * Remark Counts for the Breakdown Section
-   */
   const remarkCountsInStatus = useMemo(() => {
     if (!currentSession) return {};
     let baseData = currentSession.data;
@@ -355,12 +341,15 @@ export default function PODTool() {
     }
     const counts: Record<string, number> = {};
     baseData.forEach(r => {
-      if (r.remark) {
-        counts[r.remark] = (counts[r.remark] || 0) + 1;
-      }
+      const rem = r.remark || "No Remark";
+      counts[rem] = (counts[rem] || 0) + 1;
     });
     return counts;
   }, [currentSession, statusFilter]);
+
+  const sortedRemarks = useMemo(() => {
+    return Object.entries(remarkCountsInStatus).sort((a, b) => b[1] - a[1]);
+  }, [remarkCountsInStatus]);
 
   const handleCopyTable = useCallback(async (isShortcut = false) => {
     if (!filteredRows.length || !currentSession) return;
@@ -378,7 +367,7 @@ export default function PODTool() {
 
     const success = await copyDataProfessional(exportRows, headers);
     if (success) {
-      showToast(isShortcut ? `Ctrl+T — Copied ${filteredRows.length} rows` : `Copied ${filteredRows.length} rows to clipboard`, "ok");
+      showToast(isShortcut ? `Ctrl+T — Copied ${filteredRows.length} rows` : `Copied ${filteredRows.length} rows`, "ok");
     }
   }, [filteredRows, currentSession, copyDataProfessional, showToast]);
 
@@ -392,11 +381,6 @@ export default function PODTool() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleCopyTable]);
-
-  const copySingleAwb = useCallback(async (awb: string) => {
-    const success = await copyDataProfessional([{ "Awb": awb }], ["Awb"]);
-    if (success) showToast(`AWB ${awb} Copied`, 'ok');
-  }, [copyDataProfessional, showToast]);
 
   const downloadExcel = () => {
     if (!filteredRows.length || !currentSession) return;
@@ -478,7 +462,7 @@ export default function PODTool() {
             {[ { id: "eod", label: "Daily EOD Rejection" }, { id: "remark", label: "EOD Rejection Remark" } ].map(tab => (
               <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setStatusFilter("all"); setActiveRemarkChip(null); }} className={cn("px-2 py-4 text-[13px] font-semibold uppercase tracking-widest transition-all relative h-full", activeTab === tab.id ? "text-white" : "text-slate-400 hover:text-white")}>
                 {tab.label}
-                {activeTab === tab.id && <div className="absolute bottom-0 left-0 w-full h-1 bg-amber-400 shadow-[0_-2px_10px_#fbbf24]" />}
+                {activeTab === tab.id && <div className="absolute bottom-0 left-0 w-full h-1 bg-amber-400" />}
               </button>
             ))}
           </div>
@@ -488,7 +472,7 @@ export default function PODTool() {
       <main className="pt-24 px-6 pb-20 max-w-[1440px] mx-auto space-y-6">
         {activeTab === "eod" ? (
           <div className="space-y-6">
-            <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+            <div className="bg-white rounded-xl p-6 border-[1.5px] border-[#E2E8F0]">
               <p className="text-[12px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2"><Info className="w-4 h-4 text-blue-600" /> Session Setup</p>
               <div className="flex flex-col md:flex-row gap-4 mb-6">
                 <div className="flex-1 space-y-1.5">
@@ -504,7 +488,6 @@ export default function PODTool() {
                   <input type="date" value={setupData.date} onChange={(e) => setSetupData({...setupData, date: e.target.value})} className="w-full bg-[#F9FAFB] border-[1.5px] border-[#D1D5DB] rounded-lg px-4 h-[42px] text-[14px] font-bold text-[#111827] outline-none focus:border-[#1976D2] focus:bg-white focus:ring-[3px] focus:ring-[#1976D2]/10 transition-all" />
                 </div>
               </div>
-              
               <div className={cn("border-[2px] border-dashed rounded-xl p-10 text-center transition-all cursor-pointer relative group", uploadError ? "border-rose-300 bg-rose-50" : "border-slate-300 bg-slate-50 hover:border-blue-500 hover:bg-white", isProcessing && "opacity-80 pointer-events-none")}>
                 <input type="file" disabled={isProcessing} onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                 {isProcessing ? (
@@ -520,7 +503,7 @@ export default function PODTool() {
             {sessions.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {sessions.map(s => (
-                  <div key={s.id} onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); }} className={cn("bg-white p-4 rounded-xl border-l-[4px] shadow-sm cursor-pointer relative transition-all group border border-slate-200", selectedSessionId === s.id ? "border-l-blue-600 ring-4 ring-blue-500/5" : "border-l-slate-300 opacity-70 hover:opacity-100")}>
+                  <div key={s.id} onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); }} className={cn("bg-white p-4 rounded-xl border-l-[4px] cursor-pointer relative transition-all group border-[1.5px] border-[#E2E8F0]", selectedSessionId === s.id ? "border-l-blue-600 ring-4 ring-blue-500/5" : "border-l-slate-300 opacity-70 hover:opacity-100")}>
                     <button onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); if(selectedSessionId === s.id) setSelectedSessionId(null); }} className="absolute top-3 right-3 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"><X className="w-4 h-4" /></button>
                     <p className="text-[15px] font-bold text-slate-900 truncate pr-8">{s.feName}</p>
                     <p className="text-[12px] font-semibold text-slate-500 mt-1 uppercase tracking-tight">{s.dspId} — {s.date}</p>
@@ -532,7 +515,7 @@ export default function PODTool() {
 
             {currentSession && (
               <div className="space-y-6">
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex h-[80px]">
+                <div className="bg-white rounded-xl border-[1.5px] border-[#E2E8F0] overflow-hidden flex h-[80px]">
                   {[
                     { id: 'all', label: 'All', val: stats.total, color: 'text-blue-700' },
                     { id: 'pending', label: 'Pending', val: stats.pending, color: 'text-amber-600' },
@@ -547,34 +530,53 @@ export default function PODTool() {
                   ))}
                 </div>
 
-                {/* Remark Breakdown Section - Exact UI from User Screenshot */}
-                {Object.keys(remarkCountsInStatus).length > 0 && (
-                  <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                    <h3 className="text-[12px] font-bold text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-blue-600" />
-                      Remark Breakdown — {statusFilter.toUpperCase()}
-                    </h3>
-                    <div className="flex flex-wrap gap-3">
-                      {Object.entries(remarkCountsInStatus).map(([rem, count]) => (
-                        <button
-                          key={rem}
-                          onClick={() => setActiveRemarkChip(activeRemarkChip === rem ? null : rem)}
-                          className={cn(
-                            "group px-4 py-2 rounded-full flex items-center gap-3 text-[13px] font-bold transition-all border",
-                            activeRemarkChip === rem 
-                              ? "bg-blue-600 text-white border-blue-700 shadow-lg scale-105" 
-                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
-                          )}
+                {/* REMARK BREAKDOWN SECTION */}
+                {sortedRemarks.length > 0 && (
+                  <div className="bg-white rounded-xl p-6 border-[1.5px] border-[#E2E8F0] shadow-sm animate-in fade-in slide-in-from-top-4 duration-300">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="space-y-1">
+                        <h3 className="text-[12px] font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                          <BarChart3 className="w-4 h-4 text-blue-600" />
+                          REMARK BREAKDOWN — {statusFilter.toUpperCase()}
+                        </h3>
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-tight">Click any remark chip to filter</p>
+                      </div>
+                      {activeRemarkChip && (
+                        <button 
+                          onClick={() => setActiveRemarkChip(null)} 
+                          className="flex items-center gap-2 px-3 py-1 bg-slate-900 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all active:scale-95"
                         >
-                          <span className="uppercase tracking-tight truncate max-w-[300px]">{rem}</span>
-                          <span className={cn(
-                            "min-w-[24px] h-[24px] rounded-full flex items-center justify-center text-[10px] font-extrabold shadow-sm transition-colors",
-                            activeRemarkChip === rem ? "bg-white text-blue-600" : "bg-white text-slate-600"
-                          )}>
-                            {count}
-                          </span>
+                          All {statusFilter === 'all' ? '' : statusFilter.toUpperCase()}
                         </button>
-                      ))}
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      {sortedRemarks.map(([rem, count]) => {
+                        const isRed = /reject|intact/i.test(rem);
+                        const isActive = activeRemarkChip === rem;
+                        return (
+                          <button
+                            key={rem}
+                            onClick={() => setActiveRemarkChip(isActive ? null : rem)}
+                            className={cn(
+                              "group px-4 py-2 rounded-lg flex items-center gap-3 text-[13px] font-bold transition-all border-[1.5px]",
+                              isActive 
+                                ? "bg-blue-600 text-white border-blue-700 shadow-md scale-[1.02]" 
+                                : isRed 
+                                  ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100" 
+                                  : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
+                            )}
+                          >
+                            <span className="uppercase tracking-tight truncate max-w-[280px]">{rem}</span>
+                            <span className={cn(
+                              "min-w-[22px] h-[22px] rounded-md flex items-center justify-center text-[10px] font-extrabold shadow-sm transition-colors",
+                              isActive ? "bg-white text-blue-600" : isRed ? "bg-rose-600 text-white" : "bg-white text-slate-600"
+                            )}>
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -584,51 +586,63 @@ export default function PODTool() {
                     <button onClick={downloadExcel} className="h-10 px-6 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2 shadow-sm transition-all"><Download className="w-4 h-4" /> Download Excel</button>
                     <button onClick={() => handleCopyTable(false)} className="h-10 px-6 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2 shadow-sm transition-all"><Copy className="w-4 h-4" /> Copy Table</button>
                   </div>
-                  <div className="relative"><Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="Search by AWB / Client..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-white border-[1.5px] border-slate-200 rounded-lg pl-10 pr-4 h-10 text-[14px] font-semibold outline-none w-[300px] focus:border-blue-500 transition-all shadow-sm" /></div>
+                  <div className="relative"><Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="Search by AWB / Client..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-white border-[1.5px] border-[#D1D5DB] rounded-lg pl-10 pr-4 h-10 text-[14px] font-semibold outline-none w-[300px] focus:border-[#1976D2] transition-all" /></div>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="overflow-x-auto max-h-[800px] custom-scrollbar">
-                    <table className="w-full text-left border-collapse">
-                      <thead className="sticky top-0 z-30 bg-[#0F172A] text-white">
-                        <tr className="h-11">
-                          <th className="px-4 w-[50px] text-center"><X className="w-3.5 h-3.5 mx-auto" /></th>
-                          <th className="px-4 w-[110px] text-[11px] font-bold uppercase tracking-widest">DSP ID</th>
-                          <th className="px-4 w-[180px] text-[11px] font-bold uppercase tracking-widest">AWB Number</th>
-                          <th className="px-4 text-[11px] font-bold uppercase tracking-widest">Client</th>
-                          <th className="px-4 text-[11px] font-bold uppercase tracking-widest">Order ID</th>
-                          <th className="px-4 text-[11px] font-bold uppercase tracking-widest">Remark</th>
-                          <th className="px-4 w-[140px] text-[11px] font-bold uppercase tracking-widest">FE Name</th>
+                <div className="bg-white rounded-xl overflow-hidden border-[1.5px] border-[#F97316]">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse table-fixed">
+                      <thead className="bg-[#0F172A] text-white">
+                        <tr className="h-10">
+                          <th style={{ width: '32px' }} className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5" /></th>
+                          <th style={{ width: '28px' }} className="px-2 text-center"><Trash2 className="w-3.5 h-3.5 mx-auto" /></th>
+                          <th style={{ width: '80px' }} className="px-2 text-[11px] font-bold uppercase tracking-widest">DSP ID</th>
+                          <th style={{ width: '130px' }} className="px-2 text-[11px] font-bold uppercase tracking-widest">AWB Number</th>
+                          <th style={{ width: '110px' }} className="px-2 text-[11px] font-bold uppercase tracking-widest">Client</th>
+                          <th style={{ width: '110px' }} className="px-2 text-[11px] font-bold uppercase tracking-widest">Order ID</th>
+                          <th className="px-2 text-[11px] font-bold uppercase tracking-widest">Remark</th>
+                          <th style={{ width: '80px' }} className="px-2 text-[11px] font-bold uppercase tracking-widest">FE Name</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {currentSession && (
-                          <tr className="bg-slate-800 text-white h-10">
-                            <td colSpan={7} className="px-4">
-                              <div className="flex items-center gap-3">
-                                <span className="text-[14px] font-bold text-amber-400">{currentSession.dspId}</span>
-                                <span className="px-2 py-0.5 bg-blue-600 text-white rounded text-[11px] font-bold uppercase tracking-tighter">{filteredRows.length} Pkt</span>
-                                <span className="text-[12px] text-slate-400 font-bold uppercase ml-auto">{currentSession.feName} · {currentSession.date}</span>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
+                        <tr className="bg-slate-800 text-white h-9">
+                          <td colSpan={8} className="px-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[13px] font-bold text-amber-400">{currentSession.dspId}</span>
+                              <span className="px-2 py-0.5 bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-tighter">{filteredRows.length} Pkt</span>
+                              <span className="text-[11px] text-slate-400 font-bold uppercase ml-auto">{currentSession.feName} · {currentSession.date}</span>
+                            </div>
+                          </td>
+                        </tr>
                         {filteredRows.map((row) => (
-                          <tr key={row.id} className={cn("h-11 border-b border-[#F1F5F9] transition-colors group", row.isIntact ? "bg-rose-50/30" : "hover:bg-blue-50/30")}>
-                            <td className="px-4 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-4 h-4 mx-auto" /></button></td>
-                            <td className="px-4 text-[13px] font-bold text-slate-900">{row.dspId}</td>
-                            <td onClick={() => copySingleAwb(row.awb)} className="px-4 text-[12px] font-bold text-blue-700 cursor-pointer hover:underline transition-all tracking-tight" style={{ fontFamily: '"IBM Plex Mono", monospace' }}>{row.awb}</td>
-                            <td className="px-4 text-[13px] font-bold text-slate-800 truncate max-w-[150px]">{row.client}</td>
-                            <td className="px-4 text-[13px] font-bold text-slate-800 truncate max-w-[150px]">{row.orderId}</td>
-                            <td className="px-4">
+                          <tr key={row.id} className={cn("h-10 border-b border-[#FED7AA] transition-colors group", row.isIntact ? "bg-rose-50/50" : "hover:bg-blue-50/30")}>
+                            <td className="px-2 text-center"><input type="checkbox" checked={row.selected} onChange={() => {}} className="w-3.5 h-3.5" /></td>
+                            <td className="px-2 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
+                            <td className="px-2 text-[11px] font-bold text-slate-900 truncate">{row.dspId}</td>
+                            <td 
+                              onClick={async () => {
+                                const htmlTable = `<html><head><meta charset="utf-8"></head><body><table><tr><td style='mso-number-format:"\\@"'>${row.awb}</td></tr></table></body></html>`;
+                                const htmlBlob = new Blob([htmlTable], { type: 'text/html' });
+                                const textBlob = new Blob([row.awb], { type: 'text/plain' });
+                                await navigator.clipboard.write([new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })]);
+                                showToast(`AWB ${row.awb} Copied`, 'ok');
+                              }}
+                              className="px-2 text-[12px] font-bold text-blue-700 cursor-pointer hover:underline tracking-tight truncate" 
+                              style={{ fontFamily: '"IBM Plex Mono", monospace' }}
+                            >
+                              {row.awb}
+                            </td>
+                            <td className="px-2 text-[11px] font-bold text-slate-800 truncate">{row.client}</td>
+                            <td className="px-2 text-[11px] font-bold text-slate-800 truncate">{row.orderId}</td>
+                            <td className="px-2">
                               <span className={cn(
-                                "px-3 py-1 rounded-lg text-[13px] font-bold uppercase border whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] inline-block", 
+                                "px-2 py-0.5 rounded-lg text-[11px] font-bold uppercase border whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] inline-block", 
                                 row.isIntact ? "bg-rose-50 text-rose-700 border-rose-100" : "bg-amber-50 text-amber-700 border-amber-100"
                               )}>
                                 {row.remark || "NO REMARK"}
                               </span>
                             </td>
-                            <td className="px-4 text-[12px] font-bold text-slate-500 uppercase">{row.feName}</td>
+                            <td className="px-2 text-[11px] font-bold text-slate-500 uppercase truncate">{row.feName}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -641,7 +655,7 @@ export default function PODTool() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 space-y-6">
-              <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+              <div className="bg-white rounded-xl p-6 border-[1.5px] border-[#E2E8F0] shadow-sm">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-[16px] font-extrabold text-slate-900 flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-600" /> Remark Replacer</h2>
                   {replacerData.length > 0 && (
@@ -652,7 +666,6 @@ export default function PODTool() {
                     </div>
                   )}
                 </div>
-
                 <div className={cn("border-[2px] border-dashed rounded-xl p-10 text-center transition-all cursor-pointer relative group", uploadError ? "border-rose-300 bg-rose-50" : "border-slate-300 bg-slate-50 hover:border-blue-500 hover:bg-white", isProcessing && "opacity-80 pointer-events-none")}>
                   <input type="file" disabled={isProcessing} onChange={handleReplacerUpload} className="absolute inset-0 opacity-0 cursor-pointer z-20" />
                   {isProcessing ? (
@@ -664,30 +677,29 @@ export default function PODTool() {
                   )}
                 </div>
               </div>
-
               {replacerData.length > 0 && (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-xl shadow-sm border-[1.5px] border-[#F97316] overflow-hidden">
                   <div className="p-4 bg-slate-50 border-b flex items-center justify-between">
                     <div className="flex gap-3">
-                      <button onClick={downloadOfficialExcel} className="h-10 px-6 bg-slate-900 text-white rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"><Download className="w-4 h-4" /> Download Excel</button>
-                      <button onClick={() => copyDataProfessional(replacerData, replacerMeta?.headers || [])} className="h-10 px-6 bg-blue-600 text-white rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"><Copy className="w-4 h-4" /> Copy Data</button>
+                      <button onClick={downloadOfficialExcel} className="h-10 px-6 bg-slate-900 text-white rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95"><Download className="w-4 h-4" /> Download Excel</button>
+                      <button onClick={() => copyDataProfessional(replacerData, replacerMeta?.headers || [])} className="h-10 px-6 bg-blue-600 text-white rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95"><Copy className="w-4 h-4" /> Copy Data</button>
                     </div>
                     <button onClick={() => { setReplacerData([]); setReplacerMeta(null); }} className="text-[11px] font-bold text-rose-500 uppercase px-4 hover:underline tracking-widest">Clear</button>
                   </div>
                   <div className="overflow-x-auto max-h-[700px] custom-scrollbar">
-                    <table className="w-full text-left border-collapse text-[13px]">
+                    <table className="w-full text-left border-collapse table-fixed text-[11px]">
                       <thead className="sticky top-0 z-30 bg-[#0F172A] text-white">
-                        <tr className="h-11">
-                          <th className="px-4 w-[50px] text-center"><Trash2 className="w-4 h-4 mx-auto" /></th>
-                          {replacerMeta?.headers.map((h, i) => <th key={i} className="px-4 font-bold uppercase border-r border-white/5 whitespace-nowrap tracking-wider text-[11px]">{h}</th>)}
+                        <tr className="h-10">
+                          <th style={{ width: '40px' }} className="px-2 text-center"><Trash2 className="w-3.5 h-3.5 mx-auto" /></th>
+                          {replacerMeta?.headers.map((h, i) => <th key={i} className="px-2 font-bold uppercase whitespace-nowrap tracking-wider text-[10px]">{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
                         {replacerData.map((row) => (
-                          <tr key={row.__id} className={cn("h-11 border-b border-[#F1F5F9] transition-colors", row.__isReplaced ? "bg-[#F0FDF4]" : "bg-[#FFFDE7]")}>
-                            <td className="px-4 text-center"><button onClick={() => setReplacerData(prev => prev.filter(r => r.__id !== row.__id))} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-4 h-4 mx-auto" /></button></td>
+                          <tr key={row.__id} className={cn("h-10 border-b border-[#FED7AA] transition-colors", row.__isReplaced ? "bg-[#F0FDF4]" : "bg-[#FFFDE7]")}>
+                            <td className="px-2 text-center"><button onClick={() => setReplacerData(prev => prev.filter(r => r.__id !== row.__id))} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
                             {replacerMeta?.headers.map((h, i) => (
-                              <td key={i} className={cn("px-4 whitespace-nowrap font-bold", h === "Remarks Of NSL" && row.__isReplaced ? "text-emerald-700" : h === "Remarks Of NSL" ? "text-amber-700" : "text-slate-800")}>
+                              <td key={i} className={cn("px-2 whitespace-nowrap font-bold truncate", h === "Remarks Of NSL" && row.__isReplaced ? "text-emerald-700" : h === "Remarks Of NSL" ? "text-amber-700" : "text-slate-800")}>
                                 {row[h]}
                               </td>
                             ))}
@@ -699,9 +711,8 @@ export default function PODTool() {
                 </div>
               )}
             </div>
-
             <div className="lg:col-span-4">
-              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden sticky top-24">
+              <div className="bg-white rounded-xl shadow-sm border-[1.5px] border-[#E2E8F0] overflow-hidden sticky top-24">
                 <div className="bg-emerald-600 p-4 text-white">
                   <h3 className="text-[11px] font-extrabold uppercase tracking-widest flex items-center gap-2"><Info className="w-4 h-4" /> Remark Mapping Guide</h3>
                 </div>
