@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
  * Optimized for Ashu. 
  * Features: Zero-Freeze Remark Replacer, Strict Column Preservation, Text-Format Excel Exports.
+ * SESSION LOGIC: Uniqueness based on DSP ID only.
  * RESET ON RELOAD: No persistent storage.
  */
 
@@ -181,17 +182,30 @@ export default function PODTool() {
 
           if (parsedRows.length === 0) throw new Error("No valid shipments found.");
 
-          const newSession: Session = {
-            id: crypto.randomUUID(),
-            feName: setupData.feName,
-            dspId: setupData.dspId,
-            date: setupData.date,
-            data: parsedRows,
-            timestamp: Date.now()
-          };
-          setSessions(prev => [newSession, ...prev]);
-          setSelectedSessionId(newSession.id);
-          showToast(`Imported ${parsedRows.length} rows!`, "ok");
+          // UNQIUE SESSION LOGIC: Based on DSP ID
+          const existingSession = sessions.find(s => s.dspId === setupData.dspId);
+          
+          if (existingSession) {
+            setSessions(prev => prev.map(s => 
+              s.dspId === setupData.dspId 
+              ? { ...s, feName: setupData.feName, data: parsedRows, date: setupData.date, timestamp: Date.now() } 
+              : s
+            ));
+            setSelectedSessionId(existingSession.id);
+            showToast(`Session loaded for DSP ${setupData.dspId}`, "ok");
+          } else {
+            const newSession: Session = {
+              id: crypto.randomUUID(),
+              feName: setupData.feName,
+              dspId: setupData.dspId,
+              date: setupData.date,
+              data: parsedRows,
+              timestamp: Date.now()
+            };
+            setSessions(prev => [newSession, ...prev]);
+            setSelectedSessionId(newSession.id);
+            showToast(`Imported ${parsedRows.length} rows!`, "ok");
+          }
         } catch (err: any) {
           setUploadError(err.message);
           showToast("Import failed!", "err");
@@ -204,7 +218,7 @@ export default function PODTool() {
     e.target.value = "";
   };
 
-  // MODULE 2: REMARK REPLACER (ULTRA-FIXED - 7 COLUMN OUTPUT)
+  // MODULE 2: REMARK REPLACER
   const handleReplacerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -231,7 +245,6 @@ export default function PODTool() {
 
           const allHeaders = Object.keys(rawData[0]);
           
-          // Strict Requirement Check
           const remarkKey = allHeaders.find(h => h === "Remarks Of NSL") || "";
           const awbKey = allHeaders.find(h => h === "Awb") || "";
           const dspKey = allHeaders.find(h => h === "DSP No") || "";
@@ -240,7 +253,6 @@ export default function PODTool() {
             throw new Error("This file does not have Remarks Of NSL column. Please upload the correct Delhivery EOD rejection sheet.");
           }
 
-          // Target Headers (Exactly 7 columns, excluding OFFICIAL REMARK)
           const targetHeaders = ["Date", "DSP No", "Awb", "Client Name", "Order- No", "Remarks Of NSL", "Fe Name"];
 
           let replacedCount = 0;
@@ -271,11 +283,9 @@ export default function PODTool() {
             if (isReplaced) replacedCount++;
             else noMappingCount++;
 
-            // Clean AWB and DSP
             const cleanAwb = fixValueToString(row[awbKey]);
             const cleanDsp = fixValueToString(row[dspKey]);
             
-            // Build the clean row with only target headers
             const cleanRow: any = {
               __isReplaced: isReplaced,
               __id: crypto.randomUUID()
@@ -365,7 +375,6 @@ export default function PODTool() {
   const downloadOfficialExcel = () => {
     if (!replacerData.length || !replacerMeta) return;
     
-    // Prepare data for export - ensure exact order and text formatting
     const exportData = replacerData.map(r => {
       const row: any = {};
       replacerMeta.headers.forEach(h => {
@@ -381,7 +390,6 @@ export default function PODTool() {
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     
-    // Header Styling (Dark Navy #1C2333, White Text, Bold)
     const range = XLSX.utils.decode_range(ws['!ref']!);
     for (let C = range.s.c; C <= range.e.c; ++C) {
       const address = XLSX.utils.encode_col(C) + "1";
@@ -586,7 +594,7 @@ export default function PODTool() {
             )}
           </div>
         ) : (
-          /* MODULE 2: REMARK REPLACER (7 COLUMN VERSION) */
+          /* MODULE 2: REMARK REPLACER */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-500">
             <div className="lg:col-span-8 space-y-6">
               <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200">
