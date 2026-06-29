@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -26,6 +25,7 @@ import { cn } from "@/lib/utils";
  * Features: Zero-Freeze Remark Replacer, Strict Column Preservation, Text-Format Excel Exports.
  * SESSION LOGIC: Uniqueness based on DSP ID only.
  * RESET ON RELOAD: No persistent storage.
+ * CLIPBOARD: AWB prefixed with ' for WPS compatibility. Ctrl+T Shortcut support.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -182,7 +182,6 @@ export default function PODTool() {
 
           if (parsedRows.length === 0) throw new Error("No valid shipments found.");
 
-          // UNQIUE SESSION LOGIC: Based on DSP ID only
           const existingSession = sessions.find(s => s.dspId === setupData.dspId);
           
           if (existingSession) {
@@ -253,7 +252,6 @@ export default function PODTool() {
             throw new Error("This file does not have Remarks Of NSL column. Please upload the correct Delhivery EOD rejection sheet.");
           }
 
-          // Strict 7 Column Output Preservation
           const targetHeaders = ["Date", "DSP No", "Awb", "Client Name", "Order- No", "Remarks Of NSL", "Fe Name"];
 
           let replacedCount = 0;
@@ -337,6 +335,61 @@ export default function PODTool() {
     return rows;
   }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
 
+  // CLIPBOARD COPY LOGIC
+  const copyTableToClipboard = useCallback((isShortcut = false) => {
+    if (!filteredRows.length || !currentSession) return;
+    
+    // Headerless tab-separated string
+    // Format: date TAB dsp TAB 'awb TAB client TAB order TAB remark TAB fename
+    const clipboardText = filteredRows.map((r, i) => {
+      const dspVal = i === 0 ? currentSession.dspId : "";
+      return [
+        r.date,
+        dspVal,
+        `'${r.awb}`, // Quote prefix trick for WPS/Excel
+        r.client,
+        r.orderId,
+        r.remark,
+        r.feName
+      ].join("\t");
+    }).join("\n");
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(clipboardText).then(() => {
+          showToast(
+            isShortcut ? `Ctrl+T — Copied ${filteredRows.length} rows to clipboard` : `Copied ${filteredRows.length} rows — paste in WPS with Ctrl+V`, 
+            "ok"
+          );
+        });
+      } else {
+        // Fallback for older browsers
+        const textArea = document.createElement("textarea");
+        textArea.value = clipboardText;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showToast(`Copied ${filteredRows.length} rows — paste in WPS with Ctrl+V`, "ok");
+      }
+    } catch (err) {
+      showToast("Copy failed!", "err");
+    }
+  }, [filteredRows, currentSession, showToast]);
+
+  // KEYBOARD SHORTCUT Ctrl+T
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault(); // Stop browser new tab
+        copyTableToClipboard(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [copyTableToClipboard]);
+
   const stats = useMemo(() => {
     if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
     return {
@@ -359,7 +412,7 @@ export default function PODTool() {
   const downloadExcel = () => {
     if (!filteredRows.length || !currentSession) return;
     const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
-    const excelData = filteredRows.map((r, i) => [
+    const excelData = filteredRows.map((r) => [
       r.date, 
       { v: String(currentSession.dspId), t: 's', z: '@' }, 
       { v: String(r.awb), t: 's', z: '@' }, 
@@ -373,26 +426,6 @@ export default function PODTool() {
     XLSX.utils.book_append_sheet(wb, ws, "Report");
     XLSX.writeFile(wb, `POD_${currentSession.dspId}_${statusFilter}.xlsx`);
     showToast(`Downloaded ${filteredRows.length} rows — ${statusFilter}`, "ok");
-  };
-
-  const copyTableAsExcel = () => {
-    if (!filteredRows.length || !currentSession) return;
-    const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
-    const data = filteredRows.map((r, i) => [
-      r.date,
-      { v: String(currentSession.dspId), t: 's', z: '@' },
-      { v: String(r.awb), t: 's', z: '@' },
-      r.client,
-      r.orderId,
-      r.remark,
-      r.feName
-    ]);
-    const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Clipboard");
-    const dateStr = new Date().toISOString().split('T')[0];
-    XLSX.writeFile(wb, `Clipboard_${currentSession.dspId}_${dateStr}.xlsx`);
-    showToast("Excel Downloaded for WPS Copy", "ok");
   };
 
   const downloadOfficialExcel = () => {
@@ -446,7 +479,6 @@ export default function PODTool() {
 
   return (
     <div className="min-h-screen bg-[#F0F4FA] font-body text-[#374151]">
-      {/* GLOBAL HEADER (STICKY) */}
       <div className="fixed top-0 left-0 w-full z-[400] shadow-lg">
         <div className="h-[3px] w-full bg-gradient-to-r from-[#1565C0] via-[#F9A825] via-[#2E7D32] to-[#D32F2F]" />
         <header className="h-[58px] bg-[#1C2333] px-6 flex items-center justify-between text-white border-b border-white/5">
@@ -555,7 +587,7 @@ export default function PODTool() {
                 <div className="flex items-center justify-between">
                   <div className="flex gap-2">
                     <button onClick={downloadExcel} className="bg-[#388E3C] hover:bg-[#2E7D32] text-white px-5 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-transform active:scale-95"><Download className="w-4 h-4" /> Download Excel</button>
-                    <button onClick={copyTableAsExcel} className="bg-[#1976D2] hover:bg-[#1565C0] text-white px-5 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-transform active:scale-95"><Copy className="w-4 h-4" /> Copy as Excel</button>
+                    <button onClick={() => copyTableToClipboard(false)} className="bg-[#1976D2] hover:bg-[#1565C0] text-white px-5 py-2.5 rounded-lg font-[700] text-[12px] uppercase tracking-widest flex items-center gap-2 shadow-sm transition-transform active:scale-95"><Copy className="w-4 h-4" /> Copy Table</button>
                   </div>
                   <button onClick={() => setSessions([])} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">Clear All Sessions</button>
                 </div>
@@ -617,7 +649,6 @@ export default function PODTool() {
             )}
           </div>
         ) : (
-          /* MODULE 2: REMARK REPLACER */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-500">
             <div className="lg:col-span-8 space-y-6">
               <div className="bg-white rounded-[14px] p-6 shadow-sm border border-slate-200">
@@ -673,7 +704,7 @@ export default function PODTool() {
                         </tr>
                       </thead>
                       <tbody>
-                        {replacerData.map((row, idx) => (
+                        {replacerData.map((row) => (
                           <tr key={row.__id} className={cn("border-b transition-colors", row.__isReplaced ? "bg-[#F0FDF4]" : "bg-[#FFFDE7]")}>
                             <td className="p-3 text-center"><button onClick={() => setReplacerData(prev => prev.filter(r => r.__id !== row.__id))} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
                             {replacerMeta?.headers.map((h, i) => (
