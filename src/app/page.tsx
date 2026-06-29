@@ -13,14 +13,15 @@ import {
   AlertCircle,
   ArrowRight,
   Info,
-  Filter
+  Filter,
+  BarChart3
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * High-Definition UI Redesign with Professional Readability.
+ * Professional UI with Remark Breakdown Counters & AWB Protection.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -123,6 +124,9 @@ export default function PODTool() {
     return str.replace(/\.0$/, "");
   };
 
+  /**
+   * Professional Clipboard Copy with AWB Digit Protection
+   */
   const copyDataProfessional = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
     
@@ -132,13 +136,15 @@ export default function PODTool() {
     const rowsHtml = rows.map(r => {
       const cells = headers.map(h => {
         const val = cleanValue(r[h]);
-        const style = h === "Awb" || h === "DSP No" || h === "Order- No" || h === "Awb Number" || h === "DSP ID" || h === "Order ID" ? 'style=\'mso-number-format:"\\@"\'' : '';
+        // Apply mso-number-format for AWB and other numeric IDs to prevent scientific notation in Excel/WPS
+        const isNumeric = /awb|dsp|order/i.test(h);
+        const style = isNumeric ? 'style=\'mso-number-format:"\\@"\'' : '';
         return `<td ${style}>${val}</td>`;
       }).join("");
       return `<tr>${cells}</tr>`;
     }).join("");
 
-    const htmlTable = `<html><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
+    const htmlTable = `<html><head><meta charset="utf-8"></head><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
 
     try {
       const textBlob = new Blob([plainText], { type: 'text/plain' });
@@ -335,9 +341,11 @@ export default function PODTool() {
     return rows;
   }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
 
-  // Unique remarks for the current status filter
-  const uniqueRemarksInStatus = useMemo(() => {
-    if (!currentSession) return [];
+  /**
+   * Remark Counts for the Breakdown Section
+   */
+  const remarkCountsInStatus = useMemo(() => {
+    if (!currentSession) return {};
     let baseData = currentSession.data;
     if (statusFilter !== 'all') {
       if (statusFilter === 'pending') baseData = baseData.filter(r => r.status === 'pending');
@@ -345,8 +353,13 @@ export default function PODTool() {
       else if (statusFilter === 'rto') baseData = baseData.filter(r => r.status === 'rto');
       else if (statusFilter === 'dto') baseData = baseData.filter(r => r.status === 'dto' || r.status === 'delivered');
     }
-    const remarks = baseData.map(r => r.remark);
-    return Array.from(new Set(remarks)).filter(Boolean).sort();
+    const counts: Record<string, number> = {};
+    baseData.forEach(r => {
+      if (r.remark) {
+        counts[r.remark] = (counts[r.remark] || 0) + 1;
+      }
+    });
+    return counts;
   }, [currentSession, statusFilter]);
 
   const handleCopyTable = useCallback(async (isShortcut = false) => {
@@ -387,7 +400,7 @@ export default function PODTool() {
 
   const downloadExcel = () => {
     if (!filteredRows.length || !currentSession) return;
-    const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
+    const header = ['Date', 'DSP ID', 'Awb', 'Client', 'Order ID', 'Remark', 'FE Name'];
     const excelData = filteredRows.map((r, i) => [
       r.date, 
       { v: i === 0 ? String(currentSession.dspId) : "", t: 's', z: '@' }, 
@@ -534,24 +547,35 @@ export default function PODTool() {
                   ))}
                 </div>
 
-                {/* Remark Selection Chips */}
-                {uniqueRemarksInStatus.length > 0 && (
-                  <div className="flex flex-wrap gap-2 py-2 px-1">
-                    {uniqueRemarksInStatus.map(rem => (
-                      <button
-                        key={rem}
-                        onClick={() => setActiveRemarkChip(activeRemarkChip === rem ? null : rem)}
-                        className={cn(
-                          "px-4 py-1.5 rounded-lg text-[13px] font-bold border transition-all flex items-center gap-2",
-                          activeRemarkChip === rem 
-                            ? "bg-blue-600 text-white border-blue-700 shadow-md scale-105" 
-                            : "bg-white text-slate-700 border-slate-200 hover:border-blue-300 hover:bg-blue-50/30"
-                        )}
-                      >
-                        <Filter className={cn("w-3.5 h-3.5", activeRemarkChip === rem ? "text-white" : "text-blue-500")} />
-                        {rem}
-                      </button>
-                    ))}
+                {/* Remark Breakdown Section - Exact UI from User Screenshot */}
+                {Object.keys(remarkCountsInStatus).length > 0 && (
+                  <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+                    <h3 className="text-[12px] font-bold text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-blue-600" />
+                      Remark Breakdown — {statusFilter.toUpperCase()}
+                    </h3>
+                    <div className="flex flex-wrap gap-3">
+                      {Object.entries(remarkCountsInStatus).map(([rem, count]) => (
+                        <button
+                          key={rem}
+                          onClick={() => setActiveRemarkChip(activeRemarkChip === rem ? null : rem)}
+                          className={cn(
+                            "group px-4 py-2 rounded-full flex items-center gap-3 text-[13px] font-bold transition-all border",
+                            activeRemarkChip === rem 
+                              ? "bg-blue-600 text-white border-blue-700 shadow-lg scale-105" 
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
+                          )}
+                        >
+                          <span className="uppercase tracking-tight truncate max-w-[300px]">{rem}</span>
+                          <span className={cn(
+                            "min-w-[24px] h-[24px] rounded-full flex items-center justify-center text-[10px] font-extrabold shadow-sm transition-colors",
+                            activeRemarkChip === rem ? "bg-white text-blue-600" : "bg-white text-slate-600"
+                          )}>
+                            {count}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -695,10 +719,6 @@ export default function PODTool() {
           </div>
         )}
       </main>
-
-      <style jsx global>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@700&display=swap');
-      `}</style>
     </div>
   );
 }
