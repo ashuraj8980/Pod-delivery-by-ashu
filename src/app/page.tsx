@@ -137,23 +137,25 @@ export default function PODTool() {
   };
 
   /**
-   * Universal Clipboard Function for 100% precision
+   * Universal Clipboard Function for 100% precision in WPS/Excel
    */
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
 
+    // Plain text version with apostrophe for WPS
     const plainText = rows.map(r => 
       headers.map(h => {
         const val = String(r[h] || "").trim();
-        if (h === 'AWB Number' || h === 'Awb') return `'${val}`;
+        if (h.toLowerCase().includes('awb')) return `'${val}`;
         return val;
       }).join("\t")
     ).join("\n");
 
+    // HTML version with explicit number format for Excel/WPS
     const rowsHtml = rows.map(r => {
       const cells = headers.map(h => {
         const val = String(r[h] || "").trim();
-        const style = (h === 'AWB Number' || h === 'Awb') ? 'style=\'mso-number-format:"\\@"\'' : '';
+        const style = h.toLowerCase().includes('awb') ? 'style=\'mso-number-format:"\\@"\'' : '';
         return `<td ${style}>${val}</td>`;
       }).join("");
       return `<tr>${cells}</tr>`;
@@ -286,6 +288,27 @@ export default function PODTool() {
     e.target.value = "";
   };
 
+  const handleReplacerCopy = useCallback(async () => {
+    if (!replacerData.length || !replacerMeta) return;
+    const success = await copyDataToClipboard(replacerData, replacerMeta.headers);
+    if (success) showToast(`Copied ${replacerData.length} processed rows`, "ok");
+  }, [replacerData, replacerMeta, copyDataToClipboard, showToast]);
+
+  const handleReplacerDownload = () => {
+    if (!replacerData.length || !replacerMeta) return;
+    const ws = XLSX.utils.json_to_sheet(replacerData.map(r => {
+      const newRow: any = {};
+      replacerMeta.headers.forEach(h => {
+        newRow[h] = r[h];
+      });
+      return newRow;
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Processed Remarks");
+    XLSX.writeFile(wb, "Processed_Remarks_Report.xlsx");
+    showToast("Report downloaded successfully", "ok");
+  };
+
   const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
 
   const filteredRows = useMemo(() => {
@@ -301,16 +324,6 @@ export default function PODTool() {
     }
     return rows;
   }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
-
-  const remarkBreakdown = useMemo(() => {
-    if (!currentSession || statusFilter !== 'pending') return [];
-    const counts: Record<string, number> = {};
-    currentSession.data.filter(r => r.status === 'pending').forEach(r => {
-      const rem = r.remark || "No Remark";
-      counts[rem] = (counts[rem] || 0) + 1;
-    });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  }, [currentSession, statusFilter]);
 
   const stats = useMemo(() => {
     if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
@@ -418,7 +431,7 @@ export default function PODTool() {
                     inputMode="numeric"
                     value={setupData.dspId} 
                     onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, ''); // Only allow digits
+                      const val = e.target.value.replace(/\D/g, '');
                       setSetupData({...setupData, dspId: val});
                     }} 
                     className="w-full bg-[#F9FAFB] border-[1.5px] border-[#D1D5DB] rounded-lg px-3.5 h-[42px] text-[14px] font-bold text-slate-900 outline-none focus:border-[#1976D2] focus:ring-4 focus:ring-blue-500/5 transition-all" 
@@ -534,7 +547,7 @@ export default function PODTool() {
                 </div>
 
                 {/* REMARK BREAKDOWN */}
-                {statusFilter === 'pending' && remarkBreakdown.length > 0 && (
+                {statusFilter === 'pending' && (
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
                     <div className="flex items-center justify-between mb-5">
                       <div>
@@ -549,7 +562,13 @@ export default function PODTool() {
                       )}
                     </div>
                     <div className="flex flex-wrap gap-2.5">
-                      {remarkBreakdown.map(([rem, count]) => {
+                      {Object.entries(
+                        currentSession.data.filter(r => r.status === 'pending').reduce((acc: Record<string, number>, r) => {
+                          const rem = r.remark || "No Remark";
+                          acc[rem] = (acc[rem] || 0) + 1;
+                          return acc;
+                        }, {})
+                      ).sort((a, b) => b[1] - a[1]).map(([rem, count]) => {
                         const isRed = /reject|intact|barcode|content/i.test(rem);
                         return (
                           <button 
@@ -674,7 +693,12 @@ export default function PODTool() {
                 <div className="bg-white rounded-xl border border-emerald-500/20 shadow-xl overflow-hidden">
                   <div className="p-4 bg-slate-50 border-b flex items-center justify-between">
                     <div className="flex gap-2">
-                      <button onClick={() => {}} className="h-10 px-6 bg-slate-900 text-white rounded-xl text-[13px] font-bold">Download Processed Report</button>
+                      <button onClick={handleReplacerDownload} className="h-10 px-5 bg-emerald-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-sm">
+                        <Download className="w-4 h-4" /> Download Excel
+                      </button>
+                      <button onClick={handleReplacerCopy} className="h-10 px-5 bg-blue-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-sm">
+                        <Copy className="w-4 h-4" /> Copy Table
+                      </button>
                     </div>
                     <button onClick={() => setReplacerData([])} className="text-[11px] font-bold text-rose-600">Discard Data</button>
                   </div>
@@ -725,4 +749,3 @@ export default function PODTool() {
     </div>
   );
 }
-
