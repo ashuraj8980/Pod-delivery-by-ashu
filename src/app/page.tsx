@@ -553,14 +553,26 @@ export default function PODTool() {
 
             {sessions.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {sessions.map(s => (
-                  <div key={s.id} onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); }} className={cn("bg-white p-4 rounded-xl border-l-[4px] cursor-pointer relative transition-all group border-[1.5px] border-[#E2E8F0]", selectedSessionId === s.id ? "border-l-blue-600 ring-4 ring-blue-500/5" : "border-l-slate-300 opacity-70 hover:opacity-100")}>
-                    <button onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); if(selectedSessionId === s.id) setSelectedSessionId(null); }} className="absolute top-3 right-3 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"><X className="w-4 h-4" /></button>
-                    <p className="text-[15px] font-bold text-slate-900 truncate pr-8">{s.feName}</p>
-                    <p className="text-[12px] font-medium text-slate-500 mt-1 uppercase tracking-tight">{s.dspId} — {formatDate(s.date)}</p>
-                    <div className="mt-3"><span className="px-2 py-0.5 bg-slate-100 rounded text-[11px] font-bold text-slate-600 uppercase tracking-tight">{s.data.length} rows</span></div>
-                  </div>
-                ))}
+                {sessions.map(s => {
+                  const sTotal = s.data.length;
+                  const sPending = s.data.filter(r => r.status === 'pending').length;
+                  const sRto = s.data.filter(r => r.status === 'rto').length;
+                  const sDto = s.data.filter(r => r.status === 'dto' || r.status === 'delivered').length;
+                  
+                  return (
+                    <div key={s.id} onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); }} className={cn("bg-white p-4 rounded-xl border-l-[4px] cursor-pointer relative transition-all group border-[1.5px] border-[#E2E8F0]", selectedSessionId === s.id ? "border-l-blue-600 ring-4 ring-blue-500/5" : "border-l-slate-300 opacity-70 hover:opacity-100")}>
+                      <button onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); if(selectedSessionId === s.id) setSelectedSessionId(null); }} className="absolute top-3 right-3 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"><X className="w-4 h-4" /></button>
+                      <p className="text-[15px] font-bold text-slate-900 truncate pr-8">{s.feName}</p>
+                      <p className="text-[12px] font-medium text-slate-500 mt-1 uppercase tracking-tight">{s.dspId} — {formatDate(s.date)}</p>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        <span className="px-1.5 py-0.5 bg-slate-100 rounded text-[10px] font-bold text-slate-600 uppercase tracking-tight whitespace-nowrap">{sTotal} pkt</span>
+                        <span className="px-1.5 py-0.5 bg-amber-100 rounded text-[10px] font-bold text-amber-700 uppercase tracking-tight whitespace-nowrap">{sPending} pending</span>
+                        <span className="px-1.5 py-0.5 bg-rose-100 rounded text-[10px] font-bold text-rose-700 uppercase tracking-tight whitespace-nowrap">{sRto} RTO</span>
+                        <span className="px-1.5 py-0.5 bg-emerald-100 rounded text-[10px] font-bold text-emerald-700 uppercase tracking-tight whitespace-nowrap">{sDto} DTO</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -786,4 +798,3 @@ export default function PODTool() {
     </div>
   );
 }
-
