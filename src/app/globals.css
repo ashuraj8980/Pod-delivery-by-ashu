@@ -11,7 +11,7 @@
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 221 83% 53%;
+    --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222 47% 11.2%;
@@ -36,8 +36,9 @@
     -moz-osx-font-smoothing: grayscale;
   }
   body {
-    @apply bg-[#F8FAFC] text-[#111827] antialiased;
+    @apply bg-[#F1F5F9] text-[#111827] antialiased;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
     line-height: 1.5;
   }
 }
@@ -57,14 +58,11 @@
   background: #94A3B8;
 }
 
-/* Ensure ultra-sharp text at all zoom levels */
 .text-sharp {
   font-smoothing: antialiased;
   -webkit-font-smoothing: antialiased;
-  letter-spacing: -0.01em;
 }
 
-/* Delhivery Style Button Transitions */
 .btn-hover {
   @apply transition-all duration-200 active:scale-95;
 }
