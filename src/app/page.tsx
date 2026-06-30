@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Professional UI with Fixed Table Layout & Orange Accents.
+ * Optimized for 100% precision and clear readability.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -125,23 +125,32 @@ export default function PODTool() {
     return str.replace(/\.0$/, "");
   };
 
+  /**
+   * Professional HTML Copy Logic
+   * Forces Excel/WPS to treat digits as text using mso-number-format:"\@"
+   */
   const copyDataProfessional = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
     
+    // Build HTML string with mso styling to preserve digits
     const rowsHtml = rows.map(r => {
       const cells = headers.map(h => {
+        // Sanitize data: remove extra spaces/newlines that cause tall rows in Excel
         const val = String(r[h] || "").replace(/[\r\n\t]+/g, " ").trim();
+        // Force text format for AWB and DSP related columns
         const style = /awb|dsp|order/i.test(h) ? 'style=\'mso-number-format:"\\@"\'' : '';
         return `<td ${style}>${val}</td>`;
       }).join("");
       return `<tr>${cells}</tr>`;
     }).join("");
 
-    const htmlTable = `<html><head><meta charset="utf-8"></head><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
+    const htmlTable = `<html><head><meta charset="utf-8"><style>td{white-space:nowrap;}</style></head><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
 
     try {
       const htmlBlob = new Blob([htmlTable], { type: 'text/html' });
+      // Fallback plain text version (without special prefixes, clean digits)
       const textBlob = new Blob([rows.map(r => headers.map(h => String(r[h] || "").trim()).join("\t")).join("\n")], { type: 'text/plain' });
+      
       const data = [new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })];
       await navigator.clipboard.write(data);
       return true;
@@ -202,6 +211,7 @@ export default function PODTool() {
 
           if (parsedRows.length === 0) throw new Error("No valid shipments found.");
 
+          // UNIQNESS LOGIC: Based on DSP ID only
           const existingSession = sessions.find(s => s.dspId === setupData.dspId);
           
           if (existingSession) {
@@ -261,6 +271,7 @@ export default function PODTool() {
 
           if (!remarkKey) throw new Error("This file does not have Remarks Of NSL column. Please upload the correct Delhivery EOD rejection sheet.");
 
+          // Exact 7 columns for output
           const targetHeaders = ["Date", "DSP No", "Awb", "Client Name", "Order- No", "Remarks Of NSL", "Fe Name"];
           let replacedCount = 0;
           let noMappingCount = 0;
@@ -330,6 +341,7 @@ export default function PODTool() {
     return rows;
   }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
 
+  // REMARK BREAKDOWN LOGIC: Count remarks based on status filter
   const remarkCountsInStatus = useMemo(() => {
     if (!currentSession) return {};
     let baseData = currentSession.data;
@@ -371,6 +383,7 @@ export default function PODTool() {
     }
   }, [filteredRows, currentSession, copyDataProfessional, showToast]);
 
+  // KEYBOARD SHORTCUT: Ctrl+T
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && (e.key === 't' || e.key === 'T')) {
@@ -403,7 +416,7 @@ export default function PODTool() {
 
   const downloadOfficialExcel = () => {
     if (!replacerData.length || !replacerMeta) return;
-    const headers = replacerMeta.headers;
+    const headers = replacerMeta.headers; // Should be the 7 headers
     const ws = XLSX.utils.json_to_sheet(replacerData.map(r => {
       const row: any = {};
       headers.forEach(h => {
@@ -416,6 +429,7 @@ export default function PODTool() {
       return row;
     }), { header: headers });
 
+    // Official Excel Styling
     const range = XLSX.utils.decode_range(ws['!ref']!);
     for (let C = range.s.c; C <= range.e.c; ++C) {
       const address = XLSX.utils.encode_col(C) + "1";
@@ -559,7 +573,7 @@ export default function PODTool() {
                             key={rem}
                             onClick={() => setActiveRemarkChip(isActive ? null : rem)}
                             className={cn(
-                              "group px-4 py-2 rounded-lg flex items-center gap-3 text-[13px] font-bold transition-all border-[1.5px]",
+                              "group px-4 py-2 rounded-lg flex items-center gap-3 text-[13px] font-semibold transition-all border-[1.5px]",
                               isActive 
                                 ? "bg-blue-600 text-white border-blue-700 shadow-md scale-[1.02]" 
                                 : isRed 
@@ -621,6 +635,7 @@ export default function PODTool() {
                             <td className="px-2 text-[11px] font-bold text-slate-900 truncate">{row.dspId}</td>
                             <td 
                               onClick={async () => {
+                                // Single AWB Copy Fix: Use HTML format to protect digits
                                 const htmlTable = `<html><head><meta charset="utf-8"></head><body><table><tr><td style='mso-number-format:"\\@"'>${row.awb}</td></tr></table></body></html>`;
                                 const htmlBlob = new Blob([htmlTable], { type: 'text/html' });
                                 const textBlob = new Blob([row.awb], { type: 'text/plain' });
@@ -636,7 +651,7 @@ export default function PODTool() {
                             <td className="px-2 text-[11px] font-bold text-slate-800 truncate">{row.orderId}</td>
                             <td className="px-2">
                               <span className={cn(
-                                "px-2 py-0.5 rounded-lg text-[11px] font-bold uppercase border whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] inline-block", 
+                                "px-2 py-0.5 rounded-lg text-[11px] font-semibold uppercase border whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] inline-block", 
                                 row.isIntact ? "bg-rose-50 text-rose-700 border-rose-100" : "bg-amber-50 text-amber-700 border-amber-100"
                               )}>
                                 {row.remark || "NO REMARK"}
