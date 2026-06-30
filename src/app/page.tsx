@@ -57,11 +57,14 @@ const STATUS_MAP: Record<string, string> = {
 const formatDate = (val: any): string => {
   if (!val) return "";
   const str = String(val).trim();
+  // If already in DD-MM-YYYY
   if (/^\d{2}-\d{2}-\d{4}$/.test(str)) return str;
+  // If in YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     const [y, m, d] = str.split('-');
     return `${d}-${m}-${y}`;
   }
+  // Try JS Date
   const d = new Date(str);
   if (!isNaN(d.getTime())) {
     const day = String(d.getDate()).padStart(2, '0');
@@ -151,9 +154,15 @@ export default function PODTool() {
     return String(val).trim();
   };
 
+  /**
+   * Universal Clipboard Function
+   * - HTML version for WPS/Excel (mso-number-format)
+   * - Plain text version with ' prefix
+   */
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
 
+    // Plain Text Version: Prefixed with '
     const plainText = rows.map(r => 
       headers.map(h => {
         const val = String(r[h] || "").trim();
@@ -162,6 +171,7 @@ export default function PODTool() {
       }).join("\t")
     ).join("\n");
 
+    // HTML Table Version: mso-number-format:"\@"
     const rowsHtml = rows.map(r => {
       const cells = headers.map(h => {
         const val = String(r[h] || "").trim();
