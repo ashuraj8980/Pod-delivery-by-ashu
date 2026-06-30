@@ -463,14 +463,14 @@ export default function PODTool() {
               </div>
             </div>
 
-            {/* SESSIONS GRID */}
+            {/* SESSIONS GRID - UPDATED COMPACT LAYOUT */}
             {sessions.length > 0 && (
               <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 space-y-6 shadow-sm">
                 <div className="flex items-center justify-between px-1">
                   <h3 className="text-[13px] font-bold text-slate-900 tracking-tight">Recent Sessions</h3>
                   <button onClick={() => { if(confirm("Delete all session history?")) setSessions([]); }} className="text-[11px] font-bold text-rose-600 hover:underline">Clear All History</button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
                   {sessions.map(s => {
                     const sessionStats = {
                       total: s.data.length,
@@ -483,31 +483,31 @@ export default function PODTool() {
                         key={s.id}
                         onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); }}
                         className={cn(
-                          "bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer relative pl-3 py-4 pr-4 group flex flex-col justify-between h-full min-h-[140px]",
+                          "bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer relative pl-3 p-3 pr-4 group flex flex-col justify-between h-full min-h-[120px] max-w-[280px]",
                           selectedSessionId === s.id ? "ring-2 ring-blue-500 border-transparent" : "hover:border-blue-300"
                         )}
                       >
                         {/* Blue accent bar */}
-                        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
                         
-                        <div className="space-y-1 relative">
+                        <div className="space-y-0.5 relative">
                           <div className="flex justify-between items-start">
-                             <p className="text-[15px] font-extrabold text-slate-900 truncate pr-6">{s.feName}</p>
+                             <p className="text-[14px] font-extrabold text-slate-900 truncate pr-6 leading-tight">{s.feName}</p>
                              <button 
                                 onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); }} 
                                 className="absolute top-0 right-0 text-slate-300 hover:text-rose-600 p-1 transition-colors"
                              >
-                                <X className="w-4 h-4" />
+                                <X className="w-3.5 h-3.5" />
                              </button>
                           </div>
-                          <p className="text-[12px] text-slate-500 font-bold uppercase tracking-tight">{s.dspId} — {s.date}</p>
+                          <p className="text-[11px] text-slate-500 font-bold uppercase tracking-tight">{s.dspId} — {s.date}</p>
                         </div>
 
-                        <div className="mt-4 flex flex-wrap gap-1.5">
-                          <span className="px-2 py-1 bg-slate-100 rounded-md text-[10px] font-black text-slate-600 uppercase tracking-tighter whitespace-nowrap">{sessionStats.total} pkt</span>
-                          <span className="px-2 py-1 bg-amber-100 rounded-md text-[10px] font-black text-amber-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.pending} pending</span>
-                          <span className="px-2 py-1 bg-rose-100 rounded-md text-[10px] font-black text-rose-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.rto} rto</span>
-                          <span className="px-2 py-1 bg-emerald-100 rounded-md text-[10px] font-black text-emerald-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.dto} dto</span>
+                        <div className="mt-3 flex flex-wrap gap-1">
+                          <span className="px-2 py-0.5 bg-slate-100 rounded-md text-[10px] font-black text-slate-600 uppercase tracking-tighter whitespace-nowrap">{sessionStats.total} pkt</span>
+                          <span className="px-2 py-0.5 bg-amber-100 rounded-md text-[10px] font-black text-amber-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.pending} pending</span>
+                          <span className="px-2 py-0.5 bg-rose-100 rounded-md text-[10px] font-black text-rose-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.rto} rto</span>
+                          <span className="px-2 py-0.5 bg-emerald-100 rounded-md text-[10px] font-black text-emerald-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.dto} dto</span>
                         </div>
                       </div>
                     );
@@ -734,4 +734,3 @@ export default function PODTool() {
     </div>
   );
 }
-
