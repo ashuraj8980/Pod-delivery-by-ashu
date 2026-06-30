@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Optimized for professional readability and 100% AWB precision.
+ * Professional HD UI with 100% AWB Precision for WPS Office.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -48,6 +48,30 @@ const STATUS_MAP: Record<string, string> = {
   "rto": "rto",
   "dto": "dto",
   "delivered": "dto"
+};
+
+/**
+ * Global Date Formatter: YYYY-MM-DD -> DD-MM-YYYY
+ */
+const formatDate = (val: any): string => {
+  if (!val) return "";
+  const str = String(val).trim();
+  // If already in DD-MM-YYYY format, return it
+  if (/^\d{2}-\d{2}-\d{4}$/.test(str)) return str;
+  // If in YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const [y, m, d] = str.split('-');
+    return `${d}-${m}-${y}`;
+  }
+  // Try JS Date parsing as fallback
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}-${month}-${year}`;
+  }
+  return str;
 };
 
 interface PODRow {
@@ -118,22 +142,34 @@ export default function PODTool() {
     if (typeof val === 'number') {
       return val.toFixed(0);
     }
-    let str = String(val).trim().replace(/['",]/g, ""); 
-    return str;
+    return String(val).trim().replace(/['",]/g, ""); 
   };
 
   /**
-   * Professional HTML Copy Logic for WPS/Excel
-   * Ensures AWB numbers are treated as text and rows are compact.
+   * Universal Compatibility Clipboard Logic
+   * Uses dual MIME types (plain and HTML) to protect AWB digits in WPS Office.
    */
-  const copyDataProfessional = useCallback(async (rows: any[], headers: string[]) => {
+  const copyDataProfessional = useCallback(async (rows: any[], headers: string[], isSingle = false) => {
     if (!rows.length) return;
-    
-    // Build HTML string with mso styling to preserve digits and compact layout
+
+    // 1. Build Plain Text (with apostrophe prefix for WPS plain-text paste fallback)
+    const plainText = rows.map(r => 
+      headers.map(h => {
+        const val = String(r[h] || "").trim().replace(/[\r\n\t]+/g, " ");
+        // Prefix AWB with apostrophe for spreadsheet text interpretation
+        if (h.toLowerCase().includes('awb')) return `'${val}`;
+        return val;
+      }).join("\t")
+    ).join("\n");
+
+    // 2. Build HTML Table (Professional styling for WPS/Excel)
     const rowsHtml = rows.map(r => {
       const cells = headers.map(h => {
-        const val = String(r[h] || "").replace(/[\r\n\t]+/g, " ").trim();
-        const style = /awb|dsp|order/i.test(h) ? 'style=\'mso-number-format:"\\@"\'' : '';
+        const val = String(r[h] || "").trim().replace(/[\r\n\t]+/g, " ");
+        // Apply mso-number-format:"\@" to treat digits as text explicitly
+        const style = h.toLowerCase().includes('awb') || h.toLowerCase().includes('dsp') || h.toLowerCase().includes('order') 
+          ? 'style=\'mso-number-format:"\\@"\'' 
+          : '';
         return `<td ${style}>${val}</td>`;
       }).join("");
       return `<tr>${cells}</tr>`;
@@ -142,14 +178,23 @@ export default function PODTool() {
     const htmlTable = `<html><head><meta charset="utf-8"><style>table{border-collapse:collapse;}td{white-space:nowrap;padding:2px 4px;font-family:sans-serif;font-size:10pt;}</style></head><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
 
     try {
-      const htmlBlob = new Blob([htmlTable], { type: 'text/html' });
-      const textBlob = new Blob([rows.map(r => headers.map(h => String(r[h] || "").trim()).join("\t")).join("\n")], { type: 'text/plain' });
+      const blobs: Record<string, Blob> = {
+        'text/plain': new Blob([plainText], { type: 'text/plain' }),
+        'text/html': new Blob([htmlTable], { type: 'text/html' })
+      };
       
-      const data = [new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })];
-      await navigator.clipboard.write(data);
+      await navigator.clipboard.write([new ClipboardItem(blobs)]);
       return true;
     } catch (err) {
-      return false;
+      console.error("Clipboard Error:", err);
+      // Fallback for browsers that don't support ClipboardItem (rare)
+      const textArea = document.createElement("textarea");
+      textArea.value = plainText;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      return true;
     }
   }, []);
 
@@ -170,7 +215,7 @@ export default function PODTool() {
       setTimeout(() => {
         try {
           const data = new Uint8Array(evt.target?.result as ArrayBuffer);
-          const wb = XLSX.read(data, { type: 'array', cellDates: true, cellText: true });
+          const wb = XLSX.read(data, { type: 'array', cellDates: true, cellText: true, raw: true });
           const ws = wb.Sheets[wb.SheetNames[0]];
           
           const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
@@ -198,7 +243,7 @@ export default function PODTool() {
               remark: remark || "No Remark",
               feName: setupData.feName,
               dspId: fixValueToString(setupData.dspId),
-              date: setupData.date,
+              date: formatDate(setupData.date),
               selected: false,
               isIntact
             };
@@ -211,7 +256,7 @@ export default function PODTool() {
           if (existingSession) {
             setSessions(prev => prev.map(s => 
               s.dspId === setupData.dspId 
-              ? { ...s, feName: setupData.feName, data: parsedRows, date: setupData.date, timestamp: Date.now() } 
+              ? { ...s, feName: setupData.feName, data: parsedRows, date: formatDate(setupData.date), timestamp: Date.now() } 
               : s
             ));
             setSelectedSessionId(existingSession.id);
@@ -221,7 +266,7 @@ export default function PODTool() {
               id: crypto.randomUUID(),
               feName: setupData.feName,
               dspId: setupData.dspId,
-              date: setupData.date,
+              date: formatDate(setupData.date),
               data: parsedRows,
               timestamp: Date.now()
             };
@@ -253,7 +298,7 @@ export default function PODTool() {
       setTimeout(() => {
         try {
           const data = new Uint8Array(evt.target?.result as ArrayBuffer);
-          const wb = XLSX.read(data, { type: 'array', cellText: true, cellDates: true });
+          const wb = XLSX.read(data, { type: 'array', cellText: true, cellDates: true, raw: true });
           const ws = wb.Sheets[wb.SheetNames[0]];
           const rawData = XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
           
@@ -288,11 +333,17 @@ export default function PODTool() {
 
             const cleanRow: any = { __isReplaced: isReplaced, __id: crypto.randomUUID() };
             targetHeaders.forEach(h => {
-              if (h === "Remarks Of NSL") cleanRow[h] = finalRemark;
-              else if (h === "Awb") cleanRow[h] = fixValueToString(row[awbKey]);
-              else if (h === "DSP No") cleanRow[h] = fixValueToString(row["DSP No"]);
-              else if (h === "Order- No") cleanRow[h] = fixValueToString(row["Order- No"]);
-              else {
+              if (h === "Remarks Of NSL") {
+                cleanRow[h] = finalRemark;
+              } else if (h === "Awb") {
+                cleanRow[h] = fixValueToString(row[awbKey]);
+              } else if (h === "DSP No") {
+                cleanRow[h] = fixValueToString(row["DSP No"]);
+              } else if (h === "Order- No") {
+                cleanRow[h] = fixValueToString(row["Order- No"]);
+              } else if (h === "Date") {
+                cleanRow[h] = formatDate(row["Date"]);
+              } else {
                 const inputKey = allHeaders.find(key => key.trim().toLowerCase() === h.toLowerCase());
                 cleanRow[h] = inputKey ? row[inputKey] : "";
               }
@@ -361,7 +412,7 @@ export default function PODTool() {
     
     const headers = ['Date', 'DSP ID', 'Awb', 'Client', 'Order ID', 'Remark', 'FE Name'];
     const exportRows = filteredRows.map((r, i) => ({
-      'Date': r.date,
+      'Date': formatDate(r.date),
       'DSP ID': i === 0 ? r.dspId : "",
       'Awb': r.awb,
       'Client': r.client,
@@ -372,13 +423,17 @@ export default function PODTool() {
 
     const success = await copyDataProfessional(exportRows, headers);
     if (success) {
-      showToast(isShortcut ? `Ctrl+T — Copied ${filteredRows.length} rows` : `Copied ${filteredRows.length} rows`, "ok");
+      showToast(isShortcut ? `Shortcut — Copied ${filteredRows.length} rows to WPS` : `Copied ${filteredRows.length} rows — paste in WPS with Ctrl+V`, "ok");
     }
   }, [filteredRows, currentSession, copyDataProfessional, showToast]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && (e.key === 't' || e.key === 'T')) {
+      // Support both Ctrl+T and Ctrl+Shift+C as requested
+      const isCopy = (e.ctrlKey && (e.key === 't' || e.key === 'T')) || 
+                     (e.ctrlKey && e.shiftKey && (e.key === 'c' || e.key === 'C'));
+      
+      if (isCopy) {
         e.preventDefault(); 
         handleCopyTable(true);
       }
@@ -391,7 +446,7 @@ export default function PODTool() {
     if (!filteredRows.length || !currentSession) return;
     const header = ['Date', 'DSP ID', 'Awb', 'Client', 'Order ID', 'Remark', 'FE Name'];
     const excelData = filteredRows.map((r, i) => [
-      r.date, 
+      formatDate(r.date), 
       { v: i === 0 ? String(r.dspId) : "", t: 's', z: '@' }, 
       { v: String(r.awb), t: 's', z: '@' }, 
       r.client, 
@@ -414,6 +469,8 @@ export default function PODTool() {
       headers.forEach(h => {
         if (h === "Awb" || h === "DSP No" || h === "Order- No") {
           row[h] = { v: String(r[h]), t: 's', z: '@' };
+        } else if (h === "Date") {
+          row[h] = formatDate(r[h]);
         } else {
           row[h] = r[h];
         }
@@ -500,7 +557,7 @@ export default function PODTool() {
                   <div key={s.id} onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); }} className={cn("bg-white p-4 rounded-xl border-l-[4px] cursor-pointer relative transition-all group border-[1.5px] border-[#E2E8F0]", selectedSessionId === s.id ? "border-l-blue-600 ring-4 ring-blue-500/5" : "border-l-slate-300 opacity-70 hover:opacity-100")}>
                     <button onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); if(selectedSessionId === s.id) setSelectedSessionId(null); }} className="absolute top-3 right-3 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"><X className="w-4 h-4" /></button>
                     <p className="text-[15px] font-bold text-slate-900 truncate pr-8">{s.feName}</p>
-                    <p className="text-[12px] font-medium text-slate-500 mt-1 uppercase tracking-tight">{s.dspId} — {s.date}</p>
+                    <p className="text-[12px] font-medium text-slate-500 mt-1 uppercase tracking-tight">{s.dspId} — {formatDate(s.date)}</p>
                     <div className="mt-3"><span className="px-2 py-0.5 bg-slate-100 rounded text-[11px] font-bold text-slate-600 uppercase tracking-tight">{s.data.length} rows</span></div>
                   </div>
                 ))}
@@ -603,7 +660,7 @@ export default function PODTool() {
                             <div className="flex items-center gap-2">
                               <span className="text-[12px] font-bold text-amber-400">{currentSession.dspId}</span>
                               <span className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px] font-bold">{filteredRows.length} pkt</span>
-                              <span className="text-[10px] text-slate-400 font-bold ml-auto">{currentSession.feName} · {currentSession.date}</span>
+                              <span className="text-[10px] text-slate-400 font-bold ml-auto">{currentSession.feName} · {formatDate(currentSession.date)}</span>
                             </div>
                           </td>
                         </tr>
@@ -614,11 +671,12 @@ export default function PODTool() {
                             <td className="px-2 text-[11px] font-bold text-slate-900 truncate">{row.dspId}</td>
                             <td 
                               onClick={async () => {
-                                // Explicitly copy AWB as a string using HTML format to protect digits in WPS/Excel
+                                // Single AWB Click precision fix for WPS
                                 const val = String(row.awb);
-                                const htmlTable = `<html><head><meta charset="utf-8"></head><body><table><tr><td style='mso-number-format:"\\@"'>${val}</td></tr></table></body></html>`;
+                                const plainText = `'${val}`;
+                                const htmlTable = `<html><body><table><tr><td style='mso-number-format:"\\@"'>${val}</td></tr></table></body></html>`;
                                 const htmlBlob = new Blob([htmlTable], { type: 'text/html' });
-                                const textBlob = new Blob([val], { type: 'text/plain' });
+                                const textBlob = new Blob([plainText], { type: 'text/plain' });
                                 await navigator.clipboard.write([new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })]);
                                 showToast(`AWB ${val} copied`, 'ok');
                               }}
@@ -728,3 +786,4 @@ export default function PODTool() {
     </div>
   );
 }
+
