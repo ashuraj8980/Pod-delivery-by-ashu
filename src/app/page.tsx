@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
  * Final Refined Version: HD Grid Sessions, DD-MM-YYYY, WPS Precision AWB.
+ * Update: Removed LocalStorage to prevent browser data saving.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -110,28 +111,14 @@ export default function PODTool() {
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
 
-  // Load from LocalStorage
+  // Initialize on mount
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
-    const saved = localStorage.getItem('pod_sessions_v3_rpc');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setSessions(parsed);
-          if (parsed.length > 0) setSelectedSessionId(parsed[0].id);
-        }
-      } catch (e) { console.error(e); }
-    }
+    // Removed LocalStorage loading to ensure fresh state on every open
   }, []);
 
-  // Save to LocalStorage
-  useEffect(() => {
-    if (isMounted) {
-      localStorage.setItem('pod_sessions_v3_rpc', JSON.stringify(sessions));
-    }
-  }, [sessions, isMounted]);
+  // Removed LocalStorage saving useEffect
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err') => {
     if (typeof document === 'undefined') return;
@@ -164,6 +151,7 @@ export default function PODTool() {
     const plainText = rows.map(r => 
       headers.map(h => {
         const val = String(r[h] || "").trim();
+        // Prefix with ' for WPS/Excel compatibility in plain text
         if (h === 'AWB Number' || h === 'Awb') return `'${val}`;
         return val;
       }).join("\t")
@@ -463,12 +451,12 @@ export default function PODTool() {
               </div>
             </div>
 
-            {/* SESSIONS GRID - UPDATED COMPACT LAYOUT */}
+            {/* SESSIONS GRID - COMPACT LAYOUT */}
             {sessions.length > 0 && (
               <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 space-y-6 shadow-sm">
                 <div className="flex items-center justify-between px-1">
                   <h3 className="text-[13px] font-bold text-slate-900 tracking-tight">Recent Sessions</h3>
-                  <button onClick={() => { if(confirm("Delete all session history?")) setSessions([]); }} className="text-[11px] font-bold text-rose-600 hover:underline">Clear All History</button>
+                  <button onClick={() => { if(confirm("Clear current history? This will be lost forever.")) setSessions([]); }} className="text-[11px] font-bold text-rose-600 hover:underline">Clear All History</button>
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
                   {sessions.map(s => {
@@ -734,3 +722,4 @@ export default function PODTool() {
     </div>
   );
 }
+
