@@ -23,8 +23,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Fixed: Tab labels, Table centering, and Desktop width as requested.
- * Date format (DD-MM-YYYY) and AWB Precision preserved.
+ * Final Refined Version: HD Grid Sessions, DD-MM-YYYY, WPS Precision AWB.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -162,7 +161,6 @@ export default function PODTool() {
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
 
-    // Plain Text Version: Prefixed with '
     const plainText = rows.map(r => 
       headers.map(h => {
         const val = String(r[h] || "").trim();
@@ -171,7 +169,6 @@ export default function PODTool() {
       }).join("\t")
     ).join("\n");
 
-    // HTML Table Version: mso-number-format:"\@"
     const rowsHtml = rows.map(r => {
       const cells = headers.map(h => {
         const val = String(r[h] || "").trim();
@@ -197,7 +194,7 @@ export default function PODTool() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!setupData.feName || !setupData.dspId) {
-      showToast("Please enter DSP ID and FE Name first!", "err");
+      showToast("Enter DSP ID and FE Name first!", "err");
       e.target.value = "";
       return;
     }
@@ -250,7 +247,7 @@ export default function PODTool() {
         };
         setSessions(prev => [newSession, ...prev]);
         setSelectedSessionId(newSession.id);
-        showToast(`Imported ${parsedRows.length} rows successfully!`, "ok");
+        showToast(`Imported ${parsedRows.length} rows!`, "ok");
       } catch (err: any) {
         showToast(err.message || "Failed to import", "err");
       } finally {
@@ -384,7 +381,7 @@ export default function PODTool() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
-      {/* HEADER - Sharp Navy Look */}
+      {/* HEADER */}
       <header className="bg-[#0F172A] border-b border-white/5 px-6 h-14 flex items-center justify-between sticky top-0 z-[100] shadow-lg">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-xl">
@@ -466,39 +463,55 @@ export default function PODTool() {
               </div>
             </div>
 
-            {/* SESSIONS LIST */}
+            {/* SESSIONS GRID */}
             {sessions.length > 0 && (
-              <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 space-y-4 shadow-sm">
+              <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 space-y-6 shadow-sm">
                 <div className="flex items-center justify-between px-1">
                   <h3 className="text-[13px] font-bold text-slate-900 tracking-tight">Recent Sessions</h3>
                   <button onClick={() => { if(confirm("Delete all session history?")) setSessions([]); }} className="text-[11px] font-bold text-rose-600 hover:underline">Clear All History</button>
                 </div>
-                <div className="divide-y divide-slate-100 border rounded-lg overflow-hidden">
-                  {sessions.map(s => (
-                    <div 
-                      key={s.id}
-                      onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); }}
-                      className={cn(
-                        "flex items-center justify-between p-3.5 cursor-pointer transition-all hover:bg-slate-50",
-                        selectedSessionId === s.id ? "bg-blue-50/50 border-l-4 border-l-blue-600" : "bg-white"
-                      )}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-9 h-9 bg-slate-100 rounded flex items-center justify-center text-slate-500 font-bold text-[13px]">{s.dspId}</div>
-                        <div>
-                          <p className="text-[13px] font-bold text-slate-900">{s.feName}</p>
-                          <p className="text-[11px] text-slate-400 font-semibold">{s.date}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                  {sessions.map(s => {
+                    const sessionStats = {
+                      total: s.data.length,
+                      pending: s.data.filter(x => x.status === 'pending').length,
+                      rto: s.data.filter(x => x.status === 'rto').length,
+                      dto: s.data.filter(x => x.status === 'dto').length,
+                    };
+                    return (
+                      <div 
+                        key={s.id}
+                        onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); }}
+                        className={cn(
+                          "bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer relative pl-3 py-4 pr-4 group flex flex-col justify-between h-full min-h-[140px]",
+                          selectedSessionId === s.id ? "ring-2 ring-blue-500 border-transparent" : "hover:border-blue-300"
+                        )}
+                      >
+                        {/* Blue accent bar */}
+                        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
+                        
+                        <div className="space-y-1 relative">
+                          <div className="flex justify-between items-start">
+                             <p className="text-[15px] font-extrabold text-slate-900 truncate pr-6">{s.feName}</p>
+                             <button 
+                                onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); }} 
+                                className="absolute top-0 right-0 text-slate-300 hover:text-rose-600 p-1 transition-colors"
+                             >
+                                <X className="w-4 h-4" />
+                             </button>
+                          </div>
+                          <p className="text-[12px] text-slate-500 font-bold uppercase tracking-tight">{s.dspId} — {s.date}</p>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-1.5">
+                          <span className="px-2 py-1 bg-slate-100 rounded-md text-[10px] font-black text-slate-600 uppercase tracking-tighter whitespace-nowrap">{sessionStats.total} pkt</span>
+                          <span className="px-2 py-1 bg-amber-100 rounded-md text-[10px] font-black text-amber-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.pending} pending</span>
+                          <span className="px-2 py-1 bg-rose-100 rounded-md text-[10px] font-black text-rose-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.rto} rto</span>
+                          <span className="px-2 py-1 bg-emerald-100 rounded-md text-[10px] font-black text-emerald-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.dto} dto</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <div className="flex gap-1.5">
-                          <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold text-slate-600">{s.data.length} pkt</span>
-                          <span className="px-2 py-0.5 bg-rose-100 rounded text-[10px] font-bold text-rose-700">{s.data.filter(x => x.status === 'pending').length} pending</span>
-                        </div>
-                        <button onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); }} className="text-slate-300 hover:text-rose-600 p-1"><X className="w-4 h-4" /></button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -572,8 +585,8 @@ export default function PODTool() {
                 {/* TABLE CONTROLS */}
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex gap-2">
-                    <button onClick={downloadExcel} className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg transition-all"><Download className="w-4 h-4" /> Download Excel</button>
-                    <button onClick={handleCopyTable} className="h-10 px-5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg transition-all"><Copy className="w-4 h-4" /> Copy Table</button>
+                    <button onClick={downloadExcel} className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg transition-all">Download Excel</button>
+                    <button onClick={handleCopyTable} className="h-10 px-5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg transition-all">Copy Table</button>
                   </div>
                   <div className="relative">
                     <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -603,7 +616,7 @@ export default function PODTool() {
                             <div className="flex items-center gap-3">
                               <span className="text-[12px] font-bold text-amber-400">{currentSession.dspId}</span>
                               <span className="w-px h-3 bg-white/20" />
-                              <span className="text-[10px] font-semibold bg-white/10 px-1.5 py-0.5 rounded">{filteredRows.length} pkt</span>
+                              <span className="text-[10px] font-semibold bg-white/10 px-1.5 py-0.5 rounded uppercase tracking-tight">{filteredRows.length} pkt</span>
                               <span className="ml-auto text-[10px] text-slate-400 font-medium">{currentSession.feName} — {currentSession.date}</span>
                             </div>
                           </td>
@@ -615,8 +628,7 @@ export default function PODTool() {
                             <td className="px-2 text-[13px] font-bold text-slate-900 truncate text-center">{row.dspId}</td>
                             <td 
                               onClick={async () => {
-                                const rows = [{ 'AWB Number': row.awb }];
-                                const success = await copyDataToClipboard(rows, ['AWB Number']);
+                                const success = await copyDataToClipboard([{ 'AWB Number': row.awb }], ['AWB Number']);
                                 if (success) showToast(`AWB ${row.awb} copied!`, "ok");
                               }}
                               className="px-2 text-[13px] font-medium text-blue-700 font-mono tracking-tighter truncate cursor-pointer hover:underline text-center"
@@ -722,3 +734,4 @@ export default function PODTool() {
     </div>
   );
 }
+
