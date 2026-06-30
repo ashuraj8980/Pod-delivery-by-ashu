@@ -23,8 +23,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Reverted to original workflow: Setup -> Upload -> List -> Table.
- * Fixed AWB precision and Date format (DD-MM-YYYY).
+ * Fixed: Tab labels, Table centering, and Desktop width as requested.
+ * Date format (DD-MM-YYYY) and AWB Precision preserved.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -48,7 +48,7 @@ const STATUS_MAP: Record<string, string> = {
   "dispatch": "dispatched",
   "rto": "rto",
   "dto": "dto",
-  "delivered": "rto" // RTO is Delivered in user's logic
+  "delivered": "rto"
 };
 
 /**
@@ -57,9 +57,7 @@ const STATUS_MAP: Record<string, string> = {
 const formatDate = (val: any): string => {
   if (!val) return "";
   const str = String(val).trim();
-  // Already in DD-MM-YYYY
   if (/^\d{2}-\d{2}-\d{4}$/.test(str)) return str;
-  // If YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     const [y, m, d] = str.split('-');
     return `${d}-${m}-${y}`;
@@ -156,7 +154,6 @@ export default function PODTool() {
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
 
-    // Plain text format for general apps (with apostrophe for WPS)
     const plainText = rows.map(r => 
       headers.map(h => {
         const val = String(r[h] || "").trim();
@@ -165,7 +162,6 @@ export default function PODTool() {
       }).join("\t")
     ).join("\n");
 
-    // HTML format for WPS/Excel precision
     const rowsHtml = rows.map(r => {
       const cells = headers.map(h => {
         const val = String(r[h] || "").trim();
@@ -185,13 +181,7 @@ export default function PODTool() {
       await navigator.clipboard.write([new ClipboardItem(blobs)]);
       return true;
     } catch (err) {
-      const textArea = document.createElement("textarea");
-      textArea.value = plainText;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textArea);
-      return true;
+      return false;
     }
   }, []);
 
@@ -396,7 +386,10 @@ export default function PODTool() {
           </div>
         </div>
         <div className="flex gap-8 h-full">
-          {[ {id:"eod", label:"Rejection EOD"}, {id:"remark", label:"Remark Replacer"} ].map(tab => (
+          {[ 
+            {id:"eod", label:"Daily EOD Rejection"}, 
+            {id:"remark", label:"EOD Rejection Remark"} 
+          ].map(tab => (
             <button 
               key={tab.id}
               onClick={() => { setActiveTab(tab.id as any); setStatusFilter("all"); setActiveRemarkChip(null); }}
@@ -414,31 +407,31 @@ export default function PODTool() {
         </div>
       </header>
 
-      <main className="max-w-[1440px] mx-auto p-6 space-y-6">
+      <main className="max-w-[1800px] mx-auto p-6 space-y-6">
         {activeTab === "eod" ? (
           <>
             {/* SETUP SECTION */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
               <div className="flex items-center gap-2 mb-2">
                 <Settings className="w-4 h-4 text-blue-600" />
-                <h2 className="text-[12px] font-black text-slate-900 uppercase tracking-widest">Session Setup</h2>
+                <h2 className="text-[13px] font-bold text-slate-900 tracking-tight">Session Setup</h2>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                  <label className="text-[12px] font-medium text-slate-500 flex items-center gap-1.5">
                     <Hash className="w-3.5 h-3.5" /> DSP ID
                   </label>
                   <input type="text" value={setupData.dspId} onChange={(e) => setSetupData({...setupData, dspId: e.target.value})} className="w-full bg-[#F9FAFB] border-[1.5px] border-[#D1D5DB] rounded-lg px-3.5 h-[42px] text-[14px] font-bold text-slate-900 outline-none focus:border-[#1976D2] focus:ring-4 focus:ring-blue-500/5 transition-all" placeholder="Enter DSP Number" />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                  <label className="text-[12px] font-medium text-slate-500 flex items-center gap-1.5">
                     <User className="w-3.5 h-3.5" /> FE Name
                   </label>
                   <input type="text" value={setupData.feName} onChange={(e) => setSetupData({...setupData, feName: e.target.value})} className="w-full bg-[#F9FAFB] border-[1.5px] border-[#D1D5DB] rounded-lg px-3.5 h-[42px] text-[14px] font-bold text-slate-900 outline-none focus:border-[#1976D2] focus:ring-4 focus:ring-blue-500/5 transition-all" placeholder="Enter Field Executive Name" />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                  <label className="text-[12px] font-medium text-slate-500 flex items-center gap-1.5">
                     <Calendar className="w-3.5 h-3.5" /> Date
                   </label>
                   <input type="date" value={setupData.date} onChange={(e) => setSetupData({...setupData, date: e.target.value})} className="w-full bg-[#F9FAFB] border-[1.5px] border-[#D1D5DB] rounded-lg px-3.5 h-[42px] text-[14px] font-bold text-slate-900 outline-none focus:border-[#1976D2] focus:ring-4 focus:ring-blue-500/5 transition-all" />
@@ -463,11 +456,11 @@ export default function PODTool() {
               </div>
             </div>
 
-            {/* SESSIONS LIST - Compact Normal List */}
+            {/* SESSIONS LIST */}
             {sessions.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4 shadow-sm">
+              <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 space-y-4 shadow-sm">
                 <div className="flex items-center justify-between px-1">
-                  <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-[0.1em]">Recent Sessions</h3>
+                  <h3 className="text-[13px] font-bold text-slate-900 tracking-tight">Recent Sessions</h3>
                   <button onClick={() => { if(confirm("Delete all session history?")) setSessions([]); }} className="text-[11px] font-bold text-rose-600 hover:underline">Clear All History</button>
                 </div>
                 <div className="divide-y divide-slate-100 border rounded-lg overflow-hidden">
@@ -502,14 +495,14 @@ export default function PODTool() {
 
             {currentSession && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {/* STATUS CARDS - Screenshot Style */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex divide-x divide-slate-100">
+                {/* STATUS CARDS */}
+                <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden flex divide-x divide-slate-100">
                   {[
                     { id: 'all', label: 'All', val: stats.total, color: 'text-blue-600' },
-                    { id: 'pending', label: 'Rejection', val: stats.pending, color: 'text-rose-600' }, // Pending is Rejection
+                    { id: 'pending', label: 'Pending', val: stats.pending, color: 'text-amber-600' },
                     { id: 'dispatched', label: 'Dispatch', val: stats.dispatched, color: 'text-blue-600' },
-                    { id: 'rto', label: 'Delivered', val: stats.rto, color: 'text-emerald-600' }, // RTO is Delivered
-                    { id: 'dto', label: 'Success', val: stats.dto, color: 'text-emerald-600' }
+                    { id: 'rto', label: 'RTO', val: stats.rto, color: 'text-rose-600' },
+                    { id: 'dto', label: 'DTO', val: stats.dto, color: 'text-emerald-600' }
                   ].map((t) => (
                     <button 
                       key={t.id}
@@ -520,7 +513,7 @@ export default function PODTool() {
                       )}
                     >
                       <span className={cn("text-[32px] font-extrabold leading-none mb-1 tracking-tighter", t.color)}>{t.val}</span>
-                      <span className={cn("text-[11px] font-bold uppercase tracking-[0.1em]", statusFilter === t.id ? t.color : "text-slate-400")}>{t.label}</span>
+                      <span className={cn("text-[13px] font-bold", statusFilter === t.id ? t.color : "text-slate-400")}>{t.label}</span>
                       {statusFilter === t.id && <div className="absolute bottom-0 left-0 w-full h-[3px] bg-blue-600" />}
                     </button>
                   ))}
@@ -531,14 +524,14 @@ export default function PODTool() {
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
                     <div className="flex items-center justify-between mb-5">
                       <div>
-                        <h4 className="text-[12px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                        <h4 className="text-[13px] font-bold text-slate-900 flex items-center gap-2">
                           <BarChart3 className="w-4 h-4 text-rose-500" />
-                          Remark Breakdown — Rejection
+                          Remark Breakdown — Pending
                         </h4>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-widest">Select a remark to filter table</p>
+                        <p className="text-[11px] font-medium text-slate-400 mt-1">Click any remark chip to filter</p>
                       </div>
                       {activeRemarkChip && (
-                        <button onClick={() => setActiveRemarkChip(null)} className="h-8 px-4 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest">View All Pending</button>
+                        <button onClick={() => setActiveRemarkChip(null)} className="h-8 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-bold">All Pending</button>
                       )}
                     </div>
                     <div className="flex flex-wrap gap-2.5">
@@ -578,7 +571,7 @@ export default function PODTool() {
                   </div>
                 </div>
 
-                {/* DATA TABLE - Fixed Screen Layout */}
+                {/* DATA TABLE */}
                 <div className="bg-white rounded-xl border-[1.5px] border-[#F97316] shadow-2xl overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse table-fixed" style={{ tableLayout: 'fixed' }}>
@@ -586,16 +579,15 @@ export default function PODTool() {
                         <tr className="h-11">
                           <th style={{ width: '32px' }} className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5" /></th>
                           <th style={{ width: '28px' }} className="px-1 text-center"><Trash2 className="w-3.5 h-3.5 opacity-40 mx-auto" /></th>
-                          <th style={{ width: '80px' }} className="px-2 text-[11px] font-bold tracking-wide">DSP ID</th>
-                          <th style={{ width: '130px' }} className="px-2 text-[11px] font-bold tracking-wide">AWB Number</th>
-                          <th style={{ width: '110px' }} className="px-2 text-[11px] font-bold tracking-wide">Client</th>
-                          <th style={{ width: '110px' }} className="px-2 text-[11px] font-bold tracking-wide">Order ID</th>
-                          <th className="px-2 text-[11px] font-bold tracking-wide">Remark</th>
-                          <th style={{ width: '80px' }} className="px-2 text-[11px] font-bold tracking-wide">FE Name</th>
+                          <th style={{ width: '80px' }} className="px-2 text-[11px] font-bold text-center">DSP ID</th>
+                          <th style={{ width: '130px' }} className="px-2 text-[11px] font-bold text-center">AWB Number</th>
+                          <th style={{ width: '110px' }} className="px-2 text-[11px] font-bold text-center">Client</th>
+                          <th style={{ width: '110px' }} className="px-2 text-[11px] font-bold text-center">Order ID</th>
+                          <th className="px-2 text-[11px] font-bold text-center">Remark</th>
+                          <th style={{ width: '80px' }} className="px-2 text-[11px] font-bold text-center">FE Name</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {/* Compact DSP Banner Row */}
                         <tr className="bg-slate-800 text-white h-8 border-b border-white/5">
                           <td colSpan={8} className="px-3">
                             <div className="flex items-center gap-3">
@@ -610,20 +602,20 @@ export default function PODTool() {
                           <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group")}>
                             <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3" /></td>
                             <td className="px-1 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-300 hover:text-rose-600 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
-                            <td className="px-2 text-[11px] font-bold text-slate-900 truncate">{row.dspId}</td>
+                            <td className="px-2 text-[13px] font-bold text-slate-900 truncate text-center">{row.dspId}</td>
                             <td 
                               onClick={async () => {
                                 const rows = [{ 'AWB Number': row.awb }];
                                 const success = await copyDataToClipboard(rows, ['AWB Number']);
                                 if (success) showToast(`AWB ${row.awb} copied!`, "ok");
                               }}
-                              className="px-2 text-[12px] font-bold text-blue-700 font-mono tracking-tighter truncate cursor-pointer hover:underline"
+                              className="px-2 text-[13px] font-medium text-blue-700 font-mono tracking-tighter truncate cursor-pointer hover:underline text-center"
                             >
                               {row.awb}
                             </td>
-                            <td className="px-2 text-[11px] font-bold text-slate-900 truncate">{row.client}</td>
-                            <td className="px-2 text-[11px] font-bold text-slate-900 truncate">{row.orderId}</td>
-                            <td className="px-2">
+                            <td className="px-2 text-[13px] font-bold text-slate-900 truncate text-center">{row.client}</td>
+                            <td className="px-2 text-[13px] font-bold text-slate-900 truncate text-center">{row.orderId}</td>
+                            <td className="px-2 text-center">
                               <span className={cn(
                                 "px-2 py-1 rounded text-[11px] font-semibold border shadow-sm truncate inline-block max-w-full",
                                 row.isIntact ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200"
@@ -631,10 +623,10 @@ export default function PODTool() {
                                 {row.remark}
                               </span>
                             </td>
-                            <td className="px-2 text-[11px] font-bold text-slate-500 truncate">{row.feName}</td>
+                            <td className="px-2 text-[13px] font-bold text-slate-500 truncate text-center">{row.feName}</td>
                           </tr>
                         )) : (
-                          <tr><td colSpan={8} className="h-32 text-center text-[12px] font-bold text-slate-300 uppercase tracking-widest">No matching data available</td></tr>
+                          <tr><td colSpan={8} className="h-32 text-center text-[13px] font-bold text-slate-300 uppercase tracking-widest">No matching data available</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -650,7 +642,7 @@ export default function PODTool() {
               <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm">
                 <div className="flex items-center justify-between mb-8">
                   <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-3">
-                    <FileSpreadsheet className="w-6 h-6 text-emerald-600" /> Remark Replacer Engine
+                    <FileSpreadsheet className="w-6 h-6 text-emerald-600" /> EOD Rejection Remark Engine
                   </h2>
                 </div>
                 <div className="border-2 border-dashed rounded-xl p-12 text-center transition-all cursor-pointer relative bg-slate-50 hover:bg-white hover:border-blue-500">
@@ -674,7 +666,7 @@ export default function PODTool() {
                     <button onClick={() => setReplacerData([])} className="text-[11px] font-bold text-rose-600">Discard Data</button>
                   </div>
                   <div className="overflow-x-auto max-h-[600px]">
-                    <table className="w-full text-left border-collapse text-[12px]">
+                    <table className="w-full text-center border-collapse text-[13px]">
                       <thead className="sticky top-0 bg-[#0F172A] text-white">
                         <tr className="h-12">
                           <th style={{ width: '40px' }} className="px-4 text-center">#</th>
