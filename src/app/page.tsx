@@ -113,10 +113,27 @@ export default function PODTool() {
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string, awbKey: string} | null>(null);
   const [replacerStats, setReplacerStats] = useState({ total: 0, replaced: 0, noMapping: 0 });
 
+  // Persistence: Load on Mount
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
+    const saved = localStorage.getItem('pod_sessions_rpc');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) setSessions(parsed);
+      } catch (e) {
+        console.error("Failed to load sessions", e);
+      }
+    }
   }, []);
+
+  // Persistence: Save on Change
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem('pod_sessions_rpc', JSON.stringify(sessions));
+    }
+  }, [sessions, isMounted]);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err' | 'info') => {
     if (typeof document === 'undefined') return;
@@ -251,16 +268,22 @@ export default function PODTool() {
 
           if (parsedRows.length === 0) throw new Error("No valid shipments found.");
 
-          const existingSession = sessions.find(s => s.dspId === setupData.dspId);
+          const existingSessionIndex = sessions.findIndex(s => s.dspId === setupData.dspId);
           
-          if (existingSession) {
-            setSessions(prev => prev.map(s => 
-              s.dspId === setupData.dspId 
-              ? { ...s, feName: setupData.feName, data: parsedRows, date: formatDate(setupData.date), timestamp: Date.now() } 
-              : s
-            ));
-            setSelectedSessionId(existingSession.id);
-            showToast(`Session loaded for DSP ${setupData.dspId}`, "ok");
+          if (existingSessionIndex > -1) {
+            setSessions(prev => {
+              const next = [...prev];
+              next[existingSessionIndex] = { 
+                ...next[existingSessionIndex], 
+                feName: setupData.feName, 
+                data: parsedRows, 
+                date: formatDate(setupData.date), 
+                timestamp: Date.now() 
+              };
+              return next;
+            });
+            setSelectedSessionId(sessions[existingSessionIndex].id);
+            showToast(`Session updated for DSP ${setupData.dspId}`, "ok");
           } else {
             const newSession: Session = {
               id: crypto.randomUUID(),
@@ -552,27 +575,38 @@ export default function PODTool() {
             </div>
 
             {sessions.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {sessions.map(s => {
-                  const sTotal = s.data.length;
-                  const sPending = s.data.filter(r => r.status === 'pending').length;
-                  const sRto = s.data.filter(r => r.status === 'rto').length;
-                  const sDto = s.data.filter(r => r.status === 'dto' || r.status === 'delivered').length;
-                  
-                  return (
-                    <div key={s.id} onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); }} className={cn("bg-white p-4 rounded-xl border-l-[4px] cursor-pointer relative transition-all group border-[1.5px] border-[#E2E8F0]", selectedSessionId === s.id ? "border-l-blue-600 ring-4 ring-blue-500/5" : "border-l-slate-300 opacity-70 hover:opacity-100")}>
-                      <button onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); if(selectedSessionId === s.id) setSelectedSessionId(null); }} className="absolute top-3 right-3 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"><X className="w-4 h-4" /></button>
-                      <p className="text-[15px] font-bold text-slate-900 truncate pr-8">{s.feName}</p>
-                      <p className="text-[12px] font-medium text-slate-500 mt-1 uppercase tracking-tight">{s.dspId} — {formatDate(s.date)}</p>
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        <span className="px-1.5 py-0.5 bg-slate-100 rounded text-[10px] font-bold text-slate-600 uppercase tracking-tight whitespace-nowrap">{sTotal} pkt</span>
-                        <span className="px-1.5 py-0.5 bg-amber-100 rounded text-[10px] font-bold text-amber-700 uppercase tracking-tight whitespace-nowrap">{sPending} pending</span>
-                        <span className="px-1.5 py-0.5 bg-rose-100 rounded text-[10px] font-bold text-rose-700 uppercase tracking-tight whitespace-nowrap">{sRto} RTO</span>
-                        <span className="px-1.5 py-0.5 bg-emerald-100 rounded text-[10px] font-bold text-emerald-700 uppercase tracking-tight whitespace-nowrap">{sDto} DTO</span>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between px-1">
+                  <p className="text-[12px] font-bold text-slate-500 uppercase tracking-widest">Active Sessions</p>
+                  <button 
+                    onClick={() => { if(confirm("Clear all saved sessions?")) { setSessions([]); setSelectedSessionId(null); } }} 
+                    className="text-[11px] font-bold text-rose-500 hover:underline transition-all"
+                  >
+                    Clear All Sessions
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {sessions.map(s => {
+                    const sTotal = s.data.length;
+                    const sPending = s.data.filter(r => r.status === 'pending').length;
+                    const sRto = s.data.filter(r => r.status === 'rto').length;
+                    const sDto = s.data.filter(r => r.status === 'dto' || r.status === 'delivered').length;
+                    
+                    return (
+                      <div key={s.id} onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); }} className={cn("bg-white p-4 rounded-xl border-l-[4px] cursor-pointer relative transition-all group border-[1.5px] border-[#E2E8F0]", selectedSessionId === s.id ? "border-l-blue-600 ring-4 ring-blue-500/5" : "border-l-slate-300 opacity-70 hover:opacity-100")}>
+                        <button onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); if(selectedSessionId === s.id) setSelectedSessionId(null); }} className="absolute top-3 right-3 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"><X className="w-4 h-4" /></button>
+                        <p className="text-[15px] font-bold text-slate-900 truncate pr-8">{s.feName}</p>
+                        <p className="text-[12px] font-medium text-slate-500 mt-1 uppercase tracking-tight">{s.dspId} — {formatDate(s.date)}</p>
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          <span className="px-1.5 py-0.5 bg-slate-100 rounded text-[10px] font-bold text-slate-600 uppercase tracking-tight whitespace-nowrap">{sTotal} pkt</span>
+                          <span className="px-1.5 py-0.5 bg-amber-100 rounded text-[10px] font-bold text-amber-700 uppercase tracking-tight whitespace-nowrap">{sPending} pending</span>
+                          <span className="px-1.5 py-0.5 bg-rose-100 rounded text-[10px] font-bold text-rose-700 uppercase tracking-tight whitespace-nowrap">{sRto} RTO</span>
+                          <span className="px-1.5 py-0.5 bg-emerald-100 rounded text-[10px] font-bold text-emerald-700 uppercase tracking-tight whitespace-nowrap">{sDto} DTO</span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             )}
 
