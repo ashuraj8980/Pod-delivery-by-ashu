@@ -115,6 +115,10 @@ export default function PODTool() {
 
   const fixValueToString = (val: any) => {
     if (val === null || val === undefined) return "";
+    if (typeof val === 'number') {
+      // Force large numbers to full string digits to avoid scientific notation
+      return val.toFixed(0);
+    }
     // Strictly preserve string format, remove only quote characters used for formatting
     let str = String(val).trim().replace(/['",]/g, ""); 
     return str;
@@ -170,7 +174,9 @@ export default function PODTool() {
           const data = new Uint8Array(evt.target?.result as ArrayBuffer);
           const wb = XLSX.read(data, { type: 'array', cellDates: true, cellText: true });
           const ws = wb.Sheets[wb.SheetNames[0]];
-          const rawData = XLSX.utils.sheet_to_json(ws, { raw: false, defval: "" });
+          
+          // Use raw:true to get original numbers then manually convert to avoid scientific notation
+          const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
           
           if (!Array.isArray(rawData) || rawData.length === 0) throw new Error("Empty file content");
 
@@ -190,11 +196,11 @@ export default function PODTool() {
               id: crypto.randomUUID(),
               awb,
               client: String(findVal(/client|clientname/)),
-              orderId: String(findVal(/order|orderid|orderno/)),
+              orderId: fixValueToString(findVal(/order|orderid|orderno/)),
               status,
               remark: remark || "No Remark",
               feName: setupData.feName,
-              dspId: setupData.dspId,
+              dspId: fixValueToString(setupData.dspId),
               date: setupData.date,
               selected: false,
               isIntact
@@ -252,7 +258,7 @@ export default function PODTool() {
           const data = new Uint8Array(evt.target?.result as ArrayBuffer);
           const wb = XLSX.read(data, { type: 'array', cellText: true, cellDates: true });
           const ws = wb.Sheets[wb.SheetNames[0]];
-          const rawData = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
+          const rawData = XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
           
           if (!Array.isArray(rawData) || rawData.length === 0) throw new Error("Empty file.");
 
@@ -288,6 +294,7 @@ export default function PODTool() {
               if (h === "Remarks Of NSL") cleanRow[h] = finalRemark;
               else if (h === "Awb") cleanRow[h] = fixValueToString(row[awbKey]);
               else if (h === "DSP No") cleanRow[h] = fixValueToString(row["DSP No"]);
+              else if (h === "Order- No") cleanRow[h] = fixValueToString(row["Order- No"]);
               else {
                 const inputKey = allHeaders.find(key => key.trim().toLowerCase() === h.toLowerCase());
                 cleanRow[h] = inputKey ? row[inputKey] : "";
@@ -391,7 +398,7 @@ export default function PODTool() {
       { v: i === 0 ? String(r.dspId) : "", t: 's', z: '@' }, 
       { v: String(r.awb), t: 's', z: '@' }, 
       r.client, 
-      r.orderId, 
+      { v: String(r.orderId), t: 's', z: '@' }, 
       r.remark, 
       r.feName
     ]);
@@ -618,7 +625,7 @@ export default function PODTool() {
                                 await navigator.clipboard.write([new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })]);
                                 showToast(`AWB ${val} copied`, 'ok');
                               }}
-                              className="px-2 text-[12px] font-bold text-blue-700 cursor-pointer hover:underline tracking-tight truncate" 
+                              className="px-2 text-[12px] font-bold text-blue-700 cursor-pointer hover:underline tracking-tighter truncate" 
                               style={{ fontFamily: '"IBM Plex Mono", monospace' }}
                             >
                               {row.awb}
