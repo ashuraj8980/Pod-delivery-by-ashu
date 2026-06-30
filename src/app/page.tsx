@@ -116,10 +116,8 @@ export default function PODTool() {
   const fixValueToString = (val: any) => {
     if (val === null || val === undefined) return "";
     if (typeof val === 'number') {
-      // Force large numbers to full string digits to avoid scientific notation
       return val.toFixed(0);
     }
-    // Strictly preserve string format, remove only quote characters used for formatting
     let str = String(val).trim().replace(/['",]/g, ""); 
     return str;
   };
@@ -175,7 +173,6 @@ export default function PODTool() {
           const wb = XLSX.read(data, { type: 'array', cellDates: true, cellText: true });
           const ws = wb.Sheets[wb.SheetNames[0]];
           
-          // Use raw:true to get original numbers then manually convert to avoid scientific notation
           const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
           
           if (!Array.isArray(rawData) || rawData.length === 0) throw new Error("Empty file content");
