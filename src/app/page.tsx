@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
  * Final Refined Version: HD Grid Sessions, DD-MM-YYYY, WPS Precision AWB.
  * Update: Removed LocalStorage to prevent browser data saving.
+ * Fix: Strictly prevent upload without DSP ID and FE Name.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -176,11 +177,13 @@ export default function PODTool() {
   }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // CRITICAL: Block upload if setup data is missing
     if (!setupData.feName || !setupData.dspId) {
       showToast("Enter DSP ID and FE Name first!", "err");
-      e.target.value = "";
+      e.target.value = ""; // Clear selection
       return;
     }
+    
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -452,8 +455,19 @@ export default function PODTool() {
                 </div>
               </div>
 
-              <div className={cn("border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer relative group", isProcessing ? "bg-slate-50 opacity-80" : "bg-slate-50 hover:bg-white hover:border-blue-500")}>
-                <input type="file" disabled={isProcessing} onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+              <div 
+                onClick={() => {
+                  if (!setupData.feName || !setupData.dspId) {
+                    showToast("Enter DSP ID and FE Name first!", "err");
+                  }
+                }}
+                className={cn("border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer relative group", isProcessing ? "bg-slate-50 opacity-80" : "bg-slate-50 hover:bg-white hover:border-blue-500")}>
+                <input 
+                  type="file" 
+                  disabled={isProcessing || !setupData.feName || !setupData.dspId} 
+                  onChange={handleFileUpload} 
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+                />
                 {isProcessing ? (
                   <div className="flex flex-col items-center gap-3"><Loader2 className="w-8 h-8 text-blue-600 animate-spin" /><p className="text-sm font-black text-blue-600 uppercase">Processing Delhivery Sheet...</p></div>
                 ) : (
