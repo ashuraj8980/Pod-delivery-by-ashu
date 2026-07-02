@@ -496,7 +496,7 @@ export default function PODTool() {
                              <p className="text-[14px] font-extrabold text-[#111827] truncate pr-6 leading-tight">{s.feName}</p>
                              <button 
                                 onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); }} 
-                                className="absolute top-0 right-0 text-slate-300 hover:text-rose-600 p-1 transition-colors"
+                                className="absolute top-0 right-0 text-slate-400 hover:text-rose-600 p-1 transition-colors"
                              >
                                 <X className="w-3.5 h-3.5" />
                              </button>
@@ -599,10 +599,10 @@ export default function PODTool() {
 
                 <div className="bg-white rounded-xl border-[1.5px] border-[#F97316] shadow-2xl overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-center border-collapse table-fixed">
+                    <table className="w-full text-center border-collapse table-fixed bg-white">
                       <thead className="bg-[#0F172A] text-white">
                         <tr className="h-11">
-                          <th style={{ width: '32px' }} className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5" /></th>
+                          <th style={{ width: '32px' }} className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5 border border-slate-300 rounded" /></th>
                           <th style={{ width: '28px' }} className="px-1 text-center"><Trash2 className="w-3.5 h-3.5 opacity-40 mx-auto" /></th>
                           <th style={{ width: '80px' }} className="px-2 text-[11px] font-bold text-center">DSP ID</th>
                           <th style={{ width: '130px' }} className="px-2 text-[11px] font-bold text-center">AWB Number</th>
@@ -624,9 +624,9 @@ export default function PODTool() {
                           </td>
                         </tr>
                         {filteredRows.length > 0 ? filteredRows.map((row) => (
-                          <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group")}>
-                            <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3" /></td>
-                            <td className="px-1 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-300 hover:text-rose-600 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
+                          <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group bg-white")}>
+                            <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
+                            <td className="px-1 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
                             <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.dspId}</td>
                             <td 
                               onClick={async () => {
@@ -694,7 +694,7 @@ export default function PODTool() {
                     <button onClick={() => setReplacerData([])} className="text-[11px] font-bold text-rose-600">Discard Data</button>
                   </div>
                   <div className="overflow-x-auto max-h-[600px]">
-                    <table className="w-full text-center border-collapse text-[13px]">
+                    <table className="w-full text-center border-collapse text-[13px] bg-white">
                       <thead className="sticky top-0 bg-[#0F172A] text-white">
                         <tr className="h-12">
                           <th style={{ width: '40px' }} className="px-4 text-center">#</th>
