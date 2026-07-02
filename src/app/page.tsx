@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -23,10 +24,9 @@ import { cn } from "@/lib/utils";
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
  * Final Refined Version: HD Grid Sessions, DD-MM-YYYY, WPS Precision AWB.
- * Update: Removed LocalStorage to prevent browser data saving.
- * Fix: Strictly prevent upload without DSP ID and FE Name.
+ * Update: Restored Colorful Badges to Session Cards.
  * Fix: Prevent duplicate sessions for same DSP ID (Update if exists).
- * Fix: Revert badges to normal text on session cards.
+ * Logic: One DSP = One Session Card.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -237,12 +237,14 @@ export default function PODTool() {
 
         setSessions(prev => {
           // Check if session with same DSP ID exists
-          const existing = prev.find(s => s.dspId === setupData.dspId);
-          if (existing) {
-            // Update existing session, keep its original ID to maintain selection
-            const updated = { ...newSession, id: existing.id };
-            setSelectedSessionId(existing.id);
-            return prev.map(s => s.id === existing.id ? updated : s);
+          const existingIndex = prev.findIndex(s => s.dspId === setupData.dspId);
+          if (existingIndex !== -1) {
+            // Update existing session
+            const updatedSessions = [...prev];
+            const updatedSession = { ...newSession, id: prev[existingIndex].id };
+            updatedSessions[existingIndex] = updatedSession;
+            setSelectedSessionId(updatedSession.id);
+            return updatedSessions;
           }
           // Add new session
           setSelectedSessionId(newSessionId);
@@ -538,9 +540,10 @@ export default function PODTool() {
                           <p className="text-[11px] text-slate-500 font-bold uppercase tracking-tight">{s.dspId} — {s.date}</p>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-1">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">
-                            {sessionStats.total} pkt • {sessionStats.pending} pending • {sessionStats.rto} rto • {sessionStats.dto} dto
-                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold uppercase">{sessionStats.total} pkt</span>
+                          <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100 text-[10px] font-bold uppercase">{sessionStats.pending} pending</span>
+                          <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-100 text-[10px] font-bold uppercase">{sessionStats.rto} rto</span>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-bold uppercase">{sessionStats.dto} dto</span>
                         </div>
                       </div>
                     );
@@ -778,3 +781,4 @@ export default function PODTool() {
     </div>
   );
 }
+
