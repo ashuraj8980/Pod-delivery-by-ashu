@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -173,11 +172,6 @@ export default function PODTool() {
     }, 3000);
   }, []);
 
-  const fixValueToString = (val: any) => {
-    if (val === null || val === undefined) return "";
-    return String(val).trim();
-  };
-
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
     const plainText = rows.map(r => 
@@ -334,6 +328,7 @@ export default function PODTool() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // FIX: Only use the currently selected session's data
     const activeSession = sessions.find(s => s.id === selectedSessionId);
     if (!activeSession) {
       showToast("Select a session in Daily EOD Rejection first!", "err");
@@ -350,6 +345,7 @@ export default function PODTool() {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
         
+        // Build map ONLY from the active session's data
         const masterDataMap = new Map<string, string>();
         activeSession.data.forEach(row => {
           if (row.awb) masterDataMap.set(row.awb.trim(), row.returnAddress || "");
@@ -386,6 +382,24 @@ export default function PODTool() {
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
+  };
+
+  const handleReplacerDownload = () => {
+    if (!replacerData.length || !replacerMeta) return;
+    const ws = XLSX.utils.json_to_sheet(replacerData.map(r => {
+      const cleanRow: any = {};
+      replacerMeta.headers.forEach(h => {
+        if (h === "Awb" || h === "DSP No" || h === "Order- No") {
+          cleanRow[h] = { v: String(r[h]), t: 's' };
+        } else {
+          cleanRow[h] = r[h];
+        }
+      });
+      return cleanRow;
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Remark Replacer");
+    XLSX.writeFile(wb, "EOD_Rejection_Remarks.xlsx");
   };
 
   const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
@@ -874,6 +888,13 @@ export default function PODTool() {
                 </div>
               </div>
 
+              {!selectedSessionId && (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl max-w-2xl mx-auto flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">!</div>
+                  <p className="text-[13px] font-bold text-amber-800">Please select a session in Daily EOD Rejection tab first, then upload OTP file here.</p>
+                </div>
+              )}
+
               <div className={cn("border-2 border-dashed rounded-xl p-10 transition-all cursor-pointer relative bg-slate-50 hover:bg-white hover:border-blue-500 max-w-2xl mx-auto", isProcessing && "opacity-50")}>
                 <input type="file" onChange={handleOTPFileUpload} disabled={isProcessing} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                 <div className="space-y-3">
@@ -974,4 +995,3 @@ export default function PODTool() {
     </div>
   );
 }
-
