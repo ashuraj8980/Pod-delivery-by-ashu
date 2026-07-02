@@ -25,6 +25,8 @@ import { cn } from "@/lib/utils";
  * Final Refined Version: HD Grid Sessions, DD-MM-YYYY, WPS Precision AWB.
  * Update: Removed LocalStorage to prevent browser data saving.
  * Fix: Strictly prevent upload without DSP ID and FE Name.
+ * Fix: Prevent duplicate sessions for same DSP ID (Update if exists).
+ * Fix: Revert badges to normal text on session cards.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -223,16 +225,30 @@ export default function PODTool() {
 
         if (parsedRows.length === 0) throw new Error("No valid data found.");
 
+        const newSessionId = crypto.randomUUID();
         const newSession: Session = {
-          id: crypto.randomUUID(),
+          id: newSessionId,
           feName: setupData.feName,
           dspId: setupData.dspId,
           date: formatDate(setupData.date),
           data: parsedRows,
           timestamp: Date.now()
         };
-        setSessions(prev => [newSession, ...prev]);
-        setSelectedSessionId(newSession.id);
+
+        setSessions(prev => {
+          // Check if session with same DSP ID exists
+          const existing = prev.find(s => s.dspId === setupData.dspId);
+          if (existing) {
+            // Update existing session, keep its original ID to maintain selection
+            const updated = { ...newSession, id: existing.id };
+            setSelectedSessionId(existing.id);
+            return prev.map(s => s.id === existing.id ? updated : s);
+          }
+          // Add new session
+          setSelectedSessionId(newSessionId);
+          return [newSession, ...prev];
+        });
+
         showToast(`Imported ${parsedRows.length} rows!`, "ok");
       } catch (err: any) {
         showToast(err.message || "Failed to import", "err");
@@ -522,10 +538,9 @@ export default function PODTool() {
                           <p className="text-[11px] text-slate-500 font-bold uppercase tracking-tight">{s.dspId} — {s.date}</p>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-1">
-                          <span className="px-2 py-0.5 bg-slate-100 rounded-md text-[10px] font-black text-slate-600 uppercase tracking-tighter whitespace-nowrap">{sessionStats.total} pkt</span>
-                          <span className="px-2 py-0.5 bg-amber-100 rounded-md text-[10px] font-black text-amber-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.pending} pending</span>
-                          <span className="px-2 py-0.5 bg-rose-100 rounded-md text-[10px] font-black text-rose-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.rto} rto</span>
-                          <span className="px-2 py-0.5 bg-emerald-100 rounded-md text-[10px] font-black text-emerald-700 uppercase tracking-tighter whitespace-nowrap">{sessionStats.dto} dto</span>
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                            {sessionStats.total} pkt • {sessionStats.pending} pending • {sessionStats.rto} rto • {sessionStats.dto} dto
+                          </span>
                         </div>
                       </div>
                     );
