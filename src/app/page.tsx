@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -24,8 +23,7 @@ import { cn } from "@/lib/utils";
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
  * Final Refined Version: HD Grid Sessions, DD-MM-YYYY, WPS Precision AWB.
- * Update: Restored Colorful Badges to Session Cards.
- * Fix: Prevent duplicate sessions for same DSP ID (Update if exists).
+ * Update: Enhanced text colors for high-contrast readability.
  * Logic: One DSP = One Session Card.
  */
 
@@ -53,20 +51,14 @@ const STATUS_MAP: Record<string, string> = {
   "delivered": "rto"
 };
 
-/**
- * Global Date Formatter: DD-MM-YYYY
- */
 const formatDate = (val: any): string => {
   if (!val) return "";
   const str = String(val).trim();
-  // If already in DD-MM-YYYY
   if (/^\d{2}-\d{2}-\d{4}$/.test(str)) return str;
-  // If in YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     const [y, m, d] = str.split('-');
     return `${d}-${m}-${y}`;
   }
-  // Try JS Date
   const d = new Date(str);
   if (!isNaN(d.getTime())) {
     const day = String(d.getDate()).padStart(2, '0');
@@ -113,7 +105,6 @@ export default function PODTool() {
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
 
-  // Initialize on mount
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
@@ -139,13 +130,8 @@ export default function PODTool() {
     return String(val).trim();
   };
 
-  /**
-   * Universal Clipboard Function for 100% precision in WPS/Excel
-   */
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
-
-    // Plain text version with apostrophe for WPS
     const plainText = rows.map(r => 
       headers.map(h => {
         const val = String(r[h] || "").trim();
@@ -153,8 +139,6 @@ export default function PODTool() {
         return val;
       }).join("\t")
     ).join("\n");
-
-    // HTML version with explicit number format for Excel/WPS
     const rowsHtml = rows.map(r => {
       const cells = headers.map(h => {
         const val = String(r[h] || "").trim();
@@ -163,9 +147,7 @@ export default function PODTool() {
       }).join("");
       return `<tr>${cells}</tr>`;
     }).join("");
-
     const htmlTable = `<html><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
-
     try {
       const blobs: Record<string, Blob> = {
         'text/plain': new Blob([plainText], { type: 'text/plain' }),
@@ -179,16 +161,13 @@ export default function PODTool() {
   }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // CRITICAL: Block upload if setup data is missing
     if (!setupData.feName || !setupData.dspId) {
       showToast("Enter DSP ID and FE Name first!", "err");
-      e.target.value = ""; // Clear selection
+      e.target.value = "";
       return;
     }
-    
     const file = e.target.files?.[0];
     if (!file) return;
-
     setIsProcessing(true);
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -197,7 +176,6 @@ export default function PODTool() {
         const wb = XLSX.read(data, { type: 'array', raw: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
-        
         const parsedRows: PODRow[] = rawData.map((row: any) => {
           const keys = Object.keys(row);
           const findVal = (regex: RegExp) => {
@@ -208,7 +186,6 @@ export default function PODTool() {
           const statusRaw = String(findVal(/status|currentstatus/)).toLowerCase().trim();
           const status = STATUS_MAP[statusRaw] || "unknown";
           const remark = String(findVal(/remark|remarks|nsl/)).trim();
-
           return {
             id: crypto.randomUUID(),
             awb,
@@ -222,9 +199,7 @@ export default function PODTool() {
             isIntact: /reject|intact|content|barcode/i.test(remark)
           };
         }).filter(row => row.awb.length >= 3 && row.status !== "unknown");
-
         if (parsedRows.length === 0) throw new Error("No valid data found.");
-
         const newSessionId = crypto.randomUUID();
         const newSession: Session = {
           id: newSessionId,
@@ -234,23 +209,18 @@ export default function PODTool() {
           data: parsedRows,
           timestamp: Date.now()
         };
-
         setSessions(prev => {
-          // Check if session with same DSP ID exists
           const existingIndex = prev.findIndex(s => s.dspId === setupData.dspId);
           if (existingIndex !== -1) {
-            // Update existing session
             const updatedSessions = [...prev];
             const updatedSession = { ...newSession, id: prev[existingIndex].id };
             updatedSessions[existingIndex] = updatedSession;
             setSelectedSessionId(updatedSession.id);
             return updatedSessions;
           }
-          // Add new session
           setSelectedSessionId(newSessionId);
           return [newSession, ...prev];
         });
-
         showToast(`Imported ${parsedRows.length} rows!`, "ok");
       } catch (err: any) {
         showToast(err.message || "Failed to import", "err");
@@ -273,11 +243,9 @@ export default function PODTool() {
         const wb = XLSX.read(data, { type: 'array', raw: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawData = XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
-        
         const allHeaders = Object.keys(rawData[0]);
         const remarkKey = allHeaders.find(h => h.trim() === "Remarks Of NSL") || "";
         const targetHeaders = ["Date", "DSP No", "Awb", "Client Name", "Order- No", "Remarks Of NSL", "Fe Name"];
-        
         const processed = rawData.map(row => {
           const originalRemark = String(row[remarkKey] || "").trim();
           const mappingEntry = Object.entries(REMARK_MAPPING).find(([key]) => 
@@ -295,7 +263,6 @@ export default function PODTool() {
           });
           return cleanRow;
         });
-
         setReplacerData(processed);
         setReplacerMeta({ headers: targetHeaders, remarkKey });
         showToast(`Processed ${processed.length} rows`, "ok");
@@ -396,7 +363,6 @@ export default function PODTool() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
-      {/* HEADER */}
       <header className="bg-[#0F172A] border-b border-white/5 px-6 h-14 flex items-center justify-between sticky top-0 z-[100] shadow-lg">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-xl">
@@ -435,11 +401,10 @@ export default function PODTool() {
       <main className="max-w-[1800px] mx-auto p-6 space-y-6">
         {activeTab === "eod" ? (
           <>
-            {/* SETUP SECTION */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
               <div className="flex items-center gap-2 mb-2">
                 <Settings className="w-4 h-4 text-blue-600" />
-                <h2 className="text-[13px] font-bold text-slate-900 tracking-tight">Session Setup</h2>
+                <h2 className="text-[13px] font-bold text-[#111827] tracking-tight">Session Setup</h2>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -455,7 +420,7 @@ export default function PODTool() {
                       const val = e.target.value.replace(/\D/g, '');
                       setSetupData({...setupData, dspId: val});
                     }} 
-                    className="w-full bg-[#F9FAFB] border-[1.5px] border-[#D1D5DB] rounded-lg px-3.5 h-[42px] text-[14px] font-bold text-slate-900 outline-none focus:border-[#1976D2] focus:ring-4 focus:ring-blue-500/5 transition-all" 
+                    className="w-full bg-[#F9FAFB] border-[1.5px] border-[#D1D5DB] rounded-lg px-3.5 h-[42px] text-[14px] font-bold text-[#111827] outline-none focus:border-[#1976D2] focus:ring-4 focus:ring-blue-500/5 transition-all" 
                     placeholder="Enter DSP Number" 
                   />
                 </div>
@@ -463,13 +428,13 @@ export default function PODTool() {
                   <label className="text-[12px] font-medium text-slate-500 flex items-center gap-1.5">
                     <User className="w-3.5 h-3.5" /> FE Name
                   </label>
-                  <input type="text" value={setupData.feName} onChange={(e) => setSetupData({...setupData, feName: e.target.value})} className="w-full bg-[#F9FAFB] border-[1.5px] border-[#D1D5DB] rounded-lg px-3.5 h-[42px] text-[14px] font-bold text-slate-900 outline-none focus:border-[#1976D2] focus:ring-4 focus:ring-blue-500/5 transition-all" placeholder="Enter Field Executive Name" />
+                  <input type="text" value={setupData.feName} onChange={(e) => setSetupData({...setupData, feName: e.target.value})} className="w-full bg-[#F9FAFB] border-[1.5px] border-[#D1D5DB] rounded-lg px-3.5 h-[42px] text-[14px] font-bold text-[#111827] outline-none focus:border-[#1976D2] focus:ring-4 focus:ring-blue-500/5 transition-all" placeholder="Enter Field Executive Name" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[12px] font-medium text-slate-500 flex items-center gap-1.5">
                     <Calendar className="w-3.5 h-3.5" /> Date
                   </label>
-                  <input type="date" value={setupData.date} onChange={(e) => setSetupData({...setupData, date: e.target.value})} className="w-full bg-[#F9FAFB] border-[1.5px] border-[#D1D5DB] rounded-lg px-3.5 h-[42px] text-[14px] font-bold text-slate-900 outline-none focus:border-[#1976D2] focus:ring-4 focus:ring-blue-500/5 transition-all" />
+                  <input type="date" value={setupData.date} onChange={(e) => setSetupData({...setupData, date: e.target.value})} className="w-full bg-[#F9FAFB] border-[1.5px] border-[#D1D5DB] rounded-lg px-3.5 h-[42px] text-[14px] font-bold text-[#111827] outline-none focus:border-[#1976D2] focus:ring-4 focus:ring-blue-500/5 transition-all" />
                 </div>
               </div>
 
@@ -494,7 +459,7 @@ export default function PODTool() {
                       <FileSpreadsheet className="w-6 h-6 text-slate-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-black text-slate-900">Upload Delhivery Excel/CSV</p>
+                      <p className="text-sm font-black text-[#111827]">Upload Delhivery Excel/CSV</p>
                       <p className="text-[11px] text-slate-400 font-bold uppercase mt-1 tracking-widest">Select file after entering DSP details</p>
                     </div>
                   </div>
@@ -502,11 +467,10 @@ export default function PODTool() {
               </div>
             </div>
 
-            {/* SESSIONS GRID */}
             {sessions.length > 0 && (
               <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 space-y-6 shadow-sm">
                 <div className="flex items-center justify-between px-1">
-                  <h3 className="text-[13px] font-bold text-slate-900 tracking-tight">Recent Sessions</h3>
+                  <h3 className="text-[13px] font-bold text-[#111827] tracking-tight">Recent Sessions</h3>
                   <button onClick={() => setSessions([])} className="text-[11px] font-bold text-rose-600 hover:underline">Clear All History</button>
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
@@ -529,7 +493,7 @@ export default function PODTool() {
                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
                         <div className="space-y-0.5 relative">
                           <div className="flex justify-between items-start">
-                             <p className="text-[14px] font-extrabold text-slate-900 truncate pr-6 leading-tight">{s.feName}</p>
+                             <p className="text-[14px] font-extrabold text-[#111827] truncate pr-6 leading-tight">{s.feName}</p>
                              <button 
                                 onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); }} 
                                 className="absolute top-0 right-0 text-slate-300 hover:text-rose-600 p-1 transition-colors"
@@ -540,10 +504,10 @@ export default function PODTool() {
                           <p className="text-[11px] text-slate-500 font-bold uppercase tracking-tight">{s.dspId} — {s.date}</p>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-1">
-                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold uppercase">{sessionStats.total} pkt</span>
-                          <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100 text-[10px] font-bold uppercase">{sessionStats.pending} pending</span>
-                          <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-100 text-[10px] font-bold uppercase">{sessionStats.rto} rto</span>
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-bold uppercase">{sessionStats.dto} dto</span>
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[#374151] text-[10px] font-bold uppercase">{sessionStats.total} pkt</span>
+                          <span className="px-2 py-0.5 rounded-full bg-amber-50 text-[#B45309] border border-amber-100 text-[10px] font-bold uppercase">{sessionStats.pending} pending</span>
+                          <span className="px-2 py-0.5 rounded-full bg-rose-50 text-[#B91C1C] border border-rose-100 text-[10px] font-bold uppercase">{sessionStats.rto} rto</span>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[#15803D] border border-emerald-100 text-[10px] font-bold uppercase">{sessionStats.dto} dto</span>
                         </div>
                       </div>
                     );
@@ -554,14 +518,13 @@ export default function PODTool() {
 
             {currentSession && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {/* STATUS CARDS */}
                 <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden flex divide-x divide-slate-100">
                   {[
                     { id: 'all', label: 'All', val: stats.total, color: 'text-blue-600' },
-                    { id: 'pending', label: 'Pending', val: stats.pending, color: 'text-amber-600' },
+                    { id: 'pending', label: 'Pending', val: stats.pending, color: 'text-[#B45309]' },
                     { id: 'dispatched', label: 'Dispatch', val: stats.dispatched, color: 'text-blue-600' },
-                    { id: 'rto', label: 'RTO', val: stats.rto, color: 'text-rose-600' },
-                    { id: 'dto', label: 'DTO', val: stats.dto, color: 'text-emerald-600' }
+                    { id: 'rto', label: 'RTO', val: stats.rto, color: 'text-[#B91C1C]' },
+                    { id: 'dto', label: 'DTO', val: stats.dto, color: 'text-[#15803D]' }
                   ].map((t) => (
                     <button 
                       key={t.id}
@@ -578,12 +541,11 @@ export default function PODTool() {
                   ))}
                 </div>
 
-                {/* REMARK BREAKDOWN */}
                 {statusFilter === 'pending' && (
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
                     <div className="flex items-center justify-between mb-5">
                       <div>
-                        <h4 className="text-[13px] font-bold text-slate-900 flex items-center gap-2">
+                        <h4 className="text-[13px] font-bold text-[#111827] flex items-center gap-2">
                           <BarChart3 className="w-4 h-4 text-rose-500" />
                           Remark Breakdown — Pending
                         </h4>
@@ -611,8 +573,8 @@ export default function PODTool() {
                               activeRemarkChip === rem 
                                 ? "bg-blue-600 border-blue-600 text-white shadow-md" 
                                 : isRed 
-                                  ? "bg-rose-50 border-rose-100 text-rose-700 hover:border-rose-400"
-                                  : "bg-slate-50 border-slate-200 text-slate-800 hover:border-blue-400"
+                                  ? "bg-rose-50 border-rose-100 text-[#B91C1C] hover:border-rose-400"
+                                  : "bg-slate-50 border-slate-200 text-[#374151] hover:border-blue-400"
                             )}
                           >
                             <span className="text-[13px] font-semibold">{rem}</span>
@@ -624,7 +586,6 @@ export default function PODTool() {
                   </div>
                 )}
 
-                {/* TABLE CONTROLS */}
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex gap-2">
                     <button onClick={downloadExcel} className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg transition-all">Download Excel</button>
@@ -632,11 +593,10 @@ export default function PODTool() {
                   </div>
                   <div className="relative">
                     <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input type="text" placeholder="Search waybill, client..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-white border-[1.5px] border-slate-200 rounded-lg pl-10 pr-4 h-10 text-[13px] font-semibold text-slate-900 outline-none w-[320px] focus:border-blue-500 shadow-sm" />
+                    <input type="text" placeholder="Search waybill, client..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-white border-[1.5px] border-slate-200 rounded-lg pl-10 pr-4 h-10 text-[13px] font-semibold text-[#111827] outline-none w-[320px] focus:border-blue-500 shadow-sm" />
                   </div>
                 </div>
 
-                {/* DATA TABLE */}
                 <div className="bg-white rounded-xl border-[1.5px] border-[#F97316] shadow-2xl overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-center border-collapse table-fixed">
@@ -667,27 +627,27 @@ export default function PODTool() {
                           <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group")}>
                             <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3" /></td>
                             <td className="px-1 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-300 hover:text-rose-600 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
-                            <td className="px-2 text-[13px] font-bold text-slate-900 truncate">{row.dspId}</td>
+                            <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.dspId}</td>
                             <td 
                               onClick={async () => {
                                 const success = await copyDataToClipboard([{ 'AWB Number': row.awb }], ['AWB Number']);
                                 if (success) showToast(`AWB ${row.awb} copied!`, "ok");
                               }}
-                              className="px-2 text-[13px] font-medium text-blue-700 font-mono tracking-tighter truncate cursor-pointer hover:underline"
+                              className="px-2 text-[13px] font-bold text-[#111827] font-mono tracking-tighter truncate cursor-pointer hover:underline"
                             >
                               {row.awb}
                             </td>
-                            <td className="px-2 text-[13px] font-bold text-slate-900 truncate">{row.client}</td>
-                            <td className="px-2 text-[13px] font-bold text-slate-900 truncate">{row.orderId}</td>
+                            <td className="px-2 text-[13px] font-semibold text-[#1565C0] truncate">{row.client}</td>
+                            <td className="px-2 text-[13px] font-medium text-[#111827] truncate">{row.orderId}</td>
                             <td className="px-2">
                               <span className={cn(
                                 "px-2 py-1 rounded text-[11px] font-semibold border shadow-sm truncate inline-block max-w-full",
-                                row.isIntact ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                                row.isIntact ? "bg-rose-50 text-[#B91C1C] border-rose-200" : "bg-amber-50 text-[#B45309] border-amber-200"
                               )}>
                                 {row.remark}
                               </span>
                             </td>
-                            <td className="px-2 text-[13px] font-bold text-slate-500 truncate">{row.feName}</td>
+                            <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.feName}</td>
                           </tr>
                         )) : (
                           <tr><td colSpan={8} className="h-32 text-center text-[13px] font-bold text-slate-300 uppercase tracking-widest">No matching data available</td></tr>
@@ -700,12 +660,11 @@ export default function PODTool() {
             )}
           </>
         ) : (
-          /* REMARK REPLACER SECTION */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-8 space-y-6">
               <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm">
                 <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-3">
+                  <h2 className="text-lg font-extrabold text-[#111827] flex items-center gap-3">
                     <FileSpreadsheet className="w-6 h-6 text-emerald-600" /> EOD Rejection Remark Engine
                   </h2>
                 </div>
@@ -714,7 +673,7 @@ export default function PODTool() {
                   <div className="space-y-4">
                     <Download className="w-10 h-10 text-slate-300 mx-auto" />
                     <div>
-                      <p className="text-base font-black text-slate-900">Drop Master EOD Sheet Here</p>
+                      <p className="text-base font-black text-[#111827]">Drop Master EOD Sheet Here</p>
                       <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">Automatic Delhivery Remark Converter</p>
                     </div>
                   </div>
@@ -747,7 +706,7 @@ export default function PODTool() {
                           <tr key={row.__id} className={cn("h-11 border-b transition-colors", row.__isReplaced ? "bg-emerald-50/40" : "bg-amber-50/40")}>
                             <td className="px-4 text-center text-slate-400">{idx + 1}</td>
                             {replacerMeta?.headers.map((h, i) => (
-                              <td key={i} className={cn("px-4 font-semibold truncate max-w-[200px]", h === "Remarks Of NSL" && row.__isReplaced ? "text-emerald-700 font-bold" : h === "Remarks Of NSL" ? "text-amber-700" : "text-slate-900")}>
+                              <td key={i} className={cn("px-4 font-semibold truncate max-w-[200px]", h === "Remarks Of NSL" && row.__isReplaced ? "text-[#15803D] font-bold" : h === "Remarks Of NSL" ? "text-[#B45309]" : "text-[#111827]")}>
                                 {row[h]}
                               </td>
                             ))}
@@ -767,9 +726,9 @@ export default function PODTool() {
                   {Object.entries(REMARK_MAPPING).map(([nsl, off]) => (
                     <div key={nsl} className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
                       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Delhivery Remark</p>
-                      <p className="text-[13px] font-bold text-amber-700 leading-tight">{nsl}</p>
+                      <p className="text-[13px] font-bold text-[#B45309] leading-tight">{nsl}</p>
                       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pt-2">RPC Replacement</p>
-                      <p className="text-[13px] font-extrabold text-emerald-800 leading-tight">{off}</p>
+                      <p className="text-[13px] font-extrabold text-[#15803D] leading-tight">{off}</p>
                     </div>
                   ))}
                 </div>
@@ -781,4 +740,3 @@ export default function PODTool() {
     </div>
   );
 }
-
