@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
  * Module 1: Daily EOD Rejection
  * Module 2: EOD Rejection Remark
- * Module 3: OTP Dispatch Check (New)
+ * Module 3: OTP Dispatch Check (Corrected Filtering Logic)
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -116,6 +116,7 @@ interface Session {
   timestamp: number;
 }
 
+// STORAGE DISABLED as per user request to have "Fresh" open
 const STORAGE_KEY = "pod_master_v1";
 
 export default function PODTool() {
@@ -141,22 +142,8 @@ export default function PODTool() {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
     
-    // Load sessions from localStorage on mount
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setSessions(parsed);
-      } catch (e) {}
-    }
+    // PERSISTENCE DISABLED: LocalStorage intentionally NOT read on mount to keep "Fresh"
   }, []);
-
-  // Persist sessions whenever they change
-  useEffect(() => {
-    if (isMounted) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-    }
-  }, [sessions, isMounted]);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err') => {
     if (typeof document === 'undefined') return;
@@ -328,10 +315,9 @@ export default function PODTool() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // FIX: Only use the currently selected session's data
     const activeSession = sessions.find(s => s.id === selectedSessionId);
     if (!activeSession) {
-      showToast("Select a session in Daily EOD Rejection first!", "err");
+      showToast("Select a session in Daily EOD Rejection tab first!", "err");
       e.target.value = "";
       return;
     }
@@ -345,13 +331,15 @@ export default function PODTool() {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
         
-        // Build map ONLY from the active session's data
-        const masterDataMap = new Map<string, string>();
+        // STEP 1 & 2: Build AWB Map ONLY from the active session's data for filtering and data pickup
+        const activeAWBMap = new Map<string, string>();
         activeSession.data.forEach(row => {
-          if (row.awb) masterDataMap.set(row.awb.trim(), row.returnAddress || "");
+          if (row.awb) activeAWBMap.set(row.awb.trim(), row.returnAddress || "");
         });
 
-        const processed: OTPRow[] = rawData.map((row: any) => {
+        // STEP 3: Read rows from OTP file and FILTER strictly by active session AWBs
+        const filtered: OTPRow[] = [];
+        rawData.forEach((row: any) => {
           const keys = Object.keys(row);
           const findVal = (regex: RegExp) => {
             const key = keys.find(k => regex.test(k.toLowerCase().replace(/[\s_-]/g, "")));
@@ -359,21 +347,30 @@ export default function PODTool() {
           };
 
           const awb = normalizeAWB(findVal(/waybill|awb/i));
-          const client = String(findVal(/client/i)).trim();
-          const status = String(findVal(/current status|currentstatus/i)).trim();
           
-          return {
-            id: crypto.randomUUID(),
-            awb,
-            client,
-            status,
-            returnAddress: masterDataMap.get(awb) || "",
-            isFTPL: client.toUpperCase().includes('FTPL')
-          };
-        }).filter(r => r.awb.length >= 3);
+          // STRICT RULE: Only keep rows where AWB matches active session data
+          if (activeAWBMap.has(awb)) {
+            const client = String(findVal(/client/i)).trim();
+            const status = String(findVal(/current status|currentstatus/i)).trim();
+            
+            filtered.push({
+              id: crypto.randomUUID(),
+              awb,
+              client,
+              status,
+              returnAddress: activeAWBMap.get(awb) || "",
+              isFTPL: client.toUpperCase().includes('FTPL')
+            });
+          }
+        });
 
-        setOtpData(processed);
-        showToast(`Matched ${processed.length} OTP rows`, "ok");
+        if (filtered.length === 0) {
+          showToast("No matching AWBs found between OTP file and current session.", "err");
+        } else {
+          showToast(`Matched ${filtered.length} rows with current session.`, "ok");
+        }
+        
+        setOtpData(filtered);
       } catch (err) {
         showToast("Failed to process OTP sheet", "err");
       } finally {
@@ -981,7 +978,7 @@ export default function PODTool() {
                             <td className="px-4 text-[13px] font-medium text-slate-500 text-center">{row.returnAddress || "—"}</td>
                           </tr>
                         )) : (
-                          <tr><td colSpan={5} className="h-32 text-center text-slate-300 font-bold uppercase tracking-widest">No matching data available</td></tr>
+                          <tr><td colSpan={5} className="h-32 text-center text-slate-300 font-bold uppercase tracking-widest">No matching AWBs found between OTP file and current session.</td></tr>
                         )}
                       </tbody>
                     </table>
