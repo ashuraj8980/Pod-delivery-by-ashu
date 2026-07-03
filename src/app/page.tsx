@@ -40,7 +40,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Optimized for Excel-style Client Filtering and Font Sharpness
+ * Optimized for Excel-style Client Filtering and Remark Grouping
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -528,8 +528,6 @@ export default function PODTool() {
 
   const handleSelectAllClients = (checked: boolean) => {
     if (checked) {
-      // If search is active, only select filtered ones? Or all? 
-      // Excel style: Select all currently visible in list
       const visible = displayedClients;
       setSelectedClients(prev => {
         const otherSelected = prev.filter(c => !visible.includes(c));
@@ -543,7 +541,6 @@ export default function PODTool() {
 
   const handleSearchEnter = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      // Excel behavior: Select all visible search results and apply
       const visible = displayedClients;
       setSelectedClients(prev => {
         const otherSelected = prev.filter(c => !visible.includes(c));
@@ -916,34 +913,89 @@ export default function PODTool() {
                             </div>
                           </td>
                         </tr>
-                        {filteredRows.length > 0 ? filteredRows.map((row) => (
-                          <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group bg-white")}>
-                            <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
-                            <td className="px-1 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
-                            <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.dspId}</td>
-                            <td 
-                              onClick={async () => {
-                                const success = await copyDataToClipboard([{ 'AWB Number': row.awb }], ['AWB Number']);
-                                if (success) showToast(`AWB ${row.awb} copied!`, "ok");
-                              }}
-                              className="px-2 text-[13px] font-bold text-[#111827] font-mono tracking-tighter truncate cursor-pointer hover:underline"
-                            >
-                              {row.awb}
-                            </td>
-                            <td className="px-2 text-[13px] font-semibold text-[#1565C0] truncate">{row.client}</td>
-                            <td className="px-2 text-[13px] font-medium text-[#111827] truncate">{row.orderId}</td>
-                            <td className="px-2">
-                              <span className={cn(
-                                "px-2 py-1 rounded text-[11px] font-semibold border shadow-sm truncate inline-block max-w-full",
-                                row.isIntact ? "bg-rose-50 text-[#B91C1C] border-rose-200" : "bg-amber-50 text-[#B45309] border-amber-200"
-                              )}>
-                                {row.remark}
-                              </span>
-                            </td>
-                            {statusFilter === 'pending' && <td className="px-2 text-[12px] text-[#374151] truncate text-center">{row.returnAddress || "—"}</td>}
-                            <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.feName}</td>
-                          </tr>
-                        )) : (
+                        {filteredRows.length > 0 ? (
+                          statusFilter === 'pending' ? (
+                            Object.entries(
+                              filteredRows.reduce((acc: Record<string, PODRow[]>, row) => {
+                                const key = row.remark || "No Remark";
+                                if (!acc[key]) acc[key] = [];
+                                acc[key].push(row);
+                                return acc;
+                              }, {})
+                            )
+                            .sort((a, b) => b[1].length - a[1].length)
+                            .map(([remark, groupRows]) => (
+                              <React.Fragment key={remark}>
+                                <tr className="h-8 border-b border-white/5" style={{ background: 'linear-gradient(90deg, #0D1B2E, #1A2F4A)' }}>
+                                  <td colSpan={9} className="px-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-amber-400 text-[14px]">★</span>
+                                      <span className="text-[11px] font-bold text-white uppercase tracking-wider">{remark}</span>
+                                      <span className="w-px h-3 bg-white/20 mx-1" />
+                                      <span className="text-[10px] font-black text-amber-400 border border-amber-400/30 px-1.5 py-0.5 rounded uppercase tracking-tight">{groupRows.length} pkt</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                                {groupRows.map((row) => (
+                                  <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group bg-white")}>
+                                    <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
+                                    <td className="px-1 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
+                                    <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.dspId}</td>
+                                    <td 
+                                      onClick={async () => {
+                                        const success = await copyDataToClipboard([{ 'AWB Number': row.awb }], ['AWB Number']);
+                                        if (success) showToast(`AWB ${row.awb} copied!`, "ok");
+                                      }}
+                                      className="px-2 text-[13px] font-bold text-[#111827] font-mono tracking-tighter truncate cursor-pointer hover:underline"
+                                    >
+                                      {row.awb}
+                                    </td>
+                                    <td className="px-2 text-[13px] font-semibold text-[#1565C0] truncate">{row.client}</td>
+                                    <td className="px-2 text-[13px] font-medium text-[#111827] truncate">{row.orderId}</td>
+                                    <td className="px-2">
+                                      <span className={cn(
+                                        "px-2 py-1 rounded text-[11px] font-semibold border shadow-sm truncate inline-block max-w-full",
+                                        row.isIntact ? "bg-rose-50 text-[#B91C1C] border-rose-200" : "bg-amber-50 text-[#B45309] border-amber-200"
+                                      )}>
+                                        {row.remark}
+                                      </span>
+                                    </td>
+                                    <td className="px-2 text-[12px] text-[#374151] truncate text-center">{row.returnAddress || "—"}</td>
+                                    <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.feName}</td>
+                                  </tr>
+                                ))}
+                              </React.Fragment>
+                            ))
+                          ) : (
+                            filteredRows.map((row) => (
+                              <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group bg-white")}>
+                                <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
+                                <td className="px-1 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
+                                <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.dspId}</td>
+                                <td 
+                                  onClick={async () => {
+                                    const success = await copyDataToClipboard([{ 'AWB Number': row.awb }], ['AWB Number']);
+                                    if (success) showToast(`AWB ${row.awb} copied!`, "ok");
+                                  }}
+                                  className="px-2 text-[13px] font-bold text-[#111827] font-mono tracking-tighter truncate cursor-pointer hover:underline"
+                                >
+                                  {row.awb}
+                                </td>
+                                <td className="px-2 text-[13px] font-semibold text-[#1565C0] truncate">{row.client}</td>
+                                <td className="px-2 text-[13px] font-medium text-[#111827] truncate">{row.orderId}</td>
+                                <td className="px-2">
+                                  <span className={cn(
+                                    "px-2 py-1 rounded text-[11px] font-semibold border shadow-sm truncate inline-block max-w-full",
+                                    row.isIntact ? "bg-rose-50 text-[#B91C1C] border-rose-200" : "bg-amber-50 text-[#B45309] border-amber-200"
+                                  )}>
+                                    {row.remark}
+                                  </span>
+                                </td>
+                                <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.feName}</td>
+                              </tr>
+                            ))
+                          )
+                        ) : (
                           <tr><td colSpan={statusFilter === 'pending' ? 9 : 8} className="h-32 text-center text-[13px] font-bold text-slate-300 uppercase tracking-widest">No matching data available</td></tr>
                         )}
                       </tbody>
