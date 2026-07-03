@@ -45,6 +45,9 @@
     -moz-osx-font-smoothing: grayscale;
     font-optical-sizing: auto;
   }
+  button {
+    @apply whitespace-nowrap;
+  }
 }
 
 .custom-scrollbar::-webkit-scrollbar {

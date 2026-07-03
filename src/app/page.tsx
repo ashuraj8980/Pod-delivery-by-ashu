@@ -928,14 +928,14 @@ export default function PODTool() {
                       </PopoverContent>
                     </Popover>
                     
-                    <button onClick={handleCopyAWBOnly} className="h-8 px-4 bg-[#0F172A] hover:bg-black text-white rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95">
+                    <button onClick={handleCopyAWBOnly} className="h-8 px-4 bg-[#0F172A] hover:bg-black text-white rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap">
                       <Copy className="w-3.5 h-3.5" /> Copy Selected AWB
                     </button>
 
                     {selectedRowIds.size > 0 && (
                       <button 
                         onClick={handleDeleteSelected}
-                        className="h-8 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95 shadow-md"
+                        className="h-8 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95 shadow-md whitespace-nowrap min-w-fit"
                       >
                         <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedRowIds.size})
                       </button>
@@ -944,8 +944,8 @@ export default function PODTool() {
 
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
-                      <button onClick={downloadExcel} className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-sm transition-all">Download Excel</button>
-                      <button onClick={handleCopyTable} className="h-10 px-5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-sm transition-all">Copy Table</button>
+                      <button onClick={downloadExcel} className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-sm transition-all whitespace-nowrap">Download Excel</button>
+                      <button onClick={handleCopyTable} className="h-10 px-5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-sm transition-all whitespace-nowrap">Copy Table</button>
                     </div>
                     
                     <div className="h-8 w-px bg-slate-200" />
@@ -1030,7 +1030,7 @@ export default function PODTool() {
                                         </button>
                                         <button 
                                           onClick={() => handleDeleteGroup(groupRows, remark)}
-                                          className="text-[11px] font-semibold text-rose-400 border border-rose-400/40 rounded px-2.5 py-0.5 hover:bg-rose-400/10 transition-colors"
+                                          className="bg-red-600/15 border border-red-600/50 text-red-300 rounded-[6px] px-[10px] py-[3px] text-[11px] font-semibold hover:bg-red-600/30 hover:text-white transition-colors"
                                         >
                                           Delete All
                                         </button>
