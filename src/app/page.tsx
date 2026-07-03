@@ -36,12 +36,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Module 1: Daily EOD Rejection (Enhanced with Client-wise AWB Copy and Pending Address)
- * Module 2: EOD Rejection Remark
- * Module 3: OTP Dispatch Check
+ * Optimized for Excel-style Client Filtering and Font Sharpness
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -86,7 +85,6 @@ const formatDate = (val: any): string => {
   return str;
 };
 
-// Fix scientific notation for AWB numbers
 const normalizeAWB = (val: any): string => {
   if (val === null || val === undefined) return "";
   let s = String(val).trim();
@@ -137,18 +135,17 @@ export default function PODTool() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [activeRemarkChip, setActiveRemarkChip] = useState<string | null>(null);
-  const [selectedClient, setSelectedClient] = useState<string>("all");
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [clientSearchQuery, setClientSearchQuery] = useState("");
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
   const [isMounted, setIsMounted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   
-  // Replacer State
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
 
-  // OTP State
   const [otpData, setOtpData] = useState<OTPRow[]>([]);
   const [otpStatusFilter, setOtpStatusFilter] = useState<string>("all");
 
@@ -260,9 +257,8 @@ export default function PODTool() {
           const existingIndex = prev.findIndex(s => s.dspId === setupData.dspId);
           if (existingIndex !== -1) {
             const updatedSessions = [...prev];
-            const updatedSession = { ...newSession, id: prev[existingIndex].id };
-            updatedSessions[existingIndex] = updatedSession;
-            setSelectedSessionId(updatedSession.id);
+            updatedSessions[existingIndex] = { ...newSession, id: prev[existingIndex].id };
+            setSelectedSessionId(prev[existingIndex].id);
             return updatedSessions;
           }
           setSelectedSessionId(newSessionId);
@@ -288,22 +284,31 @@ export default function PODTool() {
       rows = rows.filter(r => r.status === statusFilter);
     }
     if (activeRemarkChip) rows = rows.filter(r => r.remark === activeRemarkChip);
+    
+    // Client Multi-filter
+    if (selectedClients.length > 0) {
+      rows = rows.filter(r => selectedClients.includes(r.client));
+    }
+
     if (searchTerm) {
       const s = searchTerm.toLowerCase();
       rows = rows.filter(r => r.awb.includes(s) || r.client.toLowerCase().includes(s) || r.orderId.toLowerCase().includes(s));
     }
     return rows;
-  }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
+  }, [currentSession, statusFilter, activeRemarkChip, searchTerm, selectedClients]);
 
-  const uniqueClients = useMemo(() => {
-    const clients = Array.from(new Set(filteredRows.map(r => r.client))).sort();
-    return clients;
-  }, [filteredRows]);
+  const allPossibleClients = useMemo(() => {
+    if (!currentSession) return [];
+    let rows = currentSession.data;
+    if (statusFilter !== 'all') rows = rows.filter(r => r.status === statusFilter);
+    if (activeRemarkChip) rows = rows.filter(r => r.remark === activeRemarkChip);
+    return Array.from(new Set(rows.map(r => r.client))).sort();
+  }, [currentSession, statusFilter, activeRemarkChip]);
 
   const displayedClients = useMemo(() => {
-    if (!clientSearchQuery) return uniqueClients;
-    return uniqueClients.filter(c => c.toLowerCase().includes(clientSearchQuery.toLowerCase()));
-  }, [uniqueClients, clientSearchQuery]);
+    if (!clientSearchQuery) return allPossibleClients;
+    return allPossibleClients.filter(c => c.toLowerCase().includes(clientSearchQuery.toLowerCase()));
+  }, [allPossibleClients, clientSearchQuery]);
 
   const stats = useMemo(() => {
     if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
@@ -317,17 +322,12 @@ export default function PODTool() {
   }, [currentSession]);
 
   const handleCopyAWBOnly = async () => {
-    let rowsToCopy = filteredRows;
-    if (selectedClient !== 'all') {
-      rowsToCopy = rowsToCopy.filter(r => r.client === selectedClient);
-    }
-    
-    if (!rowsToCopy.length) return;
-    
-    const text = rowsToCopy.map(r => `'${r.awb}`).join('\n');
+    if (!filteredRows.length) return;
+    const text = filteredRows.map(r => `'${r.awb}`).join('\n');
     try {
       await navigator.clipboard.writeText(text);
-      showToast(`Copied ${rowsToCopy.length} AWB — ${selectedClient === 'all' ? 'All Clients' : selectedClient}`, "ok");
+      const clientMsg = selectedClients.length === 0 ? 'All Clients' : selectedClients.length === 1 ? selectedClients[0] : `${selectedClients.length} Clients`;
+      showToast(`Copied ${filteredRows.length} AWB — ${clientMsg}`, "ok");
     } catch (err) {
       showToast("Failed to copy AWB", "err");
     }
@@ -461,13 +461,10 @@ export default function PODTool() {
             const key = keys.find(k => regex.test(k.toLowerCase().replace(/[\s_-]/g, "")));
             return key ? row[key] : "";
           };
-
           const awb = normalizeAWB(findVal(/waybill|awb/i));
-          
           if (activeAWBMap.has(awb)) {
             const client = String(findVal(/client/i)).trim();
             const status = String(findVal(/current status|currentstatus/i)).trim();
-            
             filtered.push({
               id: crypto.randomUUID(),
               awb,
@@ -479,11 +476,8 @@ export default function PODTool() {
           }
         });
 
-        if (filtered.length === 0) {
-          showToast("No matching AWBs found between OTP file and current session.", "err");
-        } else {
-          showToast(`Matched ${filtered.length} rows with current session.`, "ok");
-        }
+        if (filtered.length === 0) showToast("No matching AWBs found between OTP file and current session.", "err");
+        else showToast(`Matched ${filtered.length} rows with current session.`, "ok");
         
         setOtpData(filtered);
       } catch (err) {
@@ -525,6 +519,39 @@ export default function PODTool() {
       dto: otpData.filter(r => r.status.toLowerCase() === 'dto').length,
     };
   }, [otpData]);
+
+  const toggleClientSelection = (client: string) => {
+    setSelectedClients(prev => 
+      prev.includes(client) ? prev.filter(c => c !== client) : [...prev, client]
+    );
+  };
+
+  const handleSelectAllClients = (checked: boolean) => {
+    if (checked) {
+      // If search is active, only select filtered ones? Or all? 
+      // Excel style: Select all currently visible in list
+      const visible = displayedClients;
+      setSelectedClients(prev => {
+        const otherSelected = prev.filter(c => !visible.includes(c));
+        return [...otherSelected, ...visible];
+      });
+    } else {
+      const visible = displayedClients;
+      setSelectedClients(prev => prev.filter(c => !visible.includes(c)));
+    }
+  };
+
+  const handleSearchEnter = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      // Excel behavior: Select all visible search results and apply
+      const visible = displayedClients;
+      setSelectedClients(prev => {
+        const otherSelected = prev.filter(c => !visible.includes(c));
+        return [...otherSelected, ...visible];
+      });
+      setIsPopoverOpen(false);
+    }
+  };
 
   if (!isMounted) return null;
 
@@ -650,7 +677,7 @@ export default function PODTool() {
                           setSelectedSessionId(s.id); 
                           setStatusFilter('all'); 
                           setActiveRemarkChip(null); 
-                          setSelectedClient('all');
+                          setSelectedClients([]);
                           setClientSearchQuery("");
                         }}
                         className={cn(
@@ -699,7 +726,7 @@ export default function PODTool() {
                       onClick={() => { 
                         setStatusFilter(t.id); 
                         setActiveRemarkChip(null); 
-                        setSelectedClient('all'); 
+                        setSelectedClients([]); 
                         setClientSearchQuery("");
                       }}
                       className={cn(
@@ -727,7 +754,7 @@ export default function PODTool() {
                       {activeRemarkChip && (
                         <button onClick={() => { 
                           setActiveRemarkChip(null); 
-                          setSelectedClient('all'); 
+                          setSelectedClients([]); 
                           setClientSearchQuery("");
                         }} className="h-8 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-bold">All Pending</button>
                       )}
@@ -746,7 +773,7 @@ export default function PODTool() {
                             key={rem}
                             onClick={() => { 
                               setActiveRemarkChip(activeRemarkChip === rem ? null : rem); 
-                              setSelectedClient('all'); 
+                              setSelectedClients([]); 
                               setClientSearchQuery("");
                             }}
                             className={cn(
@@ -768,16 +795,19 @@ export default function PODTool() {
                 )}
 
                 <div className="flex items-center justify-between gap-4">
-                  {/* Left Side: Client Selection and Copy AWB */}
                   <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
-                    <Popover onOpenChange={(open) => !open && setClientSearchQuery("")}>
+                    <Popover open={isPopoverOpen} onOpenChange={(open) => { setIsPopoverOpen(open); if(!open) setClientSearchQuery(""); }}>
                       <PopoverTrigger asChild>
-                        <button className="h-8 min-w-[180px] px-3 flex items-center justify-between text-[12px] font-bold text-[#374151] hover:bg-slate-50 rounded-lg transition-colors">
-                          <span className="truncate">{selectedClient === 'all' ? 'All Clients' : selectedClient}</span>
+                        <button className="h-8 min-w-[200px] px-3 flex items-center justify-between text-[12px] font-bold text-[#374151] hover:bg-slate-50 rounded-lg transition-colors border border-slate-100">
+                          <span className="truncate">
+                            {selectedClients.length === 0 ? 'All Clients' : 
+                             selectedClients.length === 1 ? selectedClients[0] : 
+                             `${selectedClients.length} Clients Selected`}
+                          </span>
                           <ChevronDown className="w-3.5 h-3.5 opacity-50 ml-2" />
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-[240px] p-0" align="start">
+                      <PopoverContent className="w-[280px] p-0" align="start">
                         <div className="p-2 border-b">
                           <div className="relative">
                             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -786,45 +816,64 @@ export default function PODTool() {
                               placeholder="Search client..." 
                               value={clientSearchQuery}
                               onChange={(e) => setClientSearchQuery(e.target.value)}
+                              onKeyDown={handleSearchEnter}
                             />
                           </div>
                         </div>
+                        <div className="p-1 border-b bg-slate-50/50">
+                           <div className="flex items-center space-x-2 px-3 py-2">
+                            <Checkbox 
+                              id="select-all" 
+                              checked={displayedClients.length > 0 && displayedClients.every(c => selectedClients.includes(c))}
+                              onCheckedChange={handleSelectAllClients}
+                            />
+                            <label htmlFor="select-all" className="text-[11px] font-bold text-slate-900 uppercase tracking-tight cursor-pointer">
+                              (Select All Search Results)
+                            </label>
+                           </div>
+                        </div>
                         <ScrollArea className="h-[280px]">
                           <div className="p-1">
-                            <button 
-                              onClick={() => { setSelectedClient('all'); setClientSearchQuery(""); }}
-                              className={cn(
-                                "w-full text-left px-3 py-2 rounded-md text-[12px] font-bold flex items-center justify-between transition-colors",
-                                selectedClient === 'all' ? "bg-blue-50 text-blue-600" : "hover:bg-slate-50 text-slate-700"
-                              )}
-                            >
-                              All Clients
-                              {selectedClient === 'all' && <Check className="w-3.5 h-3.5" />}
-                            </button>
                             {displayedClients.map(c => (
-                              <button 
+                              <div 
                                 key={c}
-                                onClick={() => { setSelectedClient(c); setClientSearchQuery(""); }}
-                                className={cn(
-                                  "w-full text-left px-3 py-2 rounded-md text-[12px] font-medium flex items-center justify-between transition-colors",
-                                  selectedClient === c ? "bg-blue-50 text-blue-600" : "hover:bg-slate-50 text-slate-700"
-                                )}
+                                className="flex items-center space-x-2 px-3 py-2 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
+                                onClick={() => toggleClientSelection(c)}
                               >
-                                <span className="truncate">{c}</span>
-                                {selectedClient === c && <Check className="w-3.5 h-3.5" />}
-                              </button>
+                                <Checkbox 
+                                  checked={selectedClients.includes(c)}
+                                  onCheckedChange={() => toggleClientSelection(c)}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                                <span className={cn(
+                                  "text-[12px] font-medium truncate flex-1",
+                                  selectedClients.includes(c) ? "text-blue-600 font-bold" : "text-slate-700"
+                                )}>
+                                  {c}
+                                </span>
+                              </div>
                             ))}
+                            {displayedClients.length === 0 && (
+                              <div className="p-4 text-center text-[11px] text-slate-400 font-bold uppercase">No matching clients</div>
+                            )}
                           </div>
                         </ScrollArea>
+                        <div className="p-2 border-t flex justify-end">
+                           <button 
+                            onClick={() => setIsPopoverOpen(false)}
+                            className="text-[11px] font-black text-blue-600 uppercase tracking-widest px-4 py-1.5 hover:bg-blue-50 rounded transition-colors"
+                           >
+                            Done
+                           </button>
+                        </div>
                       </PopoverContent>
                     </Popover>
                     
                     <button onClick={handleCopyAWBOnly} className="h-8 px-4 bg-[#0F172A] hover:bg-black text-white rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95">
-                      <Copy className="w-3.5 h-3.5" /> Copy All AWB
+                      <Copy className="w-3.5 h-3.5" /> Copy Selected AWB
                     </button>
                   </div>
 
-                  {/* Right Side: Export Actions and Search */}
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
                       <button onClick={downloadExcel} className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-sm transition-all">Download Excel</button>
