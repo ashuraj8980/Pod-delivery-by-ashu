@@ -17,16 +17,24 @@ import {
   User,
   Hash,
   CheckCircle2,
-  PackageSearch
+  PackageSearch,
+  ChevronDown
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Module 1: Daily EOD Rejection
+ * Module 1: Daily EOD Rejection (Enhanced with Client-wise AWB Copy and Pending Address)
  * Module 2: EOD Rejection Remark
- * Module 3: OTP Dispatch Check (Corrected Filtering Logic)
+ * Module 3: OTP Dispatch Check
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -116,15 +124,13 @@ interface Session {
   timestamp: number;
 }
 
-// STORAGE DISABLED as per user request to have "Fresh" open
-const STORAGE_KEY = "pod_master_v1";
-
 export default function PODTool() {
   const [activeTab, setActiveTab] = useState<"eod" | "remark" | "otp">("eod");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [activeRemarkChip, setActiveRemarkChip] = useState<string | null>(null);
+  const [selectedClient, setSelectedClient] = useState<string>("all");
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
   const [isMounted, setIsMounted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -141,8 +147,6 @@ export default function PODTool() {
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
-    
-    // PERSISTENCE DISABLED: LocalStorage intentionally NOT read on mount to keep "Fresh"
   }, []);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err') => {
@@ -267,6 +271,90 @@ export default function PODTool() {
     e.target.value = "";
   };
 
+  const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
+
+  const filteredRows = useMemo(() => {
+    if (!currentSession) return [];
+    let rows = currentSession.data;
+    if (statusFilter !== 'all') {
+      rows = rows.filter(r => r.status === statusFilter);
+    }
+    if (activeRemarkChip) rows = rows.filter(r => r.remark === activeRemarkChip);
+    if (searchTerm) {
+      const s = searchTerm.toLowerCase();
+      rows = rows.filter(r => r.awb.includes(s) || r.client.toLowerCase().includes(s) || r.orderId.toLowerCase().includes(s));
+    }
+    return rows;
+  }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
+
+  const uniqueClients = useMemo(() => {
+    const clients = Array.from(new Set(filteredRows.map(r => r.client))).sort();
+    return clients;
+  }, [filteredRows]);
+
+  const stats = useMemo(() => {
+    if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
+    return {
+      total: currentSession.data.length,
+      pending: currentSession.data.filter(r => r.status === 'pending').length,
+      dispatched: currentSession.data.filter(r => r.status === 'dispatched' || r.status === 'dispatch').length,
+      rto: currentSession.data.filter(r => r.status === 'rto').length,
+      dto: currentSession.data.filter(r => r.status === 'dto' || r.status === 'delivered').length,
+    };
+  }, [currentSession]);
+
+  const handleCopyAWBOnly = async () => {
+    let rowsToCopy = filteredRows;
+    if (selectedClient !== 'all') {
+      rowsToCopy = rowsToCopy.filter(r => r.client === selectedClient);
+    }
+    
+    if (!rowsToCopy.length) return;
+    
+    const text = rowsToCopy.map(r => `'${r.awb}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(`Copied ${rowsToCopy.length} AWB — ${selectedClient === 'all' ? 'All Clients' : selectedClient}`, "ok");
+    } catch (err) {
+      showToast("Failed to copy AWB", "err");
+    }
+  };
+
+  const handleCopyTable = useCallback(async () => {
+    if (!filteredRows.length) return;
+    const headers = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
+    const exportRows = filteredRows.map((r, i) => ({
+      'Date': formatDate(r.date),
+      'DSP ID': i === 0 ? r.dspId : "",
+      'AWB Number': r.awb,
+      'Client': r.client,
+      'Order ID': r.orderId,
+      'Remark': r.remark,
+      'FE Name': r.feName
+    }));
+    const success = await copyDataToClipboard(exportRows, headers);
+    if (success) showToast(`Copied ${filteredRows.length} rows to clipboard`, "ok");
+  }, [filteredRows, copyDataToClipboard, showToast]);
+
+  const downloadExcel = () => {
+    if (!filteredRows.length) return;
+    const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
+    const excelData = filteredRows.map((r, i) => [
+      formatDate(r.date), 
+      { v: i === 0 ? String(r.dspId) : "", t: 's' }, 
+      { v: String(r.awb), t: 's' }, 
+      r.client, 
+      { v: String(r.orderId), t: 's' }, 
+      r.remark, 
+      r.feName
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, `POD_Report_${currentSession?.dspId || 'Export'}.xlsx`);
+    showToast("Report downloaded successfully", "ok");
+  };
+
   const handleReplacerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -311,12 +399,29 @@ export default function PODTool() {
     e.target.value = "";
   };
 
+  const handleReplacerDownload = () => {
+    if (!replacerData.length || !replacerMeta) return;
+    const ws = XLSX.utils.json_to_sheet(replacerData.map(r => {
+      const cleanRow: any = {};
+      replacerMeta.headers.forEach(h => {
+        if (h === "Awb" || h === "DSP No" || h === "Order- No") {
+          cleanRow[h] = { v: String(r[h]), t: 's' };
+        } else {
+          cleanRow[h] = r[h];
+        }
+      });
+      return cleanRow;
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Remark Replacer");
+    XLSX.writeFile(wb, "EOD_Rejection_Remarks.xlsx");
+  };
+
   const handleOTPFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const activeSession = sessions.find(s => s.id === selectedSessionId);
-    if (!activeSession) {
+    if (!selectedSessionId) {
       showToast("Select a session in Daily EOD Rejection tab first!", "err");
       e.target.value = "";
       return;
@@ -331,13 +436,11 @@ export default function PODTool() {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
         
-        // STEP 1 & 2: Build AWB Map ONLY from the active session's data for filtering and data pickup
         const activeAWBMap = new Map<string, string>();
-        activeSession.data.forEach(row => {
+        currentSession?.data.forEach(row => {
           if (row.awb) activeAWBMap.set(row.awb.trim(), row.returnAddress || "");
         });
 
-        // STEP 3: Read rows from OTP file and FILTER strictly by active session AWBs
         const filtered: OTPRow[] = [];
         rawData.forEach((row: any) => {
           const keys = Object.keys(row);
@@ -348,7 +451,6 @@ export default function PODTool() {
 
           const awb = normalizeAWB(findVal(/waybill|awb/i));
           
-          // STRICT RULE: Only keep rows where AWB matches active session data
           if (activeAWBMap.has(awb)) {
             const client = String(findVal(/client/i)).trim();
             const status = String(findVal(/current status|currentstatus/i)).trim();
@@ -381,100 +483,6 @@ export default function PODTool() {
     e.target.value = "";
   };
 
-  const handleReplacerDownload = () => {
-    if (!replacerData.length || !replacerMeta) return;
-    const ws = XLSX.utils.json_to_sheet(replacerData.map(r => {
-      const cleanRow: any = {};
-      replacerMeta.headers.forEach(h => {
-        if (h === "Awb" || h === "DSP No" || h === "Order- No") {
-          cleanRow[h] = { v: String(r[h]), t: 's' };
-        } else {
-          cleanRow[h] = r[h];
-        }
-      });
-      return cleanRow;
-    }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Remark Replacer");
-    XLSX.writeFile(wb, "EOD_Rejection_Remarks.xlsx");
-  };
-
-  const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
-
-  const filteredRows = useMemo(() => {
-    if (!currentSession) return [];
-    let rows = currentSession.data;
-    if (statusFilter !== 'all') {
-      rows = rows.filter(r => r.status === statusFilter);
-    }
-    if (activeRemarkChip) rows = rows.filter(r => r.remark === activeRemarkChip);
-    if (searchTerm) {
-      const s = searchTerm.toLowerCase();
-      rows = rows.filter(r => r.awb.includes(s) || r.client.toLowerCase().includes(s) || r.orderId.toLowerCase().includes(s));
-    }
-    return rows;
-  }, [currentSession, statusFilter, activeRemarkChip, searchTerm]);
-
-  const otpFilteredRows = useMemo(() => {
-    if (otpStatusFilter === 'all') return otpData;
-    return otpData.filter(r => r.status.toLowerCase() === otpStatusFilter.toLowerCase());
-  }, [otpData, otpStatusFilter]);
-
-  const stats = useMemo(() => {
-    if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
-    return {
-      total: currentSession.data.length,
-      pending: currentSession.data.filter(r => r.status === 'pending').length,
-      dispatched: currentSession.data.filter(r => r.status === 'dispatched' || r.status === 'dispatch').length,
-      rto: currentSession.data.filter(r => r.status === 'rto').length,
-      dto: currentSession.data.filter(r => r.status === 'dto' || r.status === 'delivered').length,
-    };
-  }, [currentSession]);
-
-  const otpStats = useMemo(() => {
-    return {
-      total: otpData.length,
-      dispatched: otpData.filter(r => r.status.toLowerCase() === 'dispatched').length,
-      rto: otpData.filter(r => r.status.toLowerCase() === 'rto').length,
-      dto: otpData.filter(r => r.status.toLowerCase() === 'dto').length,
-    };
-  }, [otpData]);
-
-  const handleCopyTable = useCallback(async () => {
-    if (!filteredRows.length) return;
-    const headers = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
-    const exportRows = filteredRows.map((r, i) => ({
-      'Date': formatDate(r.date),
-      'DSP ID': i === 0 ? r.dspId : "",
-      'AWB Number': r.awb,
-      'Client': r.client,
-      'Order ID': r.orderId,
-      'Remark': r.remark,
-      'FE Name': r.feName
-    }));
-    const success = await copyDataToClipboard(exportRows, headers);
-    if (success) showToast(`Copied ${filteredRows.length} rows to clipboard`, "ok");
-  }, [filteredRows, copyDataToClipboard, showToast]);
-
-  const downloadExcel = () => {
-    if (!filteredRows.length) return;
-    const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
-    const excelData = filteredRows.map((r, i) => [
-      formatDate(r.date), 
-      { v: i === 0 ? String(r.dspId) : "", t: 's' }, 
-      { v: String(r.awb), t: 's' }, 
-      r.client, 
-      { v: String(r.orderId), t: 's' }, 
-      r.remark, 
-      r.feName
-    ]);
-    const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, `POD_Report_${currentSession?.dspId || 'Export'}.xlsx`);
-    showToast("Report downloaded successfully", "ok");
-  };
-
   const handleOtpDownload = () => {
     if (!otpFilteredRows.length) return;
     const header = ['AWB Number', 'Client Name', 'Current Status', 'Return Address'];
@@ -485,14 +493,25 @@ export default function PODTool() {
       r.returnAddress
     ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
-    
-    // Set column widths and alignment
     ws['!cols'] = [{ wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 40 }];
-    
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "OTP Check");
     XLSX.writeFile(wb, `OTP_Check_${selectedSessionId?.slice(0, 8)}.xlsx`);
   };
+
+  const otpFilteredRows = useMemo(() => {
+    if (otpStatusFilter === 'all') return otpData;
+    return otpData.filter(r => r.status.toLowerCase() === otpStatusFilter.toLowerCase());
+  }, [otpData, otpStatusFilter]);
+
+  const otpStats = useMemo(() => {
+    return {
+      total: otpData.length,
+      dispatched: otpData.filter(r => r.status.toLowerCase() === 'dispatched').length,
+      rto: otpData.filter(r => r.status.toLowerCase() === 'rto').length,
+      dto: otpData.filter(r => r.status.toLowerCase() === 'dto').length,
+    };
+  }, [otpData]);
 
   if (!isMounted) return null;
 
@@ -614,7 +633,7 @@ export default function PODTool() {
                     return (
                       <div 
                         key={s.id}
-                        onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); }}
+                        onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); setSelectedClient('all'); }}
                         className={cn(
                           "bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer relative pl-3 p-3 pr-4 group flex flex-col justify-between h-full min-h-[120px] max-w-[280px]",
                           selectedSessionId === s.id ? "ring-2 ring-blue-500 border-transparent" : "hover:border-blue-300"
@@ -658,7 +677,7 @@ export default function PODTool() {
                   ].map((t) => (
                     <button 
                       key={t.id}
-                      onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); }}
+                      onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); setSelectedClient('all'); }}
                       className={cn(
                         "flex-1 py-6 flex flex-col items-center justify-center transition-all relative group h-[100px]",
                         statusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30"
@@ -682,7 +701,7 @@ export default function PODTool() {
                         <p className="text-[11px] font-medium text-slate-400 mt-1">Click any remark chip to filter</p>
                       </div>
                       {activeRemarkChip && (
-                        <button onClick={() => setActiveRemarkChip(null)} className="h-8 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-bold">All Pending</button>
+                        <button onClick={() => { setActiveRemarkChip(null); setSelectedClient('all'); }} className="h-8 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-bold">All Pending</button>
                       )}
                     </div>
                     <div className="flex flex-wrap gap-2.5">
@@ -697,7 +716,7 @@ export default function PODTool() {
                         return (
                           <button 
                             key={rem}
-                            onClick={() => setActiveRemarkChip(activeRemarkChip === rem ? null : rem)}
+                            onClick={() => { setActiveRemarkChip(activeRemarkChip === rem ? null : rem); setSelectedClient('all'); }}
                             className={cn(
                               "px-4 py-2.5 rounded-lg border flex items-center gap-3 transition-all",
                               activeRemarkChip === rem 
@@ -717,9 +736,28 @@ export default function PODTool() {
                 )}
 
                 <div className="flex items-center justify-between gap-4">
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     <button onClick={downloadExcel} className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg transition-all">Download Excel</button>
                     <button onClick={handleCopyTable} className="h-10 px-5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg transition-all">Copy Table</button>
+                    
+                    <div className="h-px w-4 bg-slate-200" />
+                    
+                    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+                      <Select value={selectedClient} onValueChange={setSelectedClient}>
+                        <SelectTrigger className="h-8 w-[180px] text-[12px] font-bold border-none shadow-none focus:ring-0">
+                          <SelectValue placeholder="All Clients" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all" className="text-[12px] font-bold">All Clients</SelectItem>
+                          {uniqueClients.map(c => (
+                            <SelectItem key={c} value={c} className="text-[12px] font-medium">{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <button onClick={handleCopyAWBOnly} className="h-8 px-4 bg-[#0F172A] hover:bg-black text-white rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95">
+                        <Copy className="w-3.5 h-3.5" /> Copy All AWB
+                      </button>
+                    </div>
                   </div>
                   <div className="relative">
                     <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -739,12 +777,13 @@ export default function PODTool() {
                           <th style={{ width: '110px' }} className="px-2 text-[11px] font-bold text-center">Client</th>
                           <th style={{ width: '110px' }} className="px-2 text-[11px] font-bold text-center">Order ID</th>
                           <th className="px-2 text-[11px] font-bold text-center">Remark</th>
+                          {statusFilter === 'pending' && <th style={{ width: '200px' }} className="px-2 text-[11px] font-bold text-center">Return Address</th>}
                           <th style={{ width: '80px' }} className="px-2 text-[11px] font-bold text-center">FE Name</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr className="bg-slate-800 text-white h-8 border-b border-white/5">
-                          <td colSpan={8} className="px-3">
+                          <td colSpan={statusFilter === 'pending' ? 9 : 8} className="px-3">
                             <div className="flex items-center gap-3 text-center justify-center">
                               <span className="text-[12px] font-bold text-amber-400">{currentSession.dspId}</span>
                               <span className="w-px h-3 bg-white/20" />
@@ -777,10 +816,11 @@ export default function PODTool() {
                                 {row.remark}
                               </span>
                             </td>
+                            {statusFilter === 'pending' && <td className="px-2 text-[12px] text-[#374151] truncate text-center">{row.returnAddress || "—"}</td>}
                             <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.feName}</td>
                           </tr>
                         )) : (
-                          <tr><td colSpan={8} className="h-32 text-center text-[13px] font-bold text-slate-300 uppercase tracking-widest">No matching data available</td></tr>
+                          <tr><td colSpan={statusFilter === 'pending' ? 9 : 8} className="h-32 text-center text-[13px] font-bold text-slate-300 uppercase tracking-widest">No matching data available</td></tr>
                         )}
                       </tbody>
                     </table>
