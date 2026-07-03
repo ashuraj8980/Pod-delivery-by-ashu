@@ -18,7 +18,8 @@ import {
   Hash,
   CheckCircle2,
   PackageSearch,
-  ChevronDown
+  ChevronDown,
+  Check
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
@@ -131,6 +138,7 @@ export default function PODTool() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [activeRemarkChip, setActiveRemarkChip] = useState<string | null>(null);
   const [selectedClient, setSelectedClient] = useState<string>("all");
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
   const [isMounted, setIsMounted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -232,7 +240,7 @@ export default function PODTool() {
             dspId: setupData.dspId,
             date: formatDate(setupData.date),
             returnAddress,
-            isIntact: /reject|intact|content|barcode/i.test(remark)
+            isIntact: /reject|intact|barcode|content/i.test(remark)
           };
         }).filter(row => row.awb.length >= 3 && row.status !== "unknown");
         
@@ -291,6 +299,11 @@ export default function PODTool() {
     const clients = Array.from(new Set(filteredRows.map(r => r.client))).sort();
     return clients;
   }, [filteredRows]);
+
+  const displayedClients = useMemo(() => {
+    if (!clientSearchQuery) return uniqueClients;
+    return uniqueClients.filter(c => c.toLowerCase().includes(clientSearchQuery.toLowerCase()));
+  }, [uniqueClients, clientSearchQuery]);
 
   const stats = useMemo(() => {
     if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
@@ -633,7 +646,13 @@ export default function PODTool() {
                     return (
                       <div 
                         key={s.id}
-                        onClick={() => { setSelectedSessionId(s.id); setStatusFilter('all'); setActiveRemarkChip(null); setSelectedClient('all'); }}
+                        onClick={() => { 
+                          setSelectedSessionId(s.id); 
+                          setStatusFilter('all'); 
+                          setActiveRemarkChip(null); 
+                          setSelectedClient('all');
+                          setClientSearchQuery("");
+                        }}
                         className={cn(
                           "bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer relative pl-3 p-3 pr-4 group flex flex-col justify-between h-full min-h-[120px] max-w-[280px]",
                           selectedSessionId === s.id ? "ring-2 ring-blue-500 border-transparent" : "hover:border-blue-300"
@@ -677,7 +696,12 @@ export default function PODTool() {
                   ].map((t) => (
                     <button 
                       key={t.id}
-                      onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); setSelectedClient('all'); }}
+                      onClick={() => { 
+                        setStatusFilter(t.id); 
+                        setActiveRemarkChip(null); 
+                        setSelectedClient('all'); 
+                        setClientSearchQuery("");
+                      }}
                       className={cn(
                         "flex-1 py-6 flex flex-col items-center justify-center transition-all relative group h-[100px]",
                         statusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30"
@@ -701,7 +725,11 @@ export default function PODTool() {
                         <p className="text-[11px] font-medium text-slate-400 mt-1">Click any remark chip to filter</p>
                       </div>
                       {activeRemarkChip && (
-                        <button onClick={() => { setActiveRemarkChip(null); setSelectedClient('all'); }} className="h-8 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-bold">All Pending</button>
+                        <button onClick={() => { 
+                          setActiveRemarkChip(null); 
+                          setSelectedClient('all'); 
+                          setClientSearchQuery("");
+                        }} className="h-8 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-bold">All Pending</button>
                       )}
                     </div>
                     <div className="flex flex-wrap gap-2.5">
@@ -716,7 +744,11 @@ export default function PODTool() {
                         return (
                           <button 
                             key={rem}
-                            onClick={() => { setActiveRemarkChip(activeRemarkChip === rem ? null : rem); setSelectedClient('all'); }}
+                            onClick={() => { 
+                              setActiveRemarkChip(activeRemarkChip === rem ? null : rem); 
+                              setSelectedClient('all'); 
+                              setClientSearchQuery("");
+                            }}
                             className={cn(
                               "px-4 py-2.5 rounded-lg border flex items-center gap-3 transition-all",
                               activeRemarkChip === rem 
@@ -736,32 +768,75 @@ export default function PODTool() {
                 )}
 
                 <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <button onClick={downloadExcel} className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg transition-all">Download Excel</button>
-                    <button onClick={handleCopyTable} className="h-10 px-5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg transition-all">Copy Table</button>
+                  {/* Left Side: Client Selection and Copy AWB */}
+                  <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+                    <Popover onOpenChange={(open) => !open && setClientSearchQuery("")}>
+                      <PopoverTrigger asChild>
+                        <button className="h-8 min-w-[180px] px-3 flex items-center justify-between text-[12px] font-bold text-[#374151] hover:bg-slate-50 rounded-lg transition-colors">
+                          <span className="truncate">{selectedClient === 'all' ? 'All Clients' : selectedClient}</span>
+                          <ChevronDown className="w-3.5 h-3.5 opacity-50 ml-2" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[240px] p-0" align="start">
+                        <div className="p-2 border-b">
+                          <div className="relative">
+                            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input 
+                              className="w-full text-[12px] pl-8 pr-3 py-1.5 border rounded-md outline-none focus:border-blue-500" 
+                              placeholder="Search client..." 
+                              value={clientSearchQuery}
+                              onChange={(e) => setClientSearchQuery(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <ScrollArea className="h-[280px]">
+                          <div className="p-1">
+                            <button 
+                              onClick={() => { setSelectedClient('all'); setClientSearchQuery(""); }}
+                              className={cn(
+                                "w-full text-left px-3 py-2 rounded-md text-[12px] font-bold flex items-center justify-between transition-colors",
+                                selectedClient === 'all' ? "bg-blue-50 text-blue-600" : "hover:bg-slate-50 text-slate-700"
+                              )}
+                            >
+                              All Clients
+                              {selectedClient === 'all' && <Check className="w-3.5 h-3.5" />}
+                            </button>
+                            {displayedClients.map(c => (
+                              <button 
+                                key={c}
+                                onClick={() => { setSelectedClient(c); setClientSearchQuery(""); }}
+                                className={cn(
+                                  "w-full text-left px-3 py-2 rounded-md text-[12px] font-medium flex items-center justify-between transition-colors",
+                                  selectedClient === c ? "bg-blue-50 text-blue-600" : "hover:bg-slate-50 text-slate-700"
+                                )}
+                              >
+                                <span className="truncate">{c}</span>
+                                {selectedClient === c && <Check className="w-3.5 h-3.5" />}
+                              </button>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </PopoverContent>
+                    </Popover>
                     
-                    <div className="h-px w-4 bg-slate-200" />
-                    
-                    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
-                      <Select value={selectedClient} onValueChange={setSelectedClient}>
-                        <SelectTrigger className="h-8 w-[180px] text-[12px] font-bold border-none shadow-none focus:ring-0">
-                          <SelectValue placeholder="All Clients" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all" className="text-[12px] font-bold">All Clients</SelectItem>
-                          {uniqueClients.map(c => (
-                            <SelectItem key={c} value={c} className="text-[12px] font-medium">{c}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <button onClick={handleCopyAWBOnly} className="h-8 px-4 bg-[#0F172A] hover:bg-black text-white rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95">
-                        <Copy className="w-3.5 h-3.5" /> Copy All AWB
-                      </button>
-                    </div>
+                    <button onClick={handleCopyAWBOnly} className="h-8 px-4 bg-[#0F172A] hover:bg-black text-white rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95">
+                      <Copy className="w-3.5 h-3.5" /> Copy All AWB
+                    </button>
                   </div>
-                  <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input type="text" placeholder="Search waybill, client..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-white border-[1.5px] border-slate-200 rounded-lg pl-10 pr-4 h-10 text-[13px] font-semibold text-[#111827] outline-none w-[320px] focus:border-blue-500 shadow-sm" />
+
+                  {/* Right Side: Export Actions and Search */}
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <button onClick={downloadExcel} className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-sm transition-all">Download Excel</button>
+                      <button onClick={handleCopyTable} className="h-10 px-5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-sm transition-all">Copy Table</button>
+                    </div>
+                    
+                    <div className="h-8 w-px bg-slate-200" />
+                    
+                    <div className="relative">
+                      <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input type="text" placeholder="Search waybill, client..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-white border-[1.5px] border-slate-200 rounded-xl pl-10 pr-4 h-10 text-[13px] font-semibold text-[#111827] outline-none w-[320px] focus:border-blue-500 shadow-sm" />
+                    </div>
                   </div>
                 </div>
 
