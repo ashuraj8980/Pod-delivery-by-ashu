@@ -116,6 +116,7 @@ interface OTPRow {
   awb: string;
   client: string;
   status: string;
+  sessionStatus: string;
   returnAddress: string;
   isFTPL: boolean;
 }
@@ -149,6 +150,9 @@ export default function PODTool() {
 
   const [otpData, setOtpData] = useState<OTPRow[]>([]);
   const [otpStatusFilter, setOtpStatusFilter] = useState<string>("all");
+  const [otpSelectedClients, setOtpSelectedClients] = useState<string[]>([]);
+  const [otpClientSearchQuery, setOtpClientSearchQuery] = useState("");
+  const [isOtpPopoverOpen, setIsOtpPopoverOpen] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -450,9 +454,9 @@ export default function PODTool() {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
         
-        const activeAWBMap = new Map<string, string>();
+        const activeAWBMap = new Map<string, { addr: string, status: string }>();
         currentSession?.data.forEach(row => {
-          if (row.awb) activeAWBMap.set(row.awb.trim(), row.returnAddress || "");
+          if (row.awb) activeAWBMap.set(row.awb.trim(), { addr: row.returnAddress || "", status: row.status });
         });
 
         const filtered: OTPRow[] = [];
@@ -463,7 +467,8 @@ export default function PODTool() {
             return key ? row[key] : "";
           };
           const awb = normalizeAWB(findVal(/waybill|awb/i));
-          if (activeAWBMap.has(awb)) {
+          const sessionInfo = activeAWBMap.get(awb);
+          if (sessionInfo) {
             const client = String(findVal(/client/i)).trim();
             const status = String(findVal(/current status|currentstatus/i)).trim();
             filtered.push({
@@ -471,7 +476,8 @@ export default function PODTool() {
               awb,
               client,
               status,
-              returnAddress: activeAWBMap.get(awb) || "",
+              sessionStatus: sessionInfo.status,
+              returnAddress: sessionInfo.addr,
               isFTPL: client.toUpperCase().includes('FTPL')
             });
           }
@@ -508,14 +514,26 @@ export default function PODTool() {
   };
 
   const otpFilteredRows = useMemo(() => {
-    if (otpStatusFilter === 'all') return otpData;
-    return otpData.filter(r => r.status.toLowerCase() === otpStatusFilter.toLowerCase());
-  }, [otpData, otpStatusFilter]);
+    let rows = otpData;
+    if (otpStatusFilter === 'dispatched') {
+      rows = rows.filter(r => r.status.toLowerCase() === 'dispatched' && r.sessionStatus !== 'pending');
+    } else if (otpStatusFilter === 'pending') {
+      rows = rows.filter(r => r.status.toLowerCase() === 'dispatched' && r.sessionStatus === 'pending');
+    } else if (otpStatusFilter !== 'all') {
+      rows = rows.filter(r => r.status.toLowerCase() === otpStatusFilter.toLowerCase());
+    }
+
+    if (otpSelectedClients.length > 0) {
+      rows = rows.filter(r => otpSelectedClients.includes(r.client));
+    }
+    return rows;
+  }, [otpData, otpStatusFilter, otpSelectedClients]);
 
   const otpStats = useMemo(() => {
     return {
       total: otpData.length,
-      dispatched: otpData.filter(r => r.status.toLowerCase() === 'dispatched').length,
+      dispatched: otpData.filter(r => r.status.toLowerCase() === 'dispatched' && r.sessionStatus !== 'pending').length,
+      pending: otpData.filter(r => r.status.toLowerCase() === 'dispatched' && r.sessionStatus === 'pending').length,
       rto: otpData.filter(r => r.status.toLowerCase() === 'rto').length,
       dto: otpData.filter(r => r.status.toLowerCase() === 'dto').length,
     };
@@ -551,6 +569,43 @@ export default function PODTool() {
     }
   };
 
+  // OTP Client Filters
+  const allOtpClients = useMemo(() => {
+    let rows = otpData;
+    if (otpStatusFilter === 'dispatched') {
+      rows = rows.filter(r => r.status.toLowerCase() === 'dispatched' && r.sessionStatus !== 'pending');
+    } else if (otpStatusFilter === 'pending') {
+      rows = rows.filter(r => r.status.toLowerCase() === 'dispatched' && r.sessionStatus === 'pending');
+    } else if (otpStatusFilter !== 'all') {
+      rows = rows.filter(r => r.status.toLowerCase() === otpStatusFilter.toLowerCase());
+    }
+    return Array.from(new Set(rows.map(r => r.client))).sort();
+  }, [otpData, otpStatusFilter]);
+
+  const displayedOtpClients = useMemo(() => {
+    if (!otpClientSearchQuery) return allOtpClients;
+    return allOtpClients.filter(c => c.toLowerCase().includes(otpClientSearchQuery.toLowerCase()));
+  }, [allOtpClients, otpClientSearchQuery]);
+
+  const toggleOtpClientSelection = (client: string) => {
+    setOtpSelectedClients(prev => 
+      prev.includes(client) ? prev.filter(c => c !== client) : [...prev, client]
+    );
+  };
+
+  const handleSelectAllOtpClients = (checked: boolean) => {
+    if (checked) {
+      const visible = displayedOtpClients;
+      setOtpSelectedClients(prev => {
+        const otherSelected = prev.filter(c => !visible.includes(c));
+        return [...otherSelected, ...visible];
+      });
+    } else {
+      const visible = displayedOtpClients;
+      setOtpSelectedClients(prev => prev.filter(c => !visible.includes(c)));
+    }
+  };
+
   // Row Selection & Bulk Actions
   const toggleRowSelection = (id: string) => {
     setSelectedRowIds(prev => {
@@ -583,11 +638,11 @@ export default function PODTool() {
     setSelectedRowIds(new Set());
   };
 
-  const handleCopyGroupAWB = async (rows: PODRow[], remark: string) => {
+  const handleCopyGroupAWB = async (rows: PODRow[] | OTPRow[], groupLabel: string) => {
     const text = rows.map(r => `'${r.awb}`).join('\n');
     try {
       await navigator.clipboard.writeText(text);
-      showToast(`Copied ${rows.length} AWB — ${remark}`, "ok");
+      showToast(`Copied ${rows.length} AWB — ${groupLabel}`, "ok");
     } catch (err) {
       showToast("Failed to copy AWB", "err");
     }
@@ -735,6 +790,8 @@ export default function PODTool() {
                           setSelectedClients([]);
                           setClientSearchQuery("");
                           setSelectedRowIds(new Set());
+                          setOtpData([]);
+                          setOtpStatusFilter('all');
                         }}
                         className={cn(
                           "bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer relative pl-3 p-3 pr-4 group flex flex-col justify-between h-full min-h-[120px] max-w-[280px]",
@@ -1239,12 +1296,16 @@ export default function PODTool() {
                   {[
                     { id: 'all', label: 'All', val: otpStats.total, color: 'text-blue-600' },
                     { id: 'dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-[#15803D]' },
+                    { id: 'pending', label: 'Pending', val: otpStats.pending, color: 'text-[#B45309]' },
                     { id: 'rto', label: 'RTO', val: otpStats.rto, color: 'text-[#B91C1C]' },
                     { id: 'dto', label: 'DTO', val: otpStats.dto, color: 'text-blue-600' }
                   ].map((t) => (
                     <button 
                       key={t.id}
-                      onClick={() => setOtpStatusFilter(t.id)}
+                      onClick={() => {
+                        setOtpStatusFilter(t.id);
+                        setOtpSelectedClients([]);
+                      }}
                       className={cn(
                         "flex-1 py-6 flex flex-col items-center justify-center transition-all relative h-[100px]",
                         otpStatusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30"
@@ -1258,6 +1319,80 @@ export default function PODTool() {
                 </div>
 
                 <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+                    <Popover open={isOtpPopoverOpen} onOpenChange={(open) => { setIsOtpPopoverOpen(open); if(!open) setOtpClientSearchQuery(""); }}>
+                      <PopoverTrigger asChild>
+                        <button className="h-8 min-w-[200px] px-3 flex items-center justify-between text-[12px] font-bold text-[#374151] hover:bg-slate-50 rounded-lg transition-colors border border-slate-100">
+                          <span className="truncate">
+                            {otpSelectedClients.length === 0 ? 'All Clients' : 
+                             otpSelectedClients.length === 1 ? otpSelectedClients[0] : 
+                             `${otpSelectedClients.length} Clients Selected`}
+                          </span>
+                          <ChevronDown className="w-3.5 h-3.5 opacity-50 ml-2" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[280px] p-0" align="start">
+                        <div className="p-2 border-b">
+                          <div className="relative">
+                            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input 
+                              className="w-full text-[12px] pl-8 pr-3 py-1.5 border rounded-md outline-none focus:border-blue-500" 
+                              placeholder="Search client..." 
+                              value={otpClientSearchQuery}
+                              onChange={(e) => setOtpClientSearchQuery(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="p-1 border-b bg-slate-50/50">
+                           <div className="flex items-center space-x-2 px-3 py-2">
+                            <Checkbox 
+                              id="otp-select-all" 
+                              checked={displayedOtpClients.length > 0 && displayedOtpClients.every(c => otpSelectedClients.includes(c))}
+                              onCheckedChange={handleSelectAllOtpClients}
+                            />
+                            <label htmlFor="otp-select-all" className="text-[11px] font-bold text-slate-900 uppercase tracking-tight cursor-pointer">
+                              (Select All Search Results)
+                            </label>
+                           </div>
+                        </div>
+                        <ScrollArea className="h-[280px]">
+                          <div className="p-1">
+                            {displayedOtpClients.map(c => (
+                              <div 
+                                key={c}
+                                className="flex items-center space-x-2 px-3 py-2 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
+                                onClick={() => toggleOtpClientSelection(c)}
+                              >
+                                <Checkbox 
+                                  checked={otpSelectedClients.includes(c)}
+                                  onCheckedChange={() => toggleOtpClientSelection(c)}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                                <span className={cn(
+                                  "text-[12px] font-medium truncate flex-1",
+                                  otpSelectedClients.includes(c) ? "text-blue-600 font-bold" : "text-slate-700"
+                                )}>
+                                  {c}
+                                </span>
+                              </div>
+                            ))}
+                            {displayedOtpClients.length === 0 && (
+                              <div className="p-4 text-center text-[11px] text-slate-400 font-bold uppercase">No matching clients</div>
+                            )}
+                          </div>
+                        </ScrollArea>
+                        <div className="p-2 border-t flex justify-end">
+                           <button 
+                            onClick={() => setIsOtpPopoverOpen(false)}
+                            className="text-[11px] font-black text-blue-600 uppercase tracking-widest px-4 py-1.5 hover:bg-blue-50 rounded transition-colors"
+                           >
+                            Done
+                           </button>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
                   <div className="flex gap-2">
                     <button onClick={handleOtpDownload} className="h-10 px-5 bg-emerald-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg">Download Excel</button>
                     <button onClick={async () => {
@@ -1276,41 +1411,112 @@ export default function PODTool() {
 
                 <div className="bg-white rounded-xl border-[1.5px] border-[#F97316] shadow-2xl overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-center border-collapse bg-white">
+                    <table className="w-full text-center border-collapse bg-white table-fixed">
                       <thead className="bg-[#0F172A] text-white">
                         <tr className="h-11">
                           <th style={{ width: '32px' }} className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5 border border-slate-300 rounded" /></th>
-                          <th className="px-4 text-[11px] font-bold text-center">AWB Number</th>
-                          <th className="px-4 text-[11px] font-bold text-center">Client Name</th>
-                          <th className="px-4 text-[11px] font-bold text-center">Current Status</th>
-                          <th className="px-4 text-[11px] font-bold text-center">Return Address</th>
+                          <th style={{ width: '150px' }} className="px-4 text-[11px] font-bold text-center">AWB Number</th>
+                          <th style={{ width: '180px' }} className="px-4 text-[11px] font-bold text-center">Client Name</th>
+                          <th style={{ width: '140px' }} className="px-4 text-[11px] font-bold text-center">Current Status</th>
+                          {otpStatusFilter === 'pending' && <th style={{ width: '120px' }} className="px-4 text-[11px] font-bold text-center">Session Status</th>}
+                          <th style={{ minWidth: '250px' }} className="px-4 text-[11px] font-bold text-center">Return Address</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {otpFilteredRows.length > 0 ? otpFilteredRows.map((row) => (
-                          <tr key={row.id} className={cn(
-                            "h-11 border-b border-[#FED7AA] transition-colors bg-white",
-                            row.isFTPL ? "bg-rose-50/50 border-l-[3px] border-l-rose-500" : ""
-                          )}>
-                            <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
-                            <td className="px-4 text-[13px] font-bold text-[#111827] font-mono tracking-tight">{row.awb}</td>
-                            <td className={cn("px-4 text-[13px] font-semibold truncate", row.isFTPL ? "text-[#DC2626] font-bold" : "text-[#374151]")}>
-                              {row.client}
-                            </td>
-                            <td className="px-4">
-                              <span className={cn(
-                                "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm",
-                                row.status.toLowerCase() === 'dispatched' ? "bg-emerald-50 text-[#15803D] border-emerald-200" :
-                                row.status.toLowerCase() === 'rto' ? "bg-rose-50 text-[#B91C1C] border-rose-200" :
-                                "bg-blue-50 text-blue-600 border-blue-200"
+                        {otpFilteredRows.length > 0 ? (
+                          (otpStatusFilter === 'dispatched' || otpStatusFilter === 'rto' || otpStatusFilter === 'dto' || otpStatusFilter === 'pending') ? (
+                            Object.entries(
+                              otpFilteredRows.reduce((acc: Record<string, OTPRow[]>, row) => {
+                                const key = row.client || "Other Clients";
+                                if (!acc[key]) acc[key] = [];
+                                acc[key].push(row);
+                                return acc;
+                              }, {})
+                            )
+                            .sort((a, b) => b[1].length - a[1].length)
+                            .map(([clientName, groupRows]) => (
+                              <React.Fragment key={clientName}>
+                                <tr className="h-10 border-b border-white/10" style={{ background: 'linear-gradient(90deg, #0D1B2E, #1A2F4A)' }}>
+                                  <td className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5 border border-white/50 rounded bg-transparent" /></td>
+                                  <td colSpan={otpStatusFilter === 'pending' ? 5 : 4} className="px-3">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-yellow-400 font-mono text-[11px] font-black uppercase tracking-widest">{clientName}</span>
+                                        <span className="w-px h-3 bg-white/20 mx-1" />
+                                        <span className="text-[10px] font-black text-amber-400 border border-amber-400/30 px-1.5 py-0.5 rounded uppercase tracking-tight">{groupRows.length} pkt</span>
+                                      </div>
+                                      <button 
+                                        onClick={() => handleCopyGroupAWB(groupRows, clientName)}
+                                        className="text-[10px] font-bold text-white border border-white/30 rounded px-2.5 py-0.5 hover:bg-white/10 transition-colors uppercase tracking-widest"
+                                      >
+                                        Copy AWB
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                                {groupRows.map((row) => (
+                                  <tr key={row.id} className={cn(
+                                    "h-11 border-b border-[#FED7AA] transition-colors bg-white",
+                                    row.isFTPL ? "bg-rose-50/50 border-l-[3px] border-l-rose-500" : ""
+                                  )}>
+                                    <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
+                                    <td className="px-4 text-[13px] font-bold text-[#111827] font-mono tracking-tight">{row.awb}</td>
+                                    <td className={cn("px-4 text-[13px] font-semibold truncate", row.isFTPL ? "text-[#DC2626] font-bold" : "text-[#1565C0]")}>
+                                      {row.client}
+                                    </td>
+                                    <td className="px-4">
+                                      <span className={cn(
+                                        "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm",
+                                        row.status.toLowerCase() === 'dispatched' ? "bg-emerald-50 text-[#15803D] border-emerald-200" :
+                                        row.status.toLowerCase() === 'rto' ? "bg-rose-50 text-[#B91C1C] border-rose-200" :
+                                        "bg-blue-50 text-blue-600 border-blue-200"
+                                      )}>
+                                        {row.status}
+                                      </span>
+                                    </td>
+                                    {otpStatusFilter === 'pending' && (
+                                      <td className="px-4">
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm bg-amber-50 text-[#B45309] border-amber-200">
+                                          {row.sessionStatus}
+                                        </span>
+                                      </td>
+                                    )}
+                                    <td className="px-4 py-2 text-[12px] font-medium text-slate-500 text-center" style={{ whiteSpace: 'normal', wordWrap: 'break-word' }}>
+                                      {row.returnAddress || "—"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </React.Fragment>
+                            ))
+                          ) : (
+                            otpFilteredRows.map((row) => (
+                              <tr key={row.id} className={cn(
+                                "h-11 border-b border-[#FED7AA] transition-colors bg-white",
+                                row.isFTPL ? "bg-rose-50/50 border-l-[3px] border-l-rose-500" : ""
                               )}>
-                                {row.status}
-                              </span>
-                            </td>
-                            <td className="px-4 text-[13px] font-medium text-slate-500 text-center">{row.returnAddress || "—"}</td>
-                          </tr>
-                        )) : (
-                          <tr><td colSpan={5} className="h-32 text-center text-slate-300 font-bold uppercase tracking-widest">No matching AWBs found between OTP file and current session.</td></tr>
+                                <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
+                                <td className="px-4 text-[13px] font-bold text-[#111827] font-mono tracking-tight">{row.awb}</td>
+                                <td className={cn("px-4 text-[13px] font-semibold truncate", row.isFTPL ? "text-[#DC2626] font-bold" : "text-[#1565C0]")}>
+                                  {row.client}
+                                </td>
+                                <td className="px-4">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm",
+                                    row.status.toLowerCase() === 'dispatched' ? "bg-emerald-50 text-[#15803D] border-emerald-200" :
+                                    row.status.toLowerCase() === 'rto' ? "bg-rose-50 text-[#B91C1C] border-rose-200" :
+                                    "bg-blue-50 text-blue-600 border-blue-200"
+                                  )}>
+                                    {row.status}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2 text-[12px] font-medium text-slate-500 text-center" style={{ whiteSpace: 'normal', wordWrap: 'break-word' }}>
+                                  {row.returnAddress || "—"}
+                                </td>
+                              </tr>
+                            ))
+                          )
+                        ) : (
+                          <tr><td colSpan={otpStatusFilter === 'pending' ? 6 : 5} className="h-32 text-center text-slate-300 font-bold uppercase tracking-widest">No matching AWBs found between OTP file and current session.</td></tr>
                         )}
                       </tbody>
                     </table>
