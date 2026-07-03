@@ -142,6 +142,7 @@ export default function PODTool() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
@@ -550,6 +551,63 @@ export default function PODTool() {
     }
   };
 
+  // Row Selection & Bulk Actions
+  const toggleRowSelection = (id: string) => {
+    setSelectedRowIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleGroupSelection = (rows: PODRow[], checked: boolean) => {
+    setSelectedRowIds(prev => {
+      const next = new Set(prev);
+      rows.forEach(r => {
+        if (checked) next.add(r.id);
+        else next.delete(r.id);
+      });
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedRowIds.size === 0) return;
+    setSessions(prev => prev.map(s => 
+      s.id === selectedSessionId 
+        ? { ...s, data: s.data.filter(r => !selectedRowIds.has(r.id)) } 
+        : s
+    ));
+    showToast(`Deleted ${selectedRowIds.size} selected rows`, "ok");
+    setSelectedRowIds(new Set());
+  };
+
+  const handleCopyGroupAWB = async (rows: PODRow[], remark: string) => {
+    const text = rows.map(r => `'${r.awb}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(`Copied ${rows.length} AWB — ${remark}`, "ok");
+    } catch (err) {
+      showToast("Failed to copy AWB", "err");
+    }
+  };
+
+  const handleDeleteGroup = (rows: PODRow[], remark: string) => {
+    const idsToRemove = new Set(rows.map(r => r.id));
+    setSessions(prev => prev.map(s => 
+      s.id === selectedSessionId 
+        ? { ...s, data: s.data.filter(r => !idsToRemove.has(r.id)) } 
+        : s
+    ));
+    showToast(`Deleted ${rows.length} rows — ${remark}`, "ok");
+    setSelectedRowIds(prev => {
+      const next = new Set(prev);
+      idsToRemove.forEach(id => next.delete(id));
+      return next;
+    });
+  };
+
   if (!isMounted) return null;
 
   return (
@@ -676,6 +734,7 @@ export default function PODTool() {
                           setActiveRemarkChip(null); 
                           setSelectedClients([]);
                           setClientSearchQuery("");
+                          setSelectedRowIds(new Set());
                         }}
                         className={cn(
                           "bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer relative pl-3 p-3 pr-4 group flex flex-col justify-between h-full min-h-[120px] max-w-[280px]",
@@ -725,6 +784,7 @@ export default function PODTool() {
                         setActiveRemarkChip(null); 
                         setSelectedClients([]); 
                         setClientSearchQuery("");
+                        setSelectedRowIds(new Set());
                       }}
                       className={cn(
                         "flex-1 py-6 flex flex-col items-center justify-center transition-all relative group h-[100px]",
@@ -753,6 +813,7 @@ export default function PODTool() {
                           setActiveRemarkChip(null); 
                           setSelectedClients([]); 
                           setClientSearchQuery("");
+                          setSelectedRowIds(new Set());
                         }} className="h-8 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-bold">All Pending</button>
                       )}
                     </div>
@@ -772,6 +833,7 @@ export default function PODTool() {
                               setActiveRemarkChip(activeRemarkChip === rem ? null : rem); 
                               setSelectedClients([]); 
                               setClientSearchQuery("");
+                              setSelectedRowIds(new Set());
                             }}
                             className={cn(
                               "px-4 py-2.5 rounded-lg border flex items-center gap-3 transition-all",
@@ -869,6 +931,15 @@ export default function PODTool() {
                     <button onClick={handleCopyAWBOnly} className="h-8 px-4 bg-[#0F172A] hover:bg-black text-white rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95">
                       <Copy className="w-3.5 h-3.5" /> Copy Selected AWB
                     </button>
+
+                    {selectedRowIds.size > 0 && (
+                      <button 
+                        onClick={handleDeleteSelected}
+                        className="h-8 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95 shadow-md"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedRowIds.size})
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-4">
@@ -891,7 +962,14 @@ export default function PODTool() {
                     <table className="w-full text-center border-collapse table-fixed bg-white">
                       <thead className="bg-[#0F172A] text-white">
                         <tr className="h-11">
-                          <th style={{ width: '32px' }} className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5 border border-slate-300 rounded" /></th>
+                          <th style={{ width: '32px' }} className="px-2 text-center">
+                            <input 
+                              type="checkbox" 
+                              className="w-3.5 h-3.5 border border-slate-300 rounded" 
+                              checked={filteredRows.length > 0 && filteredRows.every(r => selectedRowIds.has(r.id))}
+                              onChange={(e) => toggleGroupSelection(filteredRows, e.target.checked)}
+                            />
+                          </th>
                           <th style={{ width: '28px' }} className="px-1 text-center"><Trash2 className="w-3.5 h-3.5 opacity-40 mx-auto" /></th>
                           <th style={{ width: '80px' }} className="px-2 text-[11px] font-bold text-center">DSP ID</th>
                           <th style={{ width: '130px' }} className="px-2 text-[11px] font-bold text-center">AWB Number</th>
@@ -926,19 +1004,50 @@ export default function PODTool() {
                             .sort((a, b) => b[1].length - a[1].length)
                             .map(([remark, groupRows]) => (
                               <React.Fragment key={remark}>
-                                <tr className="h-8 border-b border-white/5" style={{ background: 'linear-gradient(90deg, #0D1B2E, #1A2F4A)' }}>
-                                  <td colSpan={9} className="px-3">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-amber-400 text-[14px]">★</span>
-                                      <span className="text-[11px] font-bold text-white uppercase tracking-wider">{remark}</span>
-                                      <span className="w-px h-3 bg-white/20 mx-1" />
-                                      <span className="text-[10px] font-black text-amber-400 border border-amber-400/30 px-1.5 py-0.5 rounded uppercase tracking-tight">{groupRows.length} pkt</span>
+                                <tr className="h-10 border-b border-white/10" style={{ background: 'linear-gradient(90deg, #0D1B2E, #1A2F4A)' }}>
+                                  <td className="px-2 text-center">
+                                    <input 
+                                      type="checkbox" 
+                                      className="w-3.5 h-3.5 border border-white/50 rounded bg-transparent"
+                                      checked={groupRows.every(r => selectedRowIds.has(r.id))}
+                                      onChange={(e) => toggleGroupSelection(groupRows, e.target.checked)}
+                                    />
+                                  </td>
+                                  <td colSpan={statusFilter === 'pending' ? 8 : 7} className="px-3">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-amber-400 text-[14px]">★</span>
+                                        <span className="text-[11px] font-bold text-white uppercase tracking-wider">{remark}</span>
+                                        <span className="w-px h-3 bg-white/20 mx-1" />
+                                        <span className="text-[10px] font-black text-amber-400 border border-amber-400/30 px-1.5 py-0.5 rounded uppercase tracking-tight">{groupRows.length} pkt</span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <button 
+                                          onClick={() => handleCopyGroupAWB(groupRows, remark)}
+                                          className="text-[11px] font-semibold text-white/90 border border-white/30 rounded px-2.5 py-0.5 hover:bg-white/10 transition-colors"
+                                        >
+                                          Copy AWB
+                                        </button>
+                                        <button 
+                                          onClick={() => handleDeleteGroup(groupRows, remark)}
+                                          className="text-[11px] font-semibold text-rose-400 border border-rose-400/40 rounded px-2.5 py-0.5 hover:bg-rose-400/10 transition-colors"
+                                        >
+                                          Delete All
+                                        </button>
+                                      </div>
                                     </div>
                                   </td>
                                 </tr>
                                 {groupRows.map((row) => (
-                                  <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group bg-white")}>
-                                    <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
+                                  <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group bg-white", selectedRowIds.has(row.id) && "bg-blue-50")}>
+                                    <td className="px-2 text-center">
+                                      <input 
+                                        type="checkbox" 
+                                        className="w-3 h-3 border border-slate-300 rounded" 
+                                        checked={selectedRowIds.has(row.id)}
+                                        onChange={() => toggleRowSelection(row.id)}
+                                      />
+                                    </td>
                                     <td className="px-1 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
                                     <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.dspId}</td>
                                     <td 
@@ -968,8 +1077,15 @@ export default function PODTool() {
                             ))
                           ) : (
                             filteredRows.map((row) => (
-                              <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group bg-white")}>
-                                <td className="px-2 text-center"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
+                              <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group bg-white", selectedRowIds.has(row.id) && "bg-blue-50")}>
+                                <td className="px-2 text-center">
+                                  <input 
+                                    type="checkbox" 
+                                    className="w-3 h-3 border border-slate-300 rounded" 
+                                    checked={selectedRowIds.has(row.id)}
+                                    onChange={() => toggleRowSelection(row.id)}
+                                  />
+                                </td>
                                 <td className="px-1 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
                                 <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.dspId}</td>
                                 <td 
