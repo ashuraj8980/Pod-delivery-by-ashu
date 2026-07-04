@@ -200,7 +200,7 @@ export default function PODTool() {
     const plainText = rows.map(r => 
       headers.map(h => {
         const val = String(r[h] || "").trim();
-        if (h.toLowerCase().includes('awb')) return `'${val}`;
+        // Removed apostrophe prefix for clipboard pasting
         return val;
       }).join("\t")
     ).join("\n");
@@ -350,7 +350,8 @@ export default function PODTool() {
 
   const handleCopyAWBOnly = async () => {
     if (!filteredRows.length) return;
-    const text = filteredRows.map(r => `'${r.awb}`).join('\n');
+    // Removed apostrophe prefix for direct pasting
+    const text = filteredRows.map(r => r.awb).join('\n');
     try {
       await navigator.clipboard.writeText(text);
       const clientMsg = selectedClients.length === 0 ? 'All Clients' : selectedClients.length === 1 ? selectedClients[0] : `${selectedClients.length} Clients`;
@@ -366,7 +367,8 @@ export default function PODTool() {
       rows = rows.filter(r => r.client === copyAllClientFilter);
     }
     if (!rows.length) return;
-    const text = rows.map(r => `'${r.awb}`).join('\n');
+    // Removed apostrophe prefix for direct pasting
+    const text = rows.map(r => r.awb).join('\n');
     try {
       await navigator.clipboard.writeText(text);
       const label = copyAllClientFilter === "all" ? "All Clients" : copyAllClientFilter;
@@ -697,7 +699,8 @@ export default function PODTool() {
   };
 
   const handleCopyGroupAWB = async (rows: PODRow[] | OTPRow[], groupLabel: string) => {
-    const text = rows.map(r => `'${r.awb}`).join('\n');
+    // Removed apostrophe prefix for direct pasting
+    const text = rows.map(r => r.awb).join('\n');
     try {
       await navigator.clipboard.writeText(text);
       showToast(`Copied ${rows.length} AWB — ${groupLabel}`, "ok");
