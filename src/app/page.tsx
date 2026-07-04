@@ -146,6 +146,7 @@ export default function PODTool() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [copyAllClientFilter, setCopyAllClientFilter] = useState<string>("all");
   
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
@@ -174,6 +175,11 @@ export default function PODTool() {
       localStorage.setItem('pod_master_v1', JSON.stringify(sessions));
     }
   }, [sessions, isMounted]);
+
+  // Reset dropdown when tab/remark changes
+  useEffect(() => {
+    setCopyAllClientFilter("all");
+  }, [statusFilter, activeRemarkChip]);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err') => {
     if (typeof document === 'undefined') return;
@@ -354,6 +360,22 @@ export default function PODTool() {
     }
   };
 
+  const handleCopyAllAWB = async () => {
+    let rows = filteredRows;
+    if (copyAllClientFilter !== "all") {
+      rows = rows.filter(r => r.client === copyAllClientFilter);
+    }
+    if (!rows.length) return;
+    const text = rows.map(r => `'${r.awb}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      const label = copyAllClientFilter === "all" ? "All Clients" : copyAllClientFilter;
+      showToast(`Copied ${rows.length} AWB — ${label}`, "ok");
+    } catch (err) {
+      showToast("Failed to copy AWBs", "err");
+    }
+  };
+
   const handleCopyTable = useCallback(async () => {
     if (!filteredRows.length) return;
     const headers = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
@@ -476,9 +498,6 @@ export default function PODTool() {
         });
 
         const matched: OTPRow[] = [];
-        const matchedAWBsInOTP = new Set<string>();
-
-        // 1. Process OTP file rows
         rawData.forEach((row: any) => {
           const keys = Object.keys(row);
           const findVal = (regex: RegExp) => {
@@ -489,7 +508,6 @@ export default function PODTool() {
           const sessionInfo = activeAWBMap.get(awb);
           
           if (sessionInfo) {
-            matchedAWBsInOTP.add(awb);
             const client = String(findVal(/client/i)).trim();
             const rawOtpStatus = String(findVal(/current status|currentstatus/i)).trim().toLowerCase();
             
@@ -502,7 +520,7 @@ export default function PODTool() {
             else if (rawOtpStatus.includes('dto')) otpStatus = 'dto';
             else if (rawOtpStatus.includes('pending')) otpStatus = 'pending';
 
-            // Logic Cases for UI/Highlights
+            // Case Logic
             if (otpStatus === 'dispatched' && sessionInfo.status === 'dispatched') logicCase = 1;
             else if (otpStatus === 'dispatched' && sessionInfo.status === 'pending') logicCase = 2;
             else if (otpStatus === 'pending' && sessionInfo.status === 'pending') logicCase = 3;
@@ -522,22 +540,6 @@ export default function PODTool() {
                 logicCase
               });
             }
-          }
-        });
-
-        // 2. Add remaining Pending rows from session that were NOT in OTP
-        currentSession?.data.forEach(row => {
-          if (row.status === 'pending' && !matchedAWBsInOTP.has(row.awb)) {
-            matched.push({
-              id: crypto.randomUUID(),
-              awb: row.awb,
-              client: row.client,
-              otpStatus: 'not_found',
-              sessionStatus: 'pending',
-              returnAddress: row.returnAddress || "",
-              isFTPL: row.client.toUpperCase().includes('FTPL'),
-              logicCase: 3 
-            });
           }
         });
 
@@ -561,7 +563,7 @@ export default function PODTool() {
     const data = otpFilteredRows.map(r => [
       { v: r.awb, t: 's' },
       r.client,
-      r.otpStatus === 'not_found' ? 'NOT FOUND' : r.otpStatus.toUpperCase(),
+      r.otpStatus.toUpperCase(),
       r.sessionStatus.toUpperCase(),
       r.returnAddress
     ]);
@@ -574,7 +576,10 @@ export default function PODTool() {
 
   const otpFilteredRows = useMemo(() => {
     let rows = otpData;
-    if (otpStatusFilter === 'pending') {
+    if (otpStatusFilter === 'dispatched') {
+      rows = rows.filter(r => r.otpStatus === 'dispatched');
+    } else if (otpStatusFilter === 'pending') {
+      // Pending tab in OTP module logic: CSV status is Pending
       rows = rows.filter(r => r.sessionStatus === 'pending');
     } else if (otpStatusFilter !== 'all') {
       rows = rows.filter(r => r.otpStatus === otpStatusFilter);
@@ -629,11 +634,9 @@ export default function PODTool() {
   // OTP Client Filters
   const allOtpClients = useMemo(() => {
     let rows = otpData;
-    if (otpStatusFilter === 'pending') {
-      rows = rows.filter(r => r.sessionStatus === 'pending');
-    } else if (otpStatusFilter !== 'all') {
-      rows = rows.filter(r => r.otpStatus === otpStatusFilter);
-    }
+    if (otpStatusFilter === 'dispatched') rows = rows.filter(r => r.otpStatus === 'dispatched');
+    else if (otpStatusFilter === 'pending') rows = rows.filter(r => r.sessionStatus === 'pending');
+    else if (otpStatusFilter !== 'all') rows = rows.filter(r => r.otpStatus === otpStatusFilter);
     return Array.from(new Set(rows.map(r => r.client))).sort();
   }, [otpData, otpStatusFilter]);
 
@@ -845,8 +848,6 @@ export default function PODTool() {
                           setSelectedClients([]);
                           setClientSearchQuery("");
                           setSelectedRowIds(new Set());
-                          setOtpData([]);
-                          setOtpStatusFilter('all');
                         }}
                         className={cn(
                           "bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer relative pl-3 p-3 pr-4 group flex flex-col justify-between h-full min-h-[120px] max-w-[280px]",
@@ -1044,6 +1045,22 @@ export default function PODTool() {
                       <Copy className="w-3.5 h-3.5" /> Copy Selected AWB
                     </button>
 
+                    <Select value={copyAllClientFilter} onValueChange={setCopyAllClientFilter}>
+                      <SelectTrigger className="h-8 w-[160px] bg-white border-slate-200 text-[11px] font-bold uppercase">
+                        <SelectValue placeholder="Client Copy" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className="text-[11px] font-bold uppercase">All Clients</SelectItem>
+                        {allPossibleClients.map(c => (
+                          <SelectItem key={c} value={c} className="text-[11px] font-bold uppercase">{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    <button onClick={handleCopyAllAWB} className="h-8 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap">
+                      <Copy className="w-3.5 h-3.5" /> Copy All AWB
+                    </button>
+
                     {selectedRowIds.size > 0 && (
                       <button 
                         onClick={handleDeleteSelected}
@@ -1093,7 +1110,7 @@ export default function PODTool() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="bg-slate-800 text-white h-8 border-b border-white/5">
+                        <tr className="bg-slate-800 text-white h-8 border-b border-white/5" key="session-banner">
                           <td colSpan={statusFilter === 'pending' ? 9 : 8} className="px-3">
                             <div className="flex items-center gap-3 text-center justify-center">
                               <span className="text-[12px] font-bold text-amber-400">{currentSession.dspId}</span>
@@ -1116,7 +1133,7 @@ export default function PODTool() {
                             .sort((a, b) => b[1].length - a[1].length)
                             .map(([remark, groupRows]) => (
                               <React.Fragment key={remark}>
-                                <tr className="h-10 border-b border-white/10" style={{ background: 'linear-gradient(90deg, #0D1B2E, #1A2F4A)' }}>
+                                <tr className="h-10 border-b border-white/10" style={{ background: 'linear-gradient(90deg, #0D1B2E, #1A2F4A)' }} key={`header-${remark}`}>
                                   <td className="px-2 text-center">
                                     <input 
                                       type="checkbox" 
@@ -1125,7 +1142,7 @@ export default function PODTool() {
                                       onChange={(e) => toggleGroupSelection(groupRows, e.target.checked)}
                                     />
                                   </td>
-                                  <td colSpan={statusFilter === 'pending' ? 8 : 7} className="px-3">
+                                  <td colSpan={8} className="px-3">
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-2">
                                         <span className="text-amber-400 text-[14px]">★</span>
@@ -1142,7 +1159,7 @@ export default function PODTool() {
                                         </button>
                                         <button 
                                           onClick={() => handleDeleteGroup(groupRows, remark)}
-                                          className="bg-red-600/15 border border-red-600/50 text-red-300 rounded-[6px] px-[10px] py-[3px] text-[11px] font-semibold hover:bg-red-600/30 hover:text-white transition-colors"
+                                          className="bg-[#DC262626] border border-[#DC262680] text-[#FCA5A5] rounded-[6px] px-[10px] py-[3px] text-[11px] font-semibold hover:bg-[#DC26264D] hover:text-white transition-colors"
                                         >
                                           Delete All
                                         </button>
@@ -1224,7 +1241,7 @@ export default function PODTool() {
                             ))
                           )
                         ) : (
-                          <tr><td colSpan={statusFilter === 'pending' ? 9 : 8} className="h-32 text-center text-[13px] font-bold text-slate-300 uppercase tracking-widest">No matching data available</td></tr>
+                          <tr key="no-data"><td colSpan={statusFilter === 'pending' ? 9 : 8} className="h-32 text-center text-[13px] font-bold text-slate-300 uppercase tracking-widest">No matching data available</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -1451,7 +1468,7 @@ export default function PODTool() {
                   </div>
 
                   <div className="flex gap-2">
-                    <button onClick={handleOtpDownload} className="h-10 px-5 bg-emerald-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg">Download Excel</button>
+                    <button onClick={handleOtpDownload} className="h-10 px-5 bg-emerald-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg whitespace-nowrap">Download Excel</button>
                     <button onClick={async () => {
                       const headers = otpStatusFilter === 'pending' 
                         ? ['AWB Number', 'Client Name', 'OTP Status', 'CSV Status', 'Return Address']
@@ -1461,7 +1478,7 @@ export default function PODTool() {
                           return {
                             'AWB Number': r.awb,
                             'Client Name': r.client,
-                            'OTP Status': r.otpStatus === 'not_found' ? 'NOT FOUND' : r.otpStatus.toUpperCase(),
+                            'OTP Status': r.otpStatus.toUpperCase(),
                             'CSV Status': 'PENDING',
                             'Return Address': r.returnAddress
                           };
@@ -1475,7 +1492,7 @@ export default function PODTool() {
                       });
                       const success = await copyDataToClipboard(data, headers);
                       if (success) showToast(`Copied ${otpFilteredRows.length} rows`, "ok");
-                    }} className="h-10 px-5 bg-blue-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg">Copy Table</button>
+                    }} className="h-10 px-5 bg-blue-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg whitespace-nowrap">Copy Table</button>
                   </div>
                 </div>
 
@@ -1517,7 +1534,7 @@ export default function PODTool() {
                             .sort((a, b) => b[1].length - a[1].length)
                             .map(([clientName, groupRows]) => (
                               <React.Fragment key={clientName}>
-                                <tr className="h-10 border-b border-white/10" style={{ background: 'linear-gradient(90deg, #0D1B2E, #1A2F4A)' }}>
+                                <tr className="h-10 border-b border-white/10" style={{ background: 'linear-gradient(90deg, #0D1B2E, #1A2F4A)' }} key={`header-${clientName}`}>
                                   <td className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5 border border-white/50 rounded bg-transparent" /></td>
                                   <td colSpan={4} className="px-3">
                                     <div className="flex items-center justify-between">
@@ -1560,10 +1577,9 @@ export default function PODTool() {
                                           "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit",
                                           row.otpStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
                                           row.otpStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
-                                          row.otpStatus === 'not_found' ? "bg-slate-100 text-slate-400 border-slate-200" :
                                           "bg-[#16A34A] text-white border-[#16A34A]"
                                         )}>
-                                          {row.otpStatus === 'not_found' ? 'NOT FOUND' : row.otpStatus}
+                                          {row.otpStatus}
                                         </span>
                                         {row.logicCase === 2 && (
                                           <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter">
@@ -1611,10 +1627,9 @@ export default function PODTool() {
                                         "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
                                         row.otpStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
                                         row.otpStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
-                                        row.otpStatus === 'not_found' ? "bg-slate-100 text-slate-400 border-slate-200" :
                                         "bg-[#16A34A] text-white border-[#16A34A]"
                                       )}>
-                                        {row.otpStatus === 'not_found' ? 'NOT FOUND' : row.otpStatus}
+                                        {row.otpStatus}
                                       </span>
                                     </td>
                                     <td className="px-4">
@@ -1630,10 +1645,9 @@ export default function PODTool() {
                                         "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit",
                                         row.otpStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
                                         row.otpStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
-                                        row.otpStatus === 'not_found' ? "bg-slate-100 text-slate-400 border-slate-200" :
                                         "bg-[#16A34A] text-white border-[#16A34A]"
                                       )}>
-                                        {row.otpStatus === 'not_found' ? 'NOT FOUND' : row.otpStatus}
+                                        {row.otpStatus}
                                       </span>
                                       {row.logicCase === 2 && (
                                         <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter">
@@ -1655,7 +1669,7 @@ export default function PODTool() {
                             ))
                           )
                         ) : (
-                          <tr><td colSpan={otpStatusFilter === 'pending' ? 6 : 5} className="h-32 text-center text-slate-300 font-bold uppercase tracking-widest">No matching AWBs found between OTP file and current session.</td></tr>
+                          <tr key="no-otp-matches"><td colSpan={otpStatusFilter === 'pending' ? 6 : 5} className="h-32 text-center text-slate-300 font-bold uppercase tracking-widest">No matching AWBs found between OTP file and current session.</td></tr>
                         )}
                       </tbody>
                     </table>
