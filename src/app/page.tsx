@@ -378,7 +378,7 @@ export default function PODTool() {
 
   const handleCopyTable = useCallback(async () => {
     if (!filteredRows.length) return;
-    const headers = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
+    const headers = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'Return Address', 'FE Name'];
     const exportRows = filteredRows.map((r, i) => ({
       'Date': formatDate(r.date),
       'DSP ID': i === 0 ? r.dspId : "",
@@ -386,6 +386,7 @@ export default function PODTool() {
       'Client': r.client,
       'Order ID': r.orderId,
       'Remark': r.remark,
+      'Return Address': r.returnAddress || "",
       'FE Name': r.feName
     }));
     const success = await copyDataToClipboard(exportRows, headers);
@@ -394,7 +395,7 @@ export default function PODTool() {
 
   const downloadExcel = () => {
     if (!filteredRows.length) return;
-    const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
+    const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'Return Address', 'FE Name'];
     const excelData = filteredRows.map((r, i) => [
       formatDate(r.date), 
       { v: i === 0 ? String(r.dspId) : "", t: 's' }, 
@@ -402,6 +403,7 @@ export default function PODTool() {
       r.client, 
       { v: String(r.orderId), t: 's' }, 
       r.remark, 
+      r.returnAddress || "",
       r.feName
     ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
@@ -1108,13 +1110,13 @@ export default function PODTool() {
                           <th style={{ width: '110px' }} className="px-2 text-[11px] font-bold text-center">Client</th>
                           <th style={{ width: '110px' }} className="px-2 text-[11px] font-bold text-center">Order ID</th>
                           <th className="px-2 text-[11px] font-bold text-center">Remark</th>
-                          {statusFilter === 'pending' && <th style={{ width: '300px' }} className="px-2 text-[11px] font-bold text-center">Return Address</th>}
+                          <th style={{ width: '300px' }} className="px-2 text-[11px] font-bold text-center">Return Address</th>
                           <th style={{ width: '80px' }} className="px-2 text-[11px] font-bold text-center">FE Name</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr className="bg-slate-800 text-white h-8 border-b border-white/5" key="session-banner">
-                          <td colSpan={statusFilter === 'pending' ? 9 : 8} className="px-3">
+                          <td colSpan={9} className="px-3">
                             <div className="flex items-center gap-3 text-center justify-center">
                               <span className="text-[12px] font-bold text-amber-400">{currentSession.dspId}</span>
                               <span className="w-px h-3 bg-white/20" />
@@ -1212,8 +1214,8 @@ export default function PODTool() {
                             ))
                           ) : (
                             filteredRows.map((row) => (
-                              <tr key={row.id} className={cn("h-11 border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group bg-white", selectedRowIds.has(row.id) && "bg-blue-50")}>
-                                <td className="px-2 text-center">
+                              <tr key={row.id} className={cn("h-auto border-b border-[#FED7AA] hover:bg-blue-50/30 transition-colors group bg-white", selectedRowIds.has(row.id) && "bg-blue-50")}>
+                                <td className="px-2 text-center py-2">
                                   <input 
                                     type="checkbox" 
                                     className="w-3 h-3 border border-slate-300 rounded" 
@@ -1221,21 +1223,21 @@ export default function PODTool() {
                                     onChange={() => toggleRowSelection(row.id)}
                                   />
                                 </td>
-                                <td className="px-1 text-center"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
-                                <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.dspId}</td>
+                                <td className="px-1 text-center py-2"><button onClick={() => setSessions(prev => prev.map(s => s.id === selectedSessionId ? {...s, data: s.data.filter(r => r.id !== row.id)} : s))} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button></td>
+                                <td className="px-2 text-[13px] font-bold text-[#374151] truncate py-2">{row.dspId}</td>
                                 <td 
                                   onClick={async () => {
                                     const text = String(row.awb);
                                     await navigator.clipboard.writeText(text);
                                     showToast(`AWB ${row.awb} copied!`, "ok");
                                   }}
-                                  className="px-2 text-[13px] font-bold text-[#111827] font-mono tracking-tight truncate cursor-pointer hover:underline"
+                                  className="px-2 text-[13px] font-bold text-[#111827] font-mono tracking-tight truncate cursor-pointer hover:underline py-2"
                                 >
                                   {row.awb}
                                 </td>
-                                <td className="px-2 text-[13px] font-semibold text-[#1565C0] truncate">{row.client}</td>
-                                <td className="px-2 text-[13px] font-medium text-[#111827] truncate">{row.orderId}</td>
-                                <td className="px-2">
+                                <td className="px-2 text-[13px] font-semibold text-[#1565C0] truncate py-2">{row.client}</td>
+                                <td className="px-2 text-[13px] font-medium text-[#111827] truncate py-2">{row.orderId}</td>
+                                <td className="px-2 py-2">
                                   <span className={cn(
                                     "px-2 py-1 rounded text-[11px] font-semibold border shadow-sm truncate inline-block max-w-full",
                                     row.isIntact ? "bg-rose-50 text-[#B91C1C] border-rose-200" : "bg-amber-50 text-[#B45309] border-amber-200"
@@ -1243,12 +1245,15 @@ export default function PODTool() {
                                     {row.remark}
                                   </span>
                                 </td>
-                                <td className="px-2 text-[13px] font-bold text-[#374151] truncate">{row.feName}</td>
+                                <td className="px-2 py-2 text-[12px] text-[#374151] whitespace-normal break-words text-left min-w-[250px]">
+                                  {row.returnAddress || "—"}
+                                </td>
+                                <td className="px-2 text-[13px] font-bold text-[#374151] truncate py-2">{row.feName}</td>
                               </tr>
                             ))
                           )
                         ) : (
-                          <tr key="no-data"><td colSpan={statusFilter === 'pending' ? 9 : 8} className="h-32 text-center text-[13px] font-bold text-slate-300 uppercase tracking-widest">No matching data available</td></tr>
+                          <tr key="no-data"><td colSpan={9} className="h-32 text-center text-[13px] font-bold text-slate-300 uppercase tracking-widest">No matching data available</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -1375,9 +1380,9 @@ export default function PODTool() {
                   {[
                     { id: 'all', label: 'All', val: otpStats.total, color: 'text-blue-600' },
                     { id: 'dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-[#DC2626]' },
-                    { id: 'pending', label: 'Pending', val: otpStats.pending, color: 'text-[#D97706]' },
                     { id: 'rto', label: 'RTO', val: otpStats.rto, color: 'text-[#16A34A]' },
-                    { id: 'dto', label: 'DTO', val: otpStats.dto, color: 'text-[#16A34A]' }
+                    { id: 'dto', label: 'DTO', val: otpStats.dto, color: 'text-[#16A34A]' },
+                    { id: 'pending', label: 'Pending', val: otpStats.pending, color: 'text-[#D97706]' }
                   ].map((t) => (
                     <button 
                       key={t.id}
