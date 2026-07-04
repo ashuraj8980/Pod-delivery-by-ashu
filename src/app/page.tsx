@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -41,7 +42,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Optimized for Excel-style Client Filtering, Remark Grouping and OTP Discrepancy Tracking.
+ * Optimized for Status Mismatch Tracking, Excel-style Filtering, and Full Address Visibility.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -99,6 +100,11 @@ const normalizeAWB = (val: any): string => {
   return s.replace('.0', '');
 };
 
+const isValidAWB = (val: any): boolean => {
+  const s = normalizeAWB(val);
+  return /^\d{8,}$/.test(s);
+};
+
 interface PODRow {
   id: string;
   awb: string;
@@ -122,6 +128,7 @@ interface OTPRow {
   returnAddress: string;
   isFTPL: boolean;
   logicCase: number;
+  hasMismatch: boolean;
 }
 
 interface Session {
@@ -249,7 +256,10 @@ export default function PODTool() {
             const key = keys.find(k => regex.test(k.toLowerCase().replace(/[\s_-]/g, "")));
             return key ? row[key] : "";
           };
-          const awb = normalizeAWB(findVal(/waybill|awb|awbnumber/));
+          const rawAwb = findVal(/waybill|awb|awbnumber/);
+          if (!isValidAWB(rawAwb)) return null;
+
+          const awb = normalizeAWB(rawAwb);
           const statusRaw = String(findVal(/status|currentstatus/)).toLowerCase().trim();
           const status = STATUS_MAP[statusRaw] || "unknown";
           const remark = String(findVal(/remark|remarks|nsl/)).trim();
@@ -268,9 +278,9 @@ export default function PODTool() {
             returnAddress,
             isIntact: /reject|intact|barcode|content/i.test(remark)
           };
-        }).filter(row => row.awb.length >= 3 && row.status !== "unknown");
+        }).filter((row): row is PODRow => row !== null && row.awb.length >= 8 && row.status !== "unknown");
         
-        if (parsedRows.length === 0) throw new Error("No valid data found.");
+        if (parsedRows.length === 0) throw new Error("No valid data found (Numeric Waybill min 8 digits required).");
         
         const newSessionId = crypto.randomUUID();
         const newSession: Session = {
@@ -509,25 +519,30 @@ export default function PODTool() {
             const key = keys.find(k => regex.test(k.toLowerCase().replace(/[\s_-]/g, "")));
             return key ? row[key] : "";
           };
-          const awb = normalizeAWB(findVal(/waybill|awb/i));
-          if (!awb) return;
+          const rawAwb = findVal(/waybill|awb/i);
+          if (!isValidAWB(rawAwb)) return;
 
+          const awb = normalizeAWB(rawAwb);
           const client = String(findVal(/client/i)).trim();
-          const rawStatus = String(findVal(/status|currentstatus/i)).trim().toLowerCase();
+          const rawOtpStatus = String(findVal(/status|currentstatus/i)).trim().toLowerCase();
           
           let otpStatus = 'unknown';
-          if (rawStatus.includes('dispatched') || rawStatus.includes('dispatch')) otpStatus = 'dispatched';
-          else if (rawStatus.includes('rto')) otpStatus = 'rto';
-          else if (rawStatus.includes('dto')) otpStatus = 'dto';
-          else if (rawStatus.includes('pending')) otpStatus = 'pending';
+          if (rawOtpStatus.includes('dispatched') || rawOtpStatus.includes('dispatch')) otpStatus = 'dispatched';
+          else if (rawOtpStatus.includes('rto')) otpStatus = 'rto';
+          else if (rawOtpStatus.includes('dto')) otpStatus = 'dto';
+          else if (rawOtpStatus.includes('pending')) otpStatus = 'pending';
 
           const sessionRow = sessionMap.get(awb);
+          const sessionStatus = sessionRow?.status || 'NOT FOUND';
           
-          // Determine Logic Case
+          // Determine Case Logic
+          // Use sessionStatus as priority for placement but track mismatch
           let lCase = 0;
+          const hasMismatch = sessionStatus !== 'NOT FOUND' && sessionStatus !== otpStatus;
+
           if (otpStatus === 'dispatched') {
-            if (sessionRow?.status === 'pending') lCase = 2; // Device not closed
-            else lCase = 1; // Pure dispatched
+            if (sessionStatus === 'pending') lCase = 2; // Device not closed
+            else lCase = 1; 
           } else if (otpStatus === 'pending') {
             lCase = 3;
           } else if (otpStatus === 'rto') lCase = 4;
@@ -538,10 +553,11 @@ export default function PODTool() {
             awb,
             client,
             otpStatus,
-            sessionStatus: sessionRow?.status || 'unknown',
+            sessionStatus,
             returnAddress: sessionRow?.returnAddress || "",
             isFTPL: client.toUpperCase().includes('FTPL'),
-            logicCase: lCase
+            logicCase: lCase,
+            hasMismatch
           });
           processedAWBs.add(awb);
         });
@@ -557,13 +573,14 @@ export default function PODTool() {
               sessionStatus: 'pending',
               returnAddress: sr.returnAddress || "",
               isFTPL: sr.client.toUpperCase().includes('FTPL'),
-              logicCase: 3 // Treat as session pending
+              logicCase: 3,
+              hasMismatch: true
             });
           });
         }
 
         setOtpData(newOtpData);
-        showToast(`Imported ${newOtpData.length} OTP records.`, "ok");
+        showToast(`Imported ${newOtpData.length} OTP records (Numeric AWBs only).`, "ok");
       } catch (err) {
         showToast("Failed to process OTP Report", "err");
       } finally {
@@ -576,7 +593,7 @@ export default function PODTool() {
 
   const handleOtpDownload = () => {
     if (!otpFilteredRows.length) return;
-    const header = ['AWB Number', 'Client Name', 'Current Status', 'Session Status', 'Return Address'];
+    const header = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status', 'Return Address'];
     const data = otpFilteredRows.map(r => [
       { v: r.awb, t: 's' },
       r.client,
@@ -593,14 +610,14 @@ export default function PODTool() {
 
   const otpFilteredRows = useMemo(() => {
     let rows = otpData;
-    if (otpStatusFilter === 'dispatched') {
-      rows = rows.filter(r => r.otpStatus === 'dispatched');
-    } else if (otpStatusFilter === 'pending') {
-      rows = rows.filter(r => r.otpStatus === 'pending' || r.otpStatus === 'NOT FOUND');
-    } else if (otpStatusFilter === 'rto') {
-      rows = rows.filter(r => r.otpStatus === 'rto');
-    } else if (otpStatusFilter === 'dto') {
-      rows = rows.filter(r => r.otpStatus === 'dto');
+    
+    // Status filter is based on sessionStatus as it's the more accurate one
+    if (otpStatusFilter !== 'all') {
+      if (otpStatusFilter === 'pending') {
+        rows = rows.filter(r => r.sessionStatus === 'pending');
+      } else {
+        rows = rows.filter(r => r.sessionStatus === otpStatusFilter);
+      }
     }
     
     if (otpSelectedClients.length > 0) {
@@ -612,10 +629,10 @@ export default function PODTool() {
   const otpStats = useMemo(() => {
     return {
       total: otpData.length,
-      dispatched: otpData.filter(r => r.otpStatus === 'dispatched').length,
-      pending: otpData.filter(r => r.otpStatus === 'pending' || r.otpStatus === 'NOT FOUND').length,
-      rto: otpData.filter(r => r.otpStatus === 'rto').length,
-      dto: otpData.filter(r => r.otpStatus === 'dto').length,
+      dispatched: otpData.filter(r => r.sessionStatus === 'dispatched').length,
+      pending: otpData.filter(r => r.sessionStatus === 'pending').length,
+      rto: otpData.filter(r => r.sessionStatus === 'rto').length,
+      dto: otpData.filter(r => r.sessionStatus === 'dto').length,
     };
   }, [otpData]);
 
@@ -640,10 +657,10 @@ export default function PODTool() {
 
   const allOtpClients = useMemo(() => {
     let rows = otpData;
-    if (otpStatusFilter === 'dispatched') rows = rows.filter(r => r.otpStatus === 'dispatched');
-    else if (otpStatusFilter === 'pending') rows = rows.filter(r => r.otpStatus === 'pending' || r.otpStatus === 'NOT FOUND');
-    else if (otpStatusFilter === 'rto') rows = rows.filter(r => r.otpStatus === 'rto');
-    else if (otpStatusFilter === 'dto') rows = rows.filter(r => r.otpStatus === 'dto');
+    if (otpStatusFilter !== 'all') {
+      if (otpStatusFilter === 'pending') rows = rows.filter(r => r.sessionStatus === 'pending');
+      else rows = rows.filter(r => r.sessionStatus === otpStatusFilter);
+    }
     return Array.from(new Set(rows.map(r => r.client))).sort();
   }, [otpData, otpStatusFilter]);
 
@@ -1356,7 +1373,7 @@ export default function PODTool() {
               </div>
             ) : (
               <div className="space-y-6">
-                {/* Session Card Info (Step 1) */}
+                {/* Session Card Info */}
                 <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between">
                    <div className="flex items-center gap-4">
                       <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-white">
@@ -1380,9 +1397,9 @@ export default function PODTool() {
                   {[
                     { id: 'all', label: 'All', val: otpStats.total, color: 'text-blue-600' },
                     { id: 'dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-[#DC2626]' },
+                    { id: 'pending', label: 'Pending', val: otpStats.pending, color: 'text-[#D97706]' },
                     { id: 'rto', label: 'RTO', val: otpStats.rto, color: 'text-[#16A34A]' },
-                    { id: 'dto', label: 'DTO', val: otpStats.dto, color: 'text-[#16A34A]' },
-                    { id: 'pending', label: 'Pending', val: otpStats.pending, color: 'text-[#D97706]' }
+                    { id: 'dto', label: 'DTO', val: otpStats.dto, color: 'text-[#16A34A]' }
                   ].map((t) => (
                     <button 
                       key={t.id}
@@ -1404,7 +1421,7 @@ export default function PODTool() {
                   ))}
                 </div>
 
-                {/* Client Filter & Export (Step 5) */}
+                {/* Client Filter & Export */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
                     <Popover open={isOtpPopoverOpen} onOpenChange={(open) => { setIsOtpPopoverOpen(open); if(!open) setOtpClientSearchQuery(""); }}>
@@ -1483,11 +1500,11 @@ export default function PODTool() {
                   <div className="flex gap-2">
                     <button onClick={handleOtpDownload} className="h-10 px-5 bg-emerald-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg whitespace-nowrap">Download Excel</button>
                     <button onClick={async () => {
-                      const headers = ['AWB Number', 'Client Name', 'Current Status', 'Session Status', 'Return Address'];
+                      const headers = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status', 'Return Address'];
                       const data = otpFilteredRows.map(r => ({
                         'AWB Number': r.awb,
                         'Client Name': r.client,
-                        'Current Status': r.otpStatus.toUpperCase(),
+                        'OTP Status': r.otpStatus.toUpperCase(),
                         'Session Status': r.sessionStatus.toUpperCase(),
                         'Return Address': r.returnAddress
                       }));
@@ -1497,7 +1514,7 @@ export default function PODTool() {
                   </div>
                 </div>
 
-                {/* OTP Table (Steps 2-7) */}
+                {/* OTP Table */}
                 <div className="bg-white rounded-xl border-[1.5px] border-[#F97316] shadow-2xl overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-center border-collapse bg-white table-fixed">
@@ -1506,8 +1523,8 @@ export default function PODTool() {
                           <th style={{ width: '32px' }} className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5 border border-slate-300 rounded" /></th>
                           <th style={{ width: '150px' }} className="px-4 text-[11px] font-bold text-center">AWB Number</th>
                           <th style={{ width: '180px' }} className="px-4 text-[11px] font-bold text-center">Client Name</th>
-                          <th style={{ width: '180px' }} className="px-4 text-[11px] font-bold text-center">OTP Status</th>
-                          <th style={{ width: '180px' }} className="px-4 text-[11px] font-bold text-center">Session Status</th>
+                          <th style={{ width: '160px' }} className="px-4 text-[11px] font-bold text-center">OTP Status</th>
+                          <th style={{ width: '160px' }} className="px-4 text-[11px] font-bold text-center">Session Status</th>
                           <th style={{ minWidth: '300px' }} className="px-4 text-[11px] font-bold text-center">Return Address</th>
                         </tr>
                       </thead>
@@ -1547,48 +1564,44 @@ export default function PODTool() {
                                   <tr key={row.id} 
                                     className={cn(
                                       "h-auto border-b border-[#FED7AA] transition-colors",
-                                      row.logicCase === 1 ? "bg-white border-l-[2px] border-l-rose-600" :
-                                      row.logicCase === 2 ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
-                                      row.logicCase === 3 ? "bg-[#F0FDF4] border-l-[3px] border-l-emerald-500" :
-                                      (row.logicCase === 4 || row.logicCase === 5) ? "bg-[#F9FFF9]" : "bg-white",
-                                      row.isFTPL && row.otpStatus === 'dispatched' ? "bg-[#FFF5F5] border-l-[3px] border-l-[#DC2626]" : 
-                                      row.isFTPL && (row.otpStatus === 'rto' || row.otpStatus === 'dto') ? "bg-[#F0FDF4]" : ""
+                                      row.hasMismatch ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" : "bg-white",
+                                      row.isFTPL && row.sessionStatus === 'dispatched' ? "bg-[#FFF5F5] border-l-[3px] border-l-[#DC2626]" : 
+                                      row.isFTPL && (row.sessionStatus === 'rto' || row.sessionStatus === 'dto') ? "bg-[#F0FDF4]" : ""
                                     )}
                                   >
                                     <td className="px-2 text-center py-2"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
                                     <td className="px-4 text-[13px] font-bold text-[#111827] font-mono tracking-tight py-2">{row.awb}</td>
                                     <td className={cn("px-4 text-[13px] font-semibold truncate py-2", 
-                                      row.isFTPL && row.otpStatus === 'dispatched' ? "text-[#DC2626] font-bold" : 
-                                      row.isFTPL && (row.otpStatus === 'rto' || row.otpStatus === 'dto') ? "text-[#16A34A] font-bold" : "text-[#1565C0]")}>
+                                      row.isFTPL && row.sessionStatus === 'dispatched' ? "text-[#DC2626] font-bold" : 
+                                      row.isFTPL && (row.sessionStatus === 'rto' || row.sessionStatus === 'dto') ? "text-[#16A34A] font-bold" : "text-[#1565C0]")}>
                                       {row.client}
+                                    </td>
+                                    <td className="px-4 py-2">
+                                      <span className={cn(
+                                        "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
+                                        row.otpStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
+                                        row.otpStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
+                                        row.otpStatus === 'NOT FOUND' ? "bg-slate-400 text-white border-slate-500" :
+                                        "bg-[#16A34A] text-white border-[#16A34A]"
+                                      )}>
+                                        {row.otpStatus.toUpperCase()}
+                                      </span>
                                     </td>
                                     <td className="px-4 py-2">
                                       <div className="flex flex-col items-center gap-1">
                                         <span className={cn(
-                                          "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit",
-                                          row.otpStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
-                                          row.otpStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
-                                          row.otpStatus === 'NOT FOUND' ? "bg-slate-400 text-white border-slate-500" :
-                                          "bg-[#16A34A] text-white border-[#16A34A]"
-                                        )}>
-                                          {row.otpStatus}
-                                        </span>
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-2">
-                                      <div className="flex flex-col items-center gap-1">
-                                         <span className={cn(
-                                          "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit",
-                                          row.sessionStatus === 'pending' ? "bg-amber-50 text-amber-700 border-amber-200" :
-                                          row.sessionStatus === 'dispatched' ? "bg-blue-50 text-blue-700 border-blue-200" :
-                                          row.sessionStatus === 'rto' ? "bg-rose-50 text-rose-700 border-rose-200" :
+                                          "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
+                                          row.sessionStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
+                                          row.sessionStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
+                                          row.sessionStatus === 'rto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
+                                          row.sessionStatus === 'dto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
                                           "bg-slate-50 text-slate-700 border-slate-200"
                                         )}>
-                                          {row.sessionStatus}
+                                          {row.sessionStatus.toUpperCase()}
                                         </span>
                                         {row.logicCase === 2 && (
                                           <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter">
-                                            Pending in CSV — Device not closed
+                                            Device not closed
                                           </span>
                                         )}
                                       </div>
@@ -1605,19 +1618,16 @@ export default function PODTool() {
                               <tr key={row.id} 
                                 className={cn(
                                   "h-auto border-b border-[#FED7AA] transition-colors",
-                                  row.logicCase === 1 ? "bg-white border-l-[2px] border-l-rose-600" :
-                                  row.logicCase === 2 ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
-                                  row.logicCase === 3 ? "bg-[#F0FDF4] border-l-[3px] border-l-emerald-500" :
-                                  (row.logicCase === 4 || row.logicCase === 5) ? "bg-[#F9FFF9]" : "bg-white",
-                                  row.isFTPL && row.otpStatus === 'dispatched' ? "bg-[#FFF5F5] border-l-[3px] border-l-[#DC2626]" : 
-                                  row.isFTPL && (row.otpStatus === 'rto' || row.otpStatus === 'dto') ? "bg-[#F0FDF4]" : ""
+                                  row.hasMismatch ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" : "bg-white",
+                                  row.isFTPL && row.sessionStatus === 'dispatched' ? "bg-[#FFF5F5] border-l-[3px] border-l-[#DC2626]" : 
+                                  row.isFTPL && (row.sessionStatus === 'rto' || row.sessionStatus === 'dto') ? "bg-[#F0FDF4]" : ""
                                 )}
                               >
                                 <td className="px-2 text-center py-2"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
                                 <td className="px-4 text-[13px] font-bold text-[#111827] font-mono tracking-tight py-2">{row.awb}</td>
                                 <td className={cn("px-4 text-[13px] font-semibold truncate py-2", 
-                                  row.isFTPL && row.otpStatus === 'dispatched' ? "text-[#DC2626] font-bold" : 
-                                  row.isFTPL && (row.otpStatus === 'rto' || row.otpStatus === 'dto') ? "text-[#16A34A] font-bold" : "text-[#1565C0]")}>
+                                  row.isFTPL && row.sessionStatus === 'dispatched' ? "text-[#DC2626] font-bold" : 
+                                  row.isFTPL && (row.sessionStatus === 'rto' || row.sessionStatus === 'dto') ? "text-[#16A34A] font-bold" : "text-[#1565C0]")}>
                                   {row.client}
                                 </td>
                                 <td className="px-4 py-2">
@@ -1632,13 +1642,18 @@ export default function PODTool() {
                                   </span>
                                 </td>
                                 <td className="px-4 py-2">
-                                  <span className={cn(
-                                    "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
-                                    row.sessionStatus === 'pending' ? "bg-amber-50 text-amber-700 border-amber-200" :
-                                    "bg-slate-50 text-slate-700 border-slate-200"
-                                  )}>
-                                    {row.sessionStatus.toUpperCase()}
-                                  </span>
+                                  <div className="flex flex-col items-center gap-1">
+                                    <span className={cn(
+                                      "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
+                                      row.sessionStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
+                                      row.sessionStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
+                                      row.sessionStatus === 'rto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
+                                      row.sessionStatus === 'dto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
+                                      "bg-slate-50 text-slate-700 border-slate-200"
+                                    )}>
+                                      {row.sessionStatus.toUpperCase()}
+                                    </span>
+                                  </div>
                                 </td>
                                 <td className="px-4 py-2 text-[12px] font-medium text-slate-500 text-left whitespace-normal break-words min-w-[300px]">
                                   {row.returnAddress || "—"}
@@ -1654,7 +1669,7 @@ export default function PODTool() {
                   </div>
                 </div>
 
-                {/* OTP Upload Zone (Step 2) */}
+                {/* OTP Upload Zone */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center space-y-6 mt-12">
                   <div className="flex flex-col items-center gap-3">
                     <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600">
