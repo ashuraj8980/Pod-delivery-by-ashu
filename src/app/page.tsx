@@ -127,8 +127,9 @@ interface OTPRow {
   sessionStatus: string;
   returnAddress: string;
   isFTPL: boolean;
-  logicCase: number;
+  logicCase: number; // 0: Normal, 2: RTO-NC, 3: DTO-NC, 4: P-NC
   hasMismatch: boolean;
+  finalPlacement: string;
 }
 
 interface Session {
@@ -533,36 +534,40 @@ export default function PODTool() {
           else if (rawOtpStatus.includes('pending')) otpStatus = 'pending';
 
           const sessionRow = sessionMap.get(awb);
-          const sessionStatus = sessionRow?.status || 'NOT FOUND';
+          const csvStatus = sessionRow?.status || 'NOT FOUND';
           
-          // Determine Case Logic
-          // Use sessionStatus as priority for placement but track mismatch
-          let lCase = 0;
-          const hasMismatch = sessionStatus !== 'NOT FOUND' && sessionStatus !== otpStatus;
+          let finalPlacement = otpStatus;
+          let lCase = 0; // 0: Normal, 2: RTO-NC, 3: DTO-NC, 4: P-NC
 
           if (otpStatus === 'dispatched') {
-            if (sessionStatus === 'pending') lCase = 2; // Device not closed
-            else lCase = 1; 
-          } else if (otpStatus === 'pending') {
-            lCase = 3;
-          } else if (otpStatus === 'rto') lCase = 4;
-          else if (otpStatus === 'dto') lCase = 5;
+              if (csvStatus === 'rto') {
+                  finalPlacement = 'rto';
+                  lCase = 2;
+              } else if (csvStatus === 'dto') {
+                  finalPlacement = 'dto';
+                  lCase = 3;
+              } else if (csvStatus === 'pending') {
+                  finalPlacement = 'pending';
+                  lCase = 4;
+              }
+          }
 
           newOtpData.push({
             id: crypto.randomUUID(),
             awb,
             client,
             otpStatus,
-            sessionStatus,
+            sessionStatus: csvStatus,
             returnAddress: sessionRow?.returnAddress || "",
             isFTPL: client.toUpperCase().includes('FTPL'),
             logicCase: lCase,
-            hasMismatch
+            hasMismatch: lCase !== 0,
+            finalPlacement
           });
           processedAWBs.add(awb);
         });
 
-        // Step 2: Add Session Pending rows not in OTP file
+        // Step 2: Add Session Pending rows not in OTP file to Pending Tab
         if (currentSession) {
           currentSession.data.filter(r => r.status === 'pending' && !processedAWBs.has(r.awb)).forEach(sr => {
             newOtpData.push({
@@ -573,8 +578,9 @@ export default function PODTool() {
               sessionStatus: 'pending',
               returnAddress: sr.returnAddress || "",
               isFTPL: sr.client.toUpperCase().includes('FTPL'),
-              logicCase: 3,
-              hasMismatch: true
+              logicCase: 0,
+              hasMismatch: true,
+              finalPlacement: 'pending'
             });
           });
         }
@@ -611,13 +617,8 @@ export default function PODTool() {
   const otpFilteredRows = useMemo(() => {
     let rows = otpData;
     
-    // Status filter is based on sessionStatus as it's the more accurate one
     if (otpStatusFilter !== 'all') {
-      if (otpStatusFilter === 'pending') {
-        rows = rows.filter(r => r.sessionStatus === 'pending');
-      } else {
-        rows = rows.filter(r => r.sessionStatus === otpStatusFilter);
-      }
+      rows = rows.filter(r => r.finalPlacement === otpStatusFilter);
     }
     
     if (otpSelectedClients.length > 0) {
@@ -629,10 +630,10 @@ export default function PODTool() {
   const otpStats = useMemo(() => {
     return {
       total: otpData.length,
-      dispatched: otpData.filter(r => r.sessionStatus === 'dispatched').length,
-      pending: otpData.filter(r => r.sessionStatus === 'pending').length,
-      rto: otpData.filter(r => r.sessionStatus === 'rto').length,
-      dto: otpData.filter(r => r.sessionStatus === 'dto').length,
+      dispatched: otpData.filter(r => r.finalPlacement === 'dispatched').length,
+      pending: otpData.filter(r => r.finalPlacement === 'pending').length,
+      rto: otpData.filter(r => r.finalPlacement === 'rto').length,
+      dto: otpData.filter(r => r.finalPlacement === 'dto').length,
     };
   }, [otpData]);
 
@@ -658,8 +659,7 @@ export default function PODTool() {
   const allOtpClients = useMemo(() => {
     let rows = otpData;
     if (otpStatusFilter !== 'all') {
-      if (otpStatusFilter === 'pending') rows = rows.filter(r => r.sessionStatus === 'pending');
-      else rows = rows.filter(r => r.sessionStatus === otpStatusFilter);
+      rows = rows.filter(r => r.finalPlacement === otpStatusFilter);
     }
     return Array.from(new Set(rows.map(r => r.client))).sort();
   }, [otpData, otpStatusFilter]);
@@ -1221,7 +1221,7 @@ export default function PODTool() {
                                         {row.remark}
                                       </span>
                                     </td>
-                                    <td className="px-2 py-2 text-[12px] text-[#374151] whitespace-normal break-words text-left min-w-[250px]">
+                                    <td className="px-2 py-2 text-[12px] text-[#374151] whitespace-normal break-words text-left min-w-[250px] whitespace-normal overflow-visible">
                                       {row.returnAddress || "—"}
                                     </td>
                                     <td className="px-2 text-[13px] font-bold text-[#374151] truncate py-2">{row.feName}</td>
@@ -1262,7 +1262,7 @@ export default function PODTool() {
                                     {row.remark}
                                   </span>
                                 </td>
-                                <td className="px-2 py-2 text-[12px] text-[#374151] whitespace-normal break-words text-left min-w-[250px]">
+                                <td className="px-2 py-2 text-[12px] text-[#374151] whitespace-normal break-words text-left min-w-[250px] whitespace-normal overflow-visible">
                                   {row.returnAddress || "—"}
                                 </td>
                                 <td className="px-2 text-[13px] font-bold text-[#374151] truncate py-2">{row.feName}</td>
@@ -1564,16 +1564,16 @@ export default function PODTool() {
                                   <tr key={row.id} 
                                     className={cn(
                                       "h-auto border-b border-[#FED7AA] transition-colors",
-                                      row.hasMismatch ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" : "bg-white",
-                                      row.isFTPL && row.sessionStatus === 'dispatched' ? "bg-[#FFF5F5] border-l-[3px] border-l-[#DC2626]" : 
-                                      row.isFTPL && (row.sessionStatus === 'rto' || row.sessionStatus === 'dto') ? "bg-[#F0FDF4]" : ""
+                                      row.logicCase !== 0 ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" : "bg-white",
+                                      row.isFTPL && row.finalPlacement === 'dispatched' ? "bg-[#FFF5F5] border-l-[3px] border-l-[#DC2626]" : 
+                                      row.isFTPL && (row.finalPlacement === 'rto' || row.finalPlacement === 'dto') ? "bg-[#F0FDF4]" : ""
                                     )}
                                   >
                                     <td className="px-2 text-center py-2"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
                                     <td className="px-4 text-[13px] font-bold text-[#111827] font-mono tracking-tight py-2">{row.awb}</td>
                                     <td className={cn("px-4 text-[13px] font-semibold truncate py-2", 
-                                      row.isFTPL && row.sessionStatus === 'dispatched' ? "text-[#DC2626] font-bold" : 
-                                      row.isFTPL && (row.sessionStatus === 'rto' || row.sessionStatus === 'dto') ? "text-[#16A34A] font-bold" : "text-[#1565C0]")}>
+                                      row.isFTPL && row.finalPlacement === 'dispatched' ? "text-[#DC2626] font-bold" : 
+                                      row.isFTPL && (row.finalPlacement === 'rto' || row.finalPlacement === 'dto') ? "text-[#16A34A] font-bold" : "text-[#1565C0]")}>
                                       {row.client}
                                     </td>
                                     <td className="px-4 py-2">
@@ -1589,24 +1589,26 @@ export default function PODTool() {
                                     </td>
                                     <td className="px-4 py-2">
                                       <div className="flex flex-col items-center gap-1">
-                                        <span className={cn(
-                                          "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
-                                          row.sessionStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
-                                          row.sessionStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
-                                          row.sessionStatus === 'rto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
-                                          row.sessionStatus === 'dto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
-                                          "bg-slate-50 text-slate-700 border-slate-200"
-                                        )}>
-                                          {row.sessionStatus.toUpperCase()}
-                                        </span>
-                                        {row.logicCase === 2 && (
-                                          <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter">
-                                            Device not closed
+                                        <div className="flex items-center gap-1">
+                                          <span className={cn(
+                                            "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
+                                            row.sessionStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
+                                            row.sessionStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
+                                            row.sessionStatus === 'rto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
+                                            row.sessionStatus === 'dto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
+                                            "bg-slate-50 text-slate-700 border-slate-200"
+                                          )}>
+                                            {row.sessionStatus.toUpperCase()}
                                           </span>
-                                        )}
+                                          {row.logicCase !== 0 && (
+                                            <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter shadow-sm">
+                                              {row.sessionStatus.toUpperCase()} — Not Closed
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
                                     </td>
-                                    <td className="px-4 py-2 text-[12px] font-medium text-slate-500 text-left whitespace-normal break-words min-w-[300px]">
+                                    <td className="px-4 py-2 text-[12px] font-medium text-slate-500 text-left whitespace-normal break-words min-w-[250px] overflow-visible">
                                       {row.returnAddress || "—"}
                                     </td>
                                   </tr>
@@ -1618,16 +1620,16 @@ export default function PODTool() {
                               <tr key={row.id} 
                                 className={cn(
                                   "h-auto border-b border-[#FED7AA] transition-colors",
-                                  row.hasMismatch ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" : "bg-white",
-                                  row.isFTPL && row.sessionStatus === 'dispatched' ? "bg-[#FFF5F5] border-l-[3px] border-l-[#DC2626]" : 
-                                  row.isFTPL && (row.sessionStatus === 'rto' || row.sessionStatus === 'dto') ? "bg-[#F0FDF4]" : ""
+                                  row.logicCase !== 0 ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" : "bg-white",
+                                  row.isFTPL && row.finalPlacement === 'dispatched' ? "bg-[#FFF5F5] border-l-[3px] border-l-[#DC2626]" : 
+                                  row.isFTPL && (row.finalPlacement === 'rto' || row.finalPlacement === 'dto') ? "bg-[#F0FDF4]" : ""
                                 )}
                               >
                                 <td className="px-2 text-center py-2"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
                                 <td className="px-4 text-[13px] font-bold text-[#111827] font-mono tracking-tight py-2">{row.awb}</td>
                                 <td className={cn("px-4 text-[13px] font-semibold truncate py-2", 
-                                  row.isFTPL && row.sessionStatus === 'dispatched' ? "text-[#DC2626] font-bold" : 
-                                  row.isFTPL && (row.sessionStatus === 'rto' || row.sessionStatus === 'dto') ? "text-[#16A34A] font-bold" : "text-[#1565C0]")}>
+                                  row.isFTPL && row.finalPlacement === 'dispatched' ? "text-[#DC2626] font-bold" : 
+                                  row.isFTPL && (row.finalPlacement === 'rto' || row.finalPlacement === 'dto') ? "text-[#16A34A] font-bold" : "text-[#1565C0]")}>
                                   {row.client}
                                 </td>
                                 <td className="px-4 py-2">
@@ -1643,19 +1645,26 @@ export default function PODTool() {
                                 </td>
                                 <td className="px-4 py-2">
                                   <div className="flex flex-col items-center gap-1">
-                                    <span className={cn(
-                                      "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
-                                      row.sessionStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
-                                      row.sessionStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
-                                      row.sessionStatus === 'rto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
-                                      row.sessionStatus === 'dto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
-                                      "bg-slate-50 text-slate-700 border-slate-200"
-                                    )}>
-                                      {row.sessionStatus.toUpperCase()}
-                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      <span className={cn(
+                                        "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
+                                        row.sessionStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
+                                        row.sessionStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
+                                        row.sessionStatus === 'rto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
+                                        row.sessionStatus === 'dto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
+                                        "bg-slate-50 text-slate-700 border-slate-200"
+                                      )}>
+                                        {row.sessionStatus.toUpperCase()}
+                                      </span>
+                                      {row.logicCase !== 0 && (
+                                        <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter shadow-sm">
+                                          {row.sessionStatus.toUpperCase()} — Not Closed
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </td>
-                                <td className="px-4 py-2 text-[12px] font-medium text-slate-500 text-left whitespace-normal break-words min-w-[300px]">
+                                <td className="px-4 py-2 text-[12px] font-medium text-slate-500 text-left whitespace-normal break-words min-w-[250px] overflow-visible">
                                   {row.returnAddress || "—"}
                                 </td>
                               </tr>
