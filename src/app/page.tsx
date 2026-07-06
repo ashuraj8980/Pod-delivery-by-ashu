@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -165,6 +164,7 @@ export default function PODTool() {
   const [otpSelectedClients, setOtpSelectedClients] = useState<string[]>([]);
   const [otpClientSearchQuery, setOtpClientSearchQuery] = useState("");
   const [isOtpPopoverOpen, setIsOtpPopoverOpen] = useState(false);
+  const [otpUploadError, setOtpUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -490,12 +490,13 @@ export default function PODTool() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!selectedSessionId) {
+    if (!selectedSessionId || !currentSession) {
       showToast("Select a session in Daily EOD Rejection tab first!", "err");
       e.target.value = "";
       return;
     }
 
+    setOtpUploadError(null);
     setIsProcessing(true);
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -506,12 +507,15 @@ export default function PODTool() {
         const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
         
         const sessionMap = new Map<string, PODRow>();
-        if (currentSession) {
-          currentSession.data.forEach(r => sessionMap.set(r.awb, r));
-        }
+        const sessionAWBsSet = new Set<string>();
+        currentSession.data.forEach(r => {
+          sessionMap.set(r.awb, r);
+          sessionAWBsSet.add(r.awb);
+        });
 
         const newOtpData: OTPRow[] = [];
         const processedAWBs = new Set<string>();
+        let matchedCount = 0;
 
         rawData.forEach((row: any) => {
           const keys = Object.keys(row);
@@ -523,6 +527,8 @@ export default function PODTool() {
           if (!isValidAWB(rawAwb)) return;
 
           const awb = normalizeAWB(rawAwb);
+          if (sessionAWBsSet.has(awb)) matchedCount++;
+
           const client = String(findVal(/client/i)).trim();
           const rawOtpStatus = String(findVal(/status|currentstatus/i)).trim().toLowerCase();
           
@@ -557,26 +563,32 @@ export default function PODTool() {
           processedAWBs.add(awb);
         });
 
-        // Add Session-only Pending rows
-        if (currentSession) {
-          currentSession.data.filter(r => r.status === 'pending' && !processedAWBs.has(r.awb)).forEach(sr => {
-            newOtpData.push({
-              id: crypto.randomUUID(),
-              awb: sr.awb,
-              client: sr.client,
-              otpStatus: 'NOT FOUND',
-              sessionStatus: 'pending',
-              returnAddress: sr.returnAddress || "",
-              isFTPL: sr.client.toUpperCase().includes('FTPL'),
-              logicCase: 0,
-              hasMismatch: true,
-              finalPlacement: 'pending'
-            });
-          });
+        // CHANGE 2: Wrong file validation
+        if (matchedCount === 0) {
+          setOtpUploadError(`Wrong file uploaded. No AWB numbers match the current session. Please upload the Delhivery OTP report for ${currentSession.feName} ${currentSession.dspId}.`);
+          setIsProcessing(false);
+          e.target.value = "";
+          return;
         }
 
+        // Add Session-only Pending rows
+        currentSession.data.filter(r => r.status === 'pending' && !processedAWBs.has(r.awb)).forEach(sr => {
+          newOtpData.push({
+            id: crypto.randomUUID(),
+            awb: sr.awb,
+            client: sr.client,
+            otpStatus: 'NOT FOUND',
+            sessionStatus: 'pending',
+            returnAddress: sr.returnAddress || "",
+            isFTPL: sr.client.toUpperCase().includes('FTPL'),
+            logicCase: 0,
+            hasMismatch: true,
+            finalPlacement: 'pending'
+          });
+        });
+
         setOtpData(newOtpData);
-        showToast(`Imported ${newOtpData.length} OTP records (Numeric AWBs only).`, "ok");
+        showToast(`Imported ${newOtpData.length} OTP records.`, "ok");
       } catch (err) {
         showToast("Failed to process OTP Report", "err");
       } finally {
@@ -1406,175 +1418,256 @@ export default function PODTool() {
                    </div>
                 </div>
 
-                {/* OTP Module Tabs */}
-                <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden flex divide-x divide-slate-100">
-                  {[
-                    { id: 'all', label: 'All', val: otpStats.total, color: 'text-blue-600' },
-                    { id: 'dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-[#DC2626]' },
-                    { id: 'rto', label: 'RTO', val: otpStats.rto, color: 'text-[#16A34A]' },
-                    { id: 'dto', label: 'DTO', val: otpStats.dto, color: 'text-[#16A34A]' },
-                    { id: 'pending', label: 'Pending', val: otpStats.pending, color: 'text-[#D97706]' }
-                  ].map((t) => (
-                    <button 
-                      key={t.id}
-                      onClick={() => {
-                        setOtpStatusFilter(t.id);
-                        setOtpSelectedClients([]);
-                      }}
-                      className={cn(
-                        "flex-1 py-6 flex flex-col items-center justify-center transition-all relative h-[100px]",
-                        otpStatusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30"
-                      )}
-                    >
-                      <span className={cn("text-[32px] font-extrabold leading-none mb-1 flex items-center gap-2")}>
-                         <span className={t.color}>{t.val}</span>
-                      </span>
-                      <span className={cn("text-[13px] font-bold uppercase tracking-widest", otpStatusFilter === t.id ? t.color : "text-slate-400")}>{t.label}</span>
-                      {otpStatusFilter === t.id && <div className={cn("absolute bottom-0 left-0 w-full h-[3px]", t.color.replace('text-[#', 'bg-[#').replace(']', ''))} style={{backgroundColor: t.color.includes('#') ? t.color.match(/#\w+/)?.[0] : ''}} />}
-                    </button>
-                  ))}
+                {/* OTP Upload Zone */}
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center space-y-4">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600">
+                      <PackageSearch className="w-7 h-7" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-extrabold text-[#111827]">Upload Delhivery OTP Report</h2>
+                      <p className="text-sm text-slate-500 font-medium">Upload the default Delhivery export file for this FE session.</p>
+                    </div>
+                  </div>
+
+                  <div className={cn("border-2 border-dashed rounded-xl p-10 transition-all cursor-pointer relative bg-slate-50 hover:bg-white hover:border-blue-500 max-w-2xl mx-auto", isProcessing && "opacity-50")}>
+                    <input type="file" onChange={handleOTPFileUpload} disabled={isProcessing} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                    <div className="space-y-3">
+                      <Download className="w-8 h-8 text-slate-300 mx-auto" />
+                      <p className="text-sm font-black text-[#111827]">Click to select OTP Report File</p>
+                    </div>
+                  </div>
+                  {otpUploadError && (
+                    <div className="bg-rose-50 border border-rose-200 p-3 rounded-lg flex items-center gap-2 justify-center max-w-2xl mx-auto">
+                      <AlertCircle className="w-4 h-4 text-rose-600" />
+                      <p className="text-[12px] font-bold text-rose-700">{otpUploadError}</p>
+                    </div>
+                  )}
                 </div>
 
-                {/* Client Filter & Export */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
-                    <Popover open={isOtpPopoverOpen} onOpenChange={(open) => { setIsOtpPopoverOpen(open); if(!open) setOtpClientSearchQuery(""); }}>
-                      <PopoverTrigger asChild>
-                        <button className="h-8 min-w-[200px] px-3 flex items-center justify-between text-[12px] font-bold text-[#374151] hover:bg-slate-50 rounded-lg transition-colors border border-slate-100">
-                          <span className="truncate">
-                            {otpSelectedClients.length === 0 ? 'All Clients' : 
-                             otpSelectedClients.length === 1 ? otpSelectedClients[0] : 
-                             `${otpSelectedClients.length} Clients Selected`}
+                {otpData.length > 0 && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    {/* OTP Module Tabs */}
+                    <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden flex divide-x divide-slate-100">
+                      {[
+                        { id: 'all', label: 'All', val: otpStats.total, color: 'text-blue-600' },
+                        { id: 'dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-[#DC2626]' },
+                        { id: 'rto', label: 'RTO', val: otpStats.rto, color: 'text-[#16A34A]' },
+                        { id: 'dto', label: 'DTO', val: otpStats.dto, color: 'text-[#16A34A]' },
+                        { id: 'pending', label: 'Pending', val: otpStats.pending, color: 'text-[#D97706]' }
+                      ].map((t) => (
+                        <button 
+                          key={t.id}
+                          onClick={() => {
+                            setOtpStatusFilter(t.id);
+                            setOtpSelectedClients([]);
+                          }}
+                          className={cn(
+                            "flex-1 py-6 flex flex-col items-center justify-center transition-all relative h-[100px]",
+                            otpStatusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30"
+                          )}
+                        >
+                          <span className={cn("text-[32px] font-extrabold leading-none mb-1 flex items-center gap-2")}>
+                             <span className={t.color}>{t.val}</span>
                           </span>
-                          <ChevronDown className="w-3.5 h-3.5 opacity-50 ml-2" />
+                          <span className={cn("text-[13px] font-bold uppercase tracking-widest", otpStatusFilter === t.id ? t.color : "text-slate-400")}>{t.label}</span>
+                          {otpStatusFilter === t.id && <div className={cn("absolute bottom-0 left-0 w-full h-[3px]", t.color.replace('text-[#', 'bg-[#').replace(']', ''))} style={{backgroundColor: t.color.includes('#') ? t.color.match(/#\w+/)?.[0] : ''}} />}
                         </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[280px] p-0" align="start">
-                        <div className="p-2 border-b">
-                          <div className="relative">
-                            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input 
-                              className="w-full text-[12px] pl-8 pr-3 py-1.5 border rounded-md outline-none focus:border-blue-500" 
-                              placeholder="Search client..." 
-                              value={otpClientSearchQuery}
-                              onChange={(e) => setOtpClientSearchQuery(e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="p-1 border-b bg-slate-50/50">
-                           <div className="flex items-center space-x-2 px-3 py-2">
-                            <Checkbox 
-                              id="otp-select-all" 
-                              checked={displayedOtpClients.length > 0 && displayedOtpClients.every(c => otpSelectedClients.includes(c))}
-                              onCheckedChange={handleSelectAllOtpClients}
-                            />
-                            <label htmlFor="otp-select-all" className="text-[11px] font-bold text-slate-900 uppercase tracking-tight cursor-pointer">
-                              (Select All Search Results)
-                            </label>
-                           </div>
-                        </div>
-                        <ScrollArea className="h-[280px]">
-                          <div className="p-1">
-                            {displayedOtpClients.map(c => (
-                              <div 
-                                key={c}
-                                className="flex items-center space-x-2 px-3 py-2 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
-                                onClick={() => toggleOtpClientSelection(c)}
-                              >
-                                <Checkbox 
-                                  checked={otpSelectedClients.includes(c)}
-                                  onCheckedChange={() => toggleOtpClientSelection(c)}
-                                  onClick={(e) => e.stopPropagation()}
+                      ))}
+                    </div>
+
+                    {/* Client Filter & Export */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+                        <Popover open={isOtpPopoverOpen} onOpenChange={(open) => { setIsOtpPopoverOpen(open); if(!open) setOtpClientSearchQuery(""); }}>
+                          <PopoverTrigger asChild>
+                            <button className="h-8 min-w-[200px] px-3 flex items-center justify-between text-[12px] font-bold text-[#374151] hover:bg-slate-50 rounded-lg transition-colors border border-slate-100">
+                              <span className="truncate">
+                                {otpSelectedClients.length === 0 ? 'All Clients' : 
+                                 otpSelectedClients.length === 1 ? otpSelectedClients[0] : 
+                                 `${otpSelectedClients.length} Clients Selected`}
+                              </span>
+                              <ChevronDown className="w-3.5 h-3.5 opacity-50 ml-2" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[280px] p-0" align="start">
+                            <div className="p-2 border-b">
+                              <div className="relative">
+                                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input 
+                                  className="w-full text-[12px] pl-8 pr-3 py-1.5 border rounded-md outline-none focus:border-blue-500" 
+                                  placeholder="Search client..." 
+                                  value={otpClientSearchQuery}
+                                  onChange={(e) => setOtpClientSearchQuery(e.target.value)}
                                 />
-                                <span className={cn(
-                                  "text-[12px] font-medium truncate flex-1",
-                                  otpSelectedClients.includes(c) ? "text-blue-600 font-bold" : "text-slate-700"
-                                )}>
-                                  {c}
-                                </span>
                               </div>
-                            ))}
-                            {displayedOtpClients.length === 0 && (
-                              <div className="p-4 text-center text-[11px] text-slate-400 font-bold uppercase">No matching clients</div>
-                            )}
-                          </div>
-                        </ScrollArea>
-                        <div className="p-2 border-t flex justify-end">
-                           <button 
-                            onClick={() => setIsOtpPopoverOpen(false)}
-                            className="text-[11px] font-black text-blue-600 uppercase tracking-widest px-4 py-1.5 hover:bg-blue-50 rounded transition-colors"
-                           >
-                            Done
-                           </button>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
+                            </div>
+                            <div className="p-1 border-b bg-slate-50/50">
+                               <div className="flex items-center space-x-2 px-3 py-2">
+                                <Checkbox 
+                                  id="otp-select-all" 
+                                  checked={displayedOtpClients.length > 0 && displayedOtpClients.every(c => otpSelectedClients.includes(c))}
+                                  onCheckedChange={handleSelectAllOtpClients}
+                                />
+                                <label htmlFor="otp-select-all" className="text-[11px] font-bold text-slate-900 uppercase tracking-tight cursor-pointer">
+                                  (Select All Search Results)
+                                </label>
+                               </div>
+                            </div>
+                            <ScrollArea className="h-[280px]">
+                              <div className="p-1">
+                                {displayedOtpClients.map(c => (
+                                  <div 
+                                    key={c}
+                                    className="flex items-center space-x-2 px-3 py-2 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
+                                    onClick={() => toggleOtpClientSelection(c)}
+                                  >
+                                    <Checkbox 
+                                      checked={otpSelectedClients.includes(c)}
+                                      onCheckedChange={() => toggleOtpClientSelection(c)}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                    <span className={cn(
+                                      "text-[12px] font-medium truncate flex-1",
+                                      otpSelectedClients.includes(c) ? "text-blue-600 font-bold" : "text-slate-700"
+                                    )}>
+                                      {c}
+                                    </span>
+                                  </div>
+                                ))}
+                                {displayedOtpClients.length === 0 && (
+                                  <div className="p-4 text-center text-[11px] text-slate-400 font-bold uppercase">No matching clients</div>
+                                )}
+                              </div>
+                            </ScrollArea>
+                            <div className="p-2 border-t flex justify-end">
+                               <button 
+                                onClick={() => setIsOtpPopoverOpen(false)}
+                                className="text-[11px] font-black text-blue-600 uppercase tracking-widest px-4 py-1.5 hover:bg-blue-50 rounded transition-colors"
+                               >
+                                Done
+                               </button>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
 
-                  <div className="flex gap-2">
-                    <button onClick={handleOtpDownload} className="h-10 px-5 bg-emerald-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg whitespace-nowrap">Download Excel</button>
-                    <button onClick={async () => {
-                      const headers = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status', 'Return Address'];
-                      const data = otpFilteredRows.map(r => ({
-                        'AWB Number': r.awb,
-                        'Client Name': r.client,
-                        'OTP Status': r.otpStatus.toUpperCase(),
-                        'Session Status': r.sessionStatus.toUpperCase(),
-                        'Return Address': r.returnAddress
-                      }));
-                      const success = await copyDataToClipboard(data, headers);
-                      if (success) showToast(`Copied ${otpFilteredRows.length} rows`, "ok");
-                    }} className="h-10 px-5 bg-blue-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg whitespace-nowrap">Copy Table</button>
-                  </div>
-                </div>
+                      <div className="flex gap-2">
+                        <button onClick={handleOtpDownload} className="h-10 px-5 bg-emerald-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg whitespace-nowrap">Download Excel</button>
+                        <button onClick={async () => {
+                          const headers = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status', 'Return Address'];
+                          const data = otpFilteredRows.map(r => ({
+                            'AWB Number': r.awb,
+                            'Client Name': r.client,
+                            'OTP Status': r.otpStatus.toUpperCase(),
+                            'Session Status': r.sessionStatus.toUpperCase(),
+                            'Return Address': r.returnAddress
+                          }));
+                          const success = await copyDataToClipboard(data, headers);
+                          if (success) showToast(`Copied ${otpFilteredRows.length} rows`, "ok");
+                        }} className="h-10 px-5 bg-blue-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg whitespace-nowrap">Copy Table</button>
+                      </div>
+                    </div>
 
-                {/* OTP Table */}
-                <div className="bg-white rounded-xl border-[1.5px] border-[#F97316] shadow-2xl overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-center border-collapse bg-white table-fixed">
-                      <thead className="bg-[#0F172A] text-white">
-                        <tr className="h-11">
-                          <th style={{ width: '32px' }} className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5 border border-slate-300 rounded" /></th>
-                          <th style={{ width: '150px' }} className="px-4 text-[11px] font-bold text-center">AWB Number</th>
-                          <th style={{ width: '180px' }} className="px-4 text-[11px] font-bold text-center">Client Name</th>
-                          <th style={{ width: '160px' }} className="px-4 text-[11px] font-bold text-center">OTP Status</th>
-                          <th style={{ width: '160px' }} className="px-4 text-[11px] font-bold text-center">Session Status</th>
-                          <th style={{ minWidth: '300px' }} className="px-4 text-[11px] font-bold text-center">Return Address</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {otpFilteredRows.length > 0 ? (
-                          (otpStatusFilter === 'dispatched' || otpStatusFilter === 'rto' || otpStatusFilter === 'dto' || otpStatusFilter === 'pending') ? (
-                            Object.entries(
-                              otpFilteredRows.reduce((acc: Record<string, OTPRow[]>, row) => {
-                                const key = row.client || "Other Clients";
-                                if (!acc[key]) acc[key] = [];
-                                acc[key].push(row);
-                                return acc;
-                              }, {})
-                            )
-                            .sort((a, b) => b[1].length - a[1].length)
-                            .map(([clientName, groupRows]) => (
-                              <React.Fragment key={clientName}>
-                                <tr className="h-10 border-b border-white/10" style={{ background: 'linear-gradient(90deg, #0D1B2E, #1A2F4A)' }} key={`header-otp-${clientName}`}>
-                                  <td className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5 border border-white/50 rounded bg-transparent" /></td>
-                                  <td colSpan={5} className="px-3">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[#F9A825] font-mono text-[12px] font-black uppercase tracking-widest">{clientName}</span>
-                                        <span className="w-px h-3 bg-white/20 mx-1" />
-                                        <span className="text-[10px] font-black text-amber-400 border border-amber-400/30 px-1.5 py-0.5 rounded uppercase tracking-tight">{groupRows.length} pkt</span>
-                                      </div>
-                                      <button 
-                                        onClick={() => handleCopyGroupAWB(groupRows, clientName)}
-                                        className="text-[10px] font-bold text-white border border-white/30 rounded px-2.5 py-0.5 hover:bg-white/10 transition-colors uppercase tracking-widest"
+                    {/* OTP Table */}
+                    <div className="bg-white rounded-xl border-[1.5px] border-[#F97316] shadow-2xl overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-center border-collapse bg-white table-fixed">
+                          <thead className="bg-[#0F172A] text-white">
+                            <tr className="h-11">
+                              <th style={{ width: '32px' }} className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5 border border-slate-300 rounded" /></th>
+                              <th style={{ width: '150px' }} className="px-4 text-[11px] font-bold text-center">AWB Number</th>
+                              <th style={{ width: '180px' }} className="px-4 text-[11px] font-bold text-center">Client Name</th>
+                              <th style={{ width: '160px' }} className="px-4 text-[11px] font-bold text-center">OTP Status</th>
+                              <th style={{ width: '160px' }} className="px-4 text-[11px] font-bold text-center">Session Status</th>
+                              <th style={{ minWidth: '300px' }} className="px-4 text-[11px] font-bold text-center">Return Address</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {otpFilteredRows.length > 0 ? (
+                              (otpStatusFilter === 'dispatched' || otpStatusFilter === 'rto' || otpStatusFilter === 'dto' || otpStatusFilter === 'pending') ? (
+                                Object.entries(
+                                  otpFilteredRows.reduce((acc: Record<string, OTPRow[]>, row) => {
+                                    const key = row.client || "Other Clients";
+                                    if (!acc[key]) acc[key] = [];
+                                    acc[key].push(row);
+                                    return acc;
+                                  }, {})
+                                )
+                                .sort((a, b) => b[1].length - a[1].length)
+                                .map(([clientName, groupRows]) => (
+                                  <React.Fragment key={clientName}>
+                                    <tr className="h-10 border-b border-white/10" style={{ background: 'linear-gradient(90deg, #0D1B2E, #1A2F4A)' }} key={`header-otp-${clientName}`}>
+                                      <td className="px-2 text-center"><input type="checkbox" className="w-3.5 h-3.5 border border-white/50 rounded bg-transparent" /></td>
+                                      <td colSpan={5} className="px-3">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-[#F9A825] font-mono text-[12px] font-black uppercase tracking-widest">{clientName}</span>
+                                            <span className="w-px h-3 bg-white/20 mx-1" />
+                                            <span className="text-[10px] font-black text-amber-400 border border-amber-400/30 px-1.5 py-0.5 rounded uppercase tracking-tight">{groupRows.length} pkt</span>
+                                          </div>
+                                          <button 
+                                            onClick={() => handleCopyGroupAWB(groupRows, clientName)}
+                                            className="text-[10px] font-bold text-white border border-white/30 rounded px-2.5 py-0.5 hover:bg-white/10 transition-colors uppercase tracking-widest"
+                                          >
+                                            Copy AWB
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                    {groupRows.map((row) => (
+                                      <tr key={row.id} 
+                                        className={cn(
+                                          "h-auto border-b border-[#FED7AA] transition-colors",
+                                          row.logicCase !== 0 ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" : "bg-white",
+                                          (otpStatusFilter === 'dispatched' && row.isFTPL) ? "bg-[#FFF5F5] border-l-[3px] border-l-[#DC2626]" :
+                                          ((otpStatusFilter === 'rto' || otpStatusFilter === 'dto') && row.isFTPL) ? "bg-[#F0FDF4]" : ""
+                                        )}
                                       >
-                                        Copy AWB
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                                {groupRows.map((row) => (
+                                        <td className="px-2 text-center py-2"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
+                                        <td className="px-4 text-[13px] font-bold text-[#111827] font-mono tracking-tight py-2">{row.awb}</td>
+                                        <td className={cn("px-4 text-[13px] font-semibold truncate py-2", 
+                                          (otpStatusFilter === 'dispatched' && row.isFTPL) ? "text-[#DC2626] font-bold" : 
+                                          ((otpStatusFilter === 'rto' || otpStatusFilter === 'dto') && row.isFTPL) ? "text-[#16A34A] font-bold" : "text-[#1565C0]")}>
+                                          {row.client}
+                                        </td>
+                                        <td className="px-4 py-2">
+                                          <div className="flex flex-col items-center gap-1">
+                                            <span className={cn(
+                                              "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
+                                              row.otpStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
+                                              row.otpStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
+                                              row.otpStatus === 'NOT FOUND' ? "bg-slate-400 text-white border-slate-500" :
+                                              "bg-[#16A34A] text-white border-[#16A34A]"
+                                            )}>
+                                              {row.otpStatus.toUpperCase()}
+                                            </span>
+                                            {row.logicCase === 1 && <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter shadow-sm">RTO — Not Closed</span>}
+                                            {row.logicCase === 2 && <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter shadow-sm">DTO — Not Closed</span>}
+                                            {row.logicCase === 3 && <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter shadow-sm">Pending — Not Closed</span>}
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-2 text-center">
+                                          <span className={cn(
+                                            "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
+                                            row.sessionStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
+                                            row.sessionStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
+                                            row.sessionStatus === 'rto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
+                                            row.sessionStatus === 'dto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
+                                            "bg-slate-50 text-slate-700 border-slate-200"
+                                          )}>
+                                            {row.sessionStatus.toUpperCase()}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-2 text-[12px] text-[#374151] whitespace-normal break-words text-left min-w-[250px] overflow-visible">
+                                          {row.returnAddress || "—"}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </React.Fragment>
+                                ))
+                              ) : (
+                                otpFilteredRows.map((row) => (
                                   <tr key={row.id} 
                                     className={cn(
                                       "h-auto border-b border-[#FED7AA] transition-colors",
@@ -1618,92 +1711,21 @@ export default function PODTool() {
                                         {row.sessionStatus.toUpperCase()}
                                       </span>
                                     </td>
-                                    <td className="px-4 py-2 text-[12px] font-medium text-slate-500 text-left whitespace-normal break-words min-w-[250px] overflow-visible">
+                                    <td className="px-4 py-2 text-[12px] text-[#374151] whitespace-normal break-words text-left min-w-[250px] overflow-visible">
                                       {row.returnAddress || "—"}
                                     </td>
                                   </tr>
-                                ))}
-                              </React.Fragment>
-                            ))
-                          ) : (
-                            otpFilteredRows.map((row) => (
-                              <tr key={row.id} 
-                                className={cn(
-                                  "h-auto border-b border-[#FED7AA] transition-colors",
-                                  row.logicCase !== 0 ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" : "bg-white",
-                                  (otpStatusFilter === 'dispatched' && row.isFTPL) ? "bg-[#FFF5F5] border-l-[3px] border-l-[#DC2626]" :
-                                  ((otpStatusFilter === 'rto' || otpStatusFilter === 'dto') && row.isFTPL) ? "bg-[#F0FDF4]" : ""
-                                )}
-                              >
-                                <td className="px-2 text-center py-2"><input type="checkbox" className="w-3 h-3 border border-slate-300 rounded" /></td>
-                                <td className="px-4 text-[13px] font-bold text-[#111827] font-mono tracking-tight py-2">{row.awb}</td>
-                                <td className={cn("px-4 text-[13px] font-semibold truncate py-2", 
-                                  (otpStatusFilter === 'dispatched' && row.isFTPL) ? "text-[#DC2626] font-bold" : 
-                                  ((otpStatusFilter === 'rto' || otpStatusFilter === 'dto') && row.isFTPL) ? "text-[#16A34A] font-bold" : "text-[#1565C0]")}>
-                                  {row.client}
-                                </td>
-                                <td className="px-4 py-2">
-                                  <div className="flex flex-col items-center gap-1">
-                                    <span className={cn(
-                                      "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
-                                      row.otpStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
-                                      row.otpStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
-                                      row.otpStatus === 'NOT FOUND' ? "bg-slate-400 text-white border-slate-500" :
-                                      "bg-[#16A34A] text-white border-[#16A34A]"
-                                    )}>
-                                      {row.otpStatus.toUpperCase()}
-                                    </span>
-                                    {row.logicCase === 1 && <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter shadow-sm">RTO — Not Closed</span>}
-                                    {row.logicCase === 2 && <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter shadow-sm">DTO — Not Closed</span>}
-                                    {row.logicCase === 3 && <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-tighter shadow-sm">Pending — Not Closed</span>}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-2 text-center">
-                                  <span className={cn(
-                                    "px-2 py-0.5 rounded text-[10px] font-black uppercase border shadow-sm w-fit inline-block",
-                                    row.sessionStatus === 'pending' ? "bg-[#D97706] text-white border-[#D97706]" :
-                                    row.sessionStatus === 'dispatched' ? "bg-[#DC2626] text-white border-[#DC2626]" :
-                                    row.sessionStatus === 'rto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
-                                    row.sessionStatus === 'dto' ? "bg-[#16A34A] text-white border-[#16A34A]" :
-                                    "bg-slate-50 text-slate-700 border-slate-200"
-                                  )}>
-                                    {row.sessionStatus.toUpperCase()}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-2 text-[12px] font-medium text-slate-500 text-left whitespace-normal break-words min-w-[250px] overflow-visible">
-                                  {row.returnAddress || "—"}
-                                </td>
-                              </tr>
-                            ))
-                          )
-                        ) : (
-                          <tr key="no-otp-matches"><td colSpan={6} className="h-32 text-center text-slate-300 font-bold uppercase tracking-widest">Upload OTP Report to start matching.</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* OTP Upload Zone */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center space-y-6 mt-12">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600">
-                      <PackageSearch className="w-7 h-7" />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-extrabold text-[#111827]">Upload Delhivery OTP Report</h2>
-                      <p className="text-sm text-slate-500 font-medium">Upload the default Delhivery report for cross-check analysis.</p>
+                                ))
+                              )
+                            ) : (
+                              <tr key="no-otp-matches"><td colSpan={6} className="h-32 text-center text-slate-300 font-bold uppercase tracking-widest">Upload OTP Report to start matching.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
-
-                  <div className={cn("border-2 border-dashed rounded-xl p-10 transition-all cursor-pointer relative bg-slate-50 hover:bg-white hover:border-blue-500 max-w-2xl mx-auto", isProcessing && "opacity-50")}>
-                    <input type="file" onChange={handleOTPFileUpload} disabled={isProcessing} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-                    <div className="space-y-3">
-                      <Download className="w-8 h-8 text-slate-300 mx-auto" />
-                      <p className="text-sm font-black text-[#111827]">Click to select OTP Report File</p>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             )}
           </div>
@@ -1712,4 +1734,3 @@ export default function PODTool() {
     </div>
   );
 }
-
