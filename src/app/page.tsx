@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -41,7 +42,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Restored with Colorful UI, Client Grouping, Dual Tab Placement, and Non-Exportable Return Address.
+ * Restored with Remark Chips, Colorful UI, Client Grouping, and Non-Exportable Return Address.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -186,6 +187,11 @@ export default function PODTool() {
     }
   }, [selectedSessionId, isMounted]);
 
+  // Reset Remark Chips when status filter changes
+  useEffect(() => {
+    setActiveRemarkChip(null);
+  }, [statusFilter]);
+
   const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err') => {
@@ -204,7 +210,7 @@ export default function PODTool() {
 
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
-    // Strictly exclude Return Address from exports as requested
+    // Strictly exclude Return Address from exports
     const exportHeaders = headers.filter(h => h !== 'Return Address');
     
     const plainText = rows.map(r => 
@@ -672,6 +678,25 @@ export default function PODTool() {
                   ))}
                 </div>
 
+                {statusFilter === 'pending' && (
+                  <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-2">
+                    {Array.from(new Set(currentSession.data.filter(r => r.status === 'pending').map(r => r.remark))).map(remark => (
+                      <button
+                        key={`chip-${remark}`}
+                        onClick={() => setActiveRemarkChip(activeRemarkChip === remark ? null : remark)}
+                        className={cn(
+                          "px-3 py-1 rounded-full text-[11px] font-bold transition-all border shadow-sm uppercase tracking-tight",
+                          activeRemarkChip === remark 
+                            ? "bg-blue-600 text-white border-blue-600" 
+                            : "bg-white text-slate-600 border-slate-200 hover:border-blue-400"
+                        )}
+                      >
+                        {remark}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <div className="flex gap-2 bg-white border rounded-xl p-1 shadow-sm items-center">
                   <button onClick={handleCopyAWBOnly} className="h-8 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center gap-2">
                     <Copy className="w-3.5 h-3.5" /> Copy Selected AWB
@@ -683,19 +708,19 @@ export default function PODTool() {
                   <button onClick={downloadExcel} className="h-10 px-5 bg-emerald-600 text-white rounded-lg text-[13px] font-bold">Download Excel</button>
                 </div>
 
-                <div className="bg-white rounded-xl border-[1.5px] border-[#F97316] shadow-2xl overflow-hidden">
+                <div className="bg-white rounded-xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-center border-collapse table-fixed">
                       <thead className="bg-[#0F172A] text-white h-11">
-                        <tr>
-                          <th style={{width: '32px'}} className="px-2"><input type="checkbox" onChange={e => toggleGroupSelection(filteredRows, e.target.checked)} checked={filteredRows.every(r => selectedRowIds.has(r.id))} /></th>
-                          <th style={{width: '80px'}} className="text-[11px] font-bold">DSP ID</th>
-                          <th style={{width: '130px'}} className="text-[11px] font-bold">AWB Number</th>
-                          <th style={{width: '110px'}} className="text-[11px] font-bold">Client</th>
-                          <th style={{width: '110px'}} className="text-[11px] font-bold">Order ID</th>
-                          <th style={{width: '150px'}} className="text-[11px] font-bold">Remark</th>
-                          <th style={{width: '250px'}} className="text-[11px] font-bold">Return Address</th>
-                          <th style={{width: '80px'}} className="text-[11px] font-bold">FE Name</th>
+                        <tr key="main-header">
+                          <th style={{width: '32px'}} className="px-2"><input type="checkbox" onChange={e => toggleGroupSelection(filteredRows, e.target.checked)} checked={filteredRows.length > 0 && filteredRows.every(r => selectedRowIds.has(r.id))} /></th>
+                          <th style={{width: '80px'}} className="text-[11px] font-bold uppercase tracking-tight">DSP ID</th>
+                          <th style={{width: '140px'}} className="text-[11px] font-bold uppercase tracking-tight">AWB Number</th>
+                          <th style={{width: '180px'}} className="text-[11px] font-bold uppercase tracking-tight">Client</th>
+                          <th style={{width: '120px'}} className="text-[11px] font-bold uppercase tracking-tight">Order ID</th>
+                          <th style={{width: '180px'}} className="text-[11px] font-bold uppercase tracking-tight">Remark</th>
+                          <th style={{width: '300px'}} className="text-[11px] font-bold uppercase tracking-tight">Return Address</th>
+                          <th style={{width: '100px'}} className="text-[11px] font-bold uppercase tracking-tight">FE Name</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -704,31 +729,43 @@ export default function PODTool() {
                           acc[row.client].push(row);
                           return acc;
                         }, {})).map(([client, rows]: any) => (
-                          <React.Fragment key={client}>
-                            <tr key={`group-${client}`} className="bg-slate-800 text-white h-8">
-                              <td colSpan={8} className="text-left px-4 text-[10px] font-bold uppercase tracking-widest">{client} — {rows.length} PKT</td>
+                          <React.Fragment key={`group-frag-${client}`}>
+                            <tr key={`group-banner-${client}`} className="bg-slate-800 text-white h-9">
+                              <td colSpan={8} className="text-left px-4">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-black uppercase tracking-[0.1em] text-amber-400">{client} — {rows.length} PKT</span>
+                                  <button onClick={() => {
+                                    const text = rows.map((r: any) => r.awb).join('\n');
+                                    navigator.clipboard.writeText(text);
+                                    showToast(`Copied ${rows.length} AWBs`, "ok");
+                                  }} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 transition-all font-bold uppercase">Copy AWBs</button>
+                                </div>
+                              </td>
                             </tr>
                             {rows.map((row: any) => (
-                              <tr key={row.id} className={cn("border-b hover:bg-blue-50/30", selectedRowIds.has(row.id) && "bg-blue-50")}>
+                              <tr key={`row-${row.id}`} className={cn("border-b hover:bg-blue-50/40 transition-colors", selectedRowIds.has(row.id) && "bg-blue-50/50")}>
                                 <td className="px-2 py-2"><input type="checkbox" checked={selectedRowIds.has(row.id)} onChange={() => toggleRowSelection(row.id)} /></td>
-                                <td className="px-2 py-2 text-[13px] font-bold">{row.dspId}</td>
-                                <td className="px-2 py-2 text-[13px] font-bold font-mono cursor-pointer hover:underline" onClick={() => {
+                                <td className="px-2 py-2 text-[13px] font-bold text-slate-600">{row.dspId}</td>
+                                <td className="px-2 py-2 text-[13px] font-bold font-mono text-blue-700 cursor-pointer hover:underline" onClick={() => {
                                   navigator.clipboard.writeText(row.awb);
                                   showToast("AWB Copied", "ok");
                                 }}>{row.awb}</td>
-                                <td className="px-2 py-2 text-[13px] font-semibold text-blue-600">{row.client}</td>
-                                <td className="px-2 py-2 text-[13px] font-medium">{row.orderId}</td>
+                                <td className="px-2 py-2 text-[13px] font-semibold text-slate-800">{row.client}</td>
+                                <td className="px-2 py-2 text-[13px] font-medium text-slate-500">{row.orderId}</td>
                                 <td className="px-2 py-2">
-                                  <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase border", row.isIntact ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200")}>
+                                  <span className={cn("px-2 py-0.5 rounded text-[10px] font-black uppercase border", row.isIntact ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200")}>
                                     {row.remark}
                                   </span>
                                 </td>
-                                <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[250px]">{row.returnAddress}</td>
-                                <td className="px-2 py-2 text-[13px] font-bold">{row.feName}</td>
+                                <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[300px] font-medium leading-relaxed">{row.returnAddress}</td>
+                                <td className="px-2 py-2 text-[13px] font-bold text-slate-700">{row.feName}</td>
                               </tr>
                             ))}
                           </React.Fragment>
                         ))}
+                        {filteredRows.length === 0 && (
+                          <tr key="no-data-row"><td colSpan={8} className="py-20 text-slate-400 font-bold uppercase tracking-widest text-xs">No records found for this filter</td></tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -741,26 +778,26 @@ export default function PODTool() {
         {activeTab === "remark" && (
           <div className="grid grid-cols-12 gap-8">
             <div className="col-span-8 space-y-6">
-              <div className="bg-white rounded-xl p-8 border shadow-sm text-center border-dashed border-2 hover:border-blue-500 cursor-pointer relative">
+              <div className="bg-white rounded-xl p-8 border shadow-sm text-center border-dashed border-2 hover:border-blue-500 cursor-pointer relative transition-all">
                 <input type="file" onChange={handleReplacerUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                 <FileSpreadsheet className="w-10 h-10 text-slate-300 mx-auto mb-4" />
-                <p className="font-black">Drop EOD Sheet to Convert Remarks</p>
+                <p className="font-black text-slate-600 uppercase tracking-tight">Drop EOD Sheet to Convert Remarks</p>
               </div>
               {replacerData.length > 0 && (
                 <div className="bg-white rounded-xl border border-emerald-500/20 shadow-xl overflow-hidden">
                   <div className="overflow-x-auto max-h-[600px]">
                     <table className="w-full text-center border-collapse bg-white">
                       <thead className="sticky top-0 bg-[#0F172A] text-white h-12">
-                        <tr>
-                          {replacerMeta?.headers.map((h, i) => <th key={i} className="px-4 font-bold text-[10px] uppercase tracking-widest">{h}</th>)}
-                          <th style={{width: '250px'}} className="px-4 font-bold text-[10px] uppercase tracking-widest">Return Address</th>
+                        <tr key="replacer-head">
+                          {replacerMeta?.headers.map((h, i) => <th key={`rep-h-${i}`} className="px-4 font-bold text-[10px] uppercase tracking-widest">{h}</th>)}
+                          <th style={{width: '300px'}} key="rep-h-addr" className="px-4 font-bold text-[10px] uppercase tracking-widest">Return Address</th>
                         </tr>
                       </thead>
                       <tbody>
                         {replacerData.map(row => (
-                          <tr key={row.__id} className={cn("h-11 border-b", row.__isReplaced ? "bg-emerald-50/40" : "bg-amber-50/40")}>
-                            {replacerMeta?.headers.map((h, i) => <td key={i} className="px-4 font-semibold truncate max-w-[200px]">{row[h]}</td>)}
-                            <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[250px]">{row.Return_Address || row.ReturnAddress || ""}</td>
+                          <tr key={row.__id} className={cn("h-11 border-b transition-colors", row.__isReplaced ? "bg-emerald-50/40" : "bg-amber-50/40")}>
+                            {replacerMeta?.headers.map((h, i) => <td key={`rep-c-${i}`} className="px-4 font-semibold text-[13px] truncate max-w-[200px]">{row[h]}</td>)}
+                            <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[300px]">{row.Return_Address || row.ReturnAddress || ""}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -771,12 +808,12 @@ export default function PODTool() {
             </div>
             <div className="col-span-4">
               <div className="bg-white rounded-xl border shadow-sm sticky top-20 overflow-hidden">
-                <div className="bg-blue-600 p-4 text-white font-black text-[12px] uppercase">Replacement Matrix</div>
-                <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+                <div className="bg-blue-600 p-4 text-white font-black text-[12px] uppercase tracking-widest">Replacement Matrix</div>
+                <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
                   {Object.entries(REMARK_MAPPING).map(([nsl, off]) => (
-                    <div key={nsl} className="p-4 bg-slate-50 rounded-xl border space-y-2">
-                      <p className="text-[13px] font-bold text-amber-700">{nsl}</p>
-                      <p className="text-[13px] font-extrabold text-emerald-700">{off}</p>
+                    <div key={`matrix-${nsl}`} className="p-4 bg-slate-50 rounded-xl border space-y-2 border-slate-200 group hover:border-blue-400 transition-all">
+                      <p className="text-[12px] font-bold text-amber-700 uppercase tracking-tight">{nsl}</p>
+                      <p className="text-[13px] font-black text-emerald-700">{off}</p>
                     </div>
                   ))}
                 </div>
@@ -788,52 +825,64 @@ export default function PODTool() {
         {activeTab === "otp" && (
           <div className="space-y-6">
             {!selectedSessionId ? (
-              <div className="bg-white rounded-xl border p-8 text-center"><AlertCircle className="w-8 h-8 text-amber-600 mx-auto mb-3" /><p className="font-bold">Please select a session in Daily EOD Rejection tab first.</p></div>
+              <div className="bg-white rounded-xl border p-20 text-center animate-in fade-in zoom-in">
+                <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+                <h3 className="text-lg font-black text-slate-900 mb-1">SESSION NOT SELECTED</h3>
+                <p className="text-sm font-bold text-slate-400">Please select a session in Daily EOD Rejection tab first.</p>
+              </div>
             ) : (
               <div className="space-y-6">
-                {/* Session Card Info at Top */}
-                <div className="bg-white border rounded-xl p-4 shadow-sm flex items-center justify-between">
+                <div className="bg-white border-[1.5px] border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <User className="w-5 h-5" />
+                    <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg">
+                      <User className="w-6 h-6" />
+                    </div>
                     <div>
-                      <p className="font-black">{currentSession.feName}</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase">{currentSession.dspId} • {currentSession.date}</p>
+                      <p className="text-lg font-black text-slate-900 leading-tight">{currentSession.feName}</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{currentSession.dspId} • {currentSession.date}</p>
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <span className="px-2 py-1 rounded bg-slate-100 text-[10px] font-black uppercase">Total: {stats.total}</span>
-                    <span className="px-2 py-1 rounded bg-amber-50 text-[10px] font-black uppercase text-amber-600">Pending: {stats.pending}</span>
-                    <span className="px-2 py-1 rounded bg-emerald-50 text-[10px] font-black uppercase text-emerald-600">RTO: {stats.rto}</span>
-                    <span className="px-2 py-1 rounded bg-emerald-50 text-[10px] font-black uppercase text-emerald-600">DTO: {stats.dto}</span>
+                    <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-[10px] font-black uppercase text-slate-600 border border-slate-200">TOTAL: {stats.total}</span>
+                    <span className="px-3 py-1.5 rounded-lg bg-amber-50 text-[10px] font-black uppercase text-amber-600 border border-amber-200">PENDING: {stats.pending}</span>
+                    <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-[10px] font-black uppercase text-emerald-600 border border-emerald-200">RTO: {stats.rto}</span>
+                    <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-[10px] font-black uppercase text-emerald-600 border border-emerald-200">DTO: {stats.dto}</span>
                   </div>
                 </div>
 
-                {/* Upload Zone */}
-                <div className="bg-white rounded-xl border p-8 text-center space-y-4">
-                  <h2 className="text-xl font-extrabold">Upload Delhivery OTP Report</h2>
-                  <p className="text-[12px] font-bold text-slate-400">Upload the default Delhivery export file for this FE session.</p>
-                  <div className={cn("border-2 border-dashed rounded-xl p-10 bg-slate-50 hover:bg-white hover:border-blue-500 transition-all cursor-pointer relative mx-auto max-w-2xl", isProcessing && "opacity-50")}>
-                    <input type="file" onChange={handleOTPFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-                    <Download className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="text-sm font-black">Click to select OTP Report</p>
+                <div className="bg-white rounded-xl border-[1.5px] border-dashed border-slate-300 p-12 text-center space-y-4 hover:border-blue-500 transition-all bg-slate-50/50">
+                  <div className="max-w-xl mx-auto space-y-4">
+                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-blue-600 shadow-sm mx-auto border">
+                      <Download className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-black text-slate-900 tracking-tight">Upload Delhivery OTP Report</h2>
+                      <p className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">Upload the default Delhivery export file for this session.</p>
+                    </div>
+                    <div className="relative cursor-pointer group">
+                      <input type="file" onChange={handleOTPFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                      <div className="h-14 bg-white border-2 border-slate-200 rounded-xl flex items-center justify-center font-black text-slate-600 group-hover:border-blue-500 group-hover:text-blue-600 transition-all">
+                        SELECT FILE
+                      </div>
+                    </div>
+                    {otpUploadError && <p className="text-rose-600 font-black text-[12px] uppercase tracking-tight">{otpUploadError}</p>}
                   </div>
-                  {otpUploadError && <p className="text-rose-600 font-bold text-[12px]">{otpUploadError}</p>}
                 </div>
 
                 {otpData.length > 0 && (
-                  <div className="space-y-6">
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
                     <div className="bg-white rounded-xl border shadow-sm flex divide-x overflow-hidden">
                       {[
-                        {id: 'all', label: 'All', val: otpStats.total, color: 'text-blue-600'},
-                        {id: 'dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-[#DC2626]'},
-                        {id: 'rto', label: 'RTO', val: otpStats.rto, color: 'text-[#16A34A]'},
-                        {id: 'dto', label: 'DTO', val: otpStats.dto, color: 'text-[#16A34A]'},
-                        {id: 'pending', label: 'Pending', val: otpStats.pending, color: 'text-[#D97706]'}
+                        {id: 'all', label: 'All', val: otpStats.total, color: 'text-slate-900'},
+                        {id: 'dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-rose-600'},
+                        {id: 'rto', label: 'RTO', val: otpStats.rto, color: 'text-emerald-600'},
+                        {id: 'dto', label: 'DTO', val: otpStats.dto, color: 'text-emerald-600'},
+                        {id: 'pending', label: 'Pending', val: otpStats.pending, color: 'text-amber-600'}
                       ].map(t => (
-                        <button key={t.id} onClick={() => setOtpStatusFilter(t.id)} className={cn("flex-1 py-6 flex flex-col items-center group h-[100px] transition-all relative", otpStatusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30")}>
-                          <span className={cn("text-[32px] font-extrabold", t.color)}>{t.val}</span>
-                          <span className={cn("text-[13px] font-bold uppercase", otpStatusFilter === t.id ? t.color : "text-slate-400")}>{t.label}</span>
-                          {otpStatusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[3px]", t.color.replace('text-', 'bg-'))} />}
+                        <button key={`otp-tab-${t.id}`} onClick={() => setOtpStatusFilter(t.id)} className={cn("flex-1 py-6 flex flex-col items-center group h-[110px] transition-all relative", otpStatusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30")}>
+                          <span className={cn("text-[36px] font-black leading-none mb-1", t.color)}>{t.val}</span>
+                          <span className={cn("text-[13px] font-black uppercase tracking-widest", otpStatusFilter === t.id ? t.color : "text-slate-400")}>{t.label}</span>
+                          {otpStatusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[4px]", t.color.replace('text-', 'bg-'))} />}
                         </button>
                       ))}
                     </div>
@@ -843,21 +892,23 @@ export default function PODTool() {
                         const headers = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status'];
                         const data = otpFilteredRows.map(r => ({'AWB Number': r.awb, 'Client Name': r.client, 'OTP Status': r.otpStatus.toUpperCase(), 'Session Status': r.sessionStatus.toUpperCase()}));
                         const success = await copyDataToClipboard(data, headers);
-                        if (success) showToast(`Copied ${otpFilteredRows.length} rows`, "ok");
-                      }} className="h-10 px-5 bg-blue-600 text-white rounded-lg text-[13px] font-bold">Copy Table</button>
+                        if (success) showToast(`Copied ${otpFilteredRows.length} records`, "ok");
+                      }} className="h-10 px-6 bg-slate-900 text-white rounded-xl text-[12px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all">
+                        <Copy className="w-4 h-4" /> Copy Table
+                      </button>
                     </div>
 
-                    <div className="bg-white rounded-xl border-[1.5px] border-[#F97316] shadow-2xl overflow-hidden">
+                    <div className="bg-white rounded-xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="w-full text-center border-collapse table-fixed">
                           <thead className="bg-[#0F172A] text-white h-11">
-                            <tr key="otp-head">
+                            <tr key="otp-main-header">
                               <th style={{width: '32px'}} className="px-2"><input type="checkbox" /></th>
-                              <th style={{width: '150px'}} className="text-[11px] font-bold">AWB Number</th>
-                              <th style={{width: '180px'}} className="text-[11px] font-bold">Client Name</th>
-                              <th style={{width: '160px'}} className="text-[11px] font-bold">OTP Status</th>
-                              <th style={{width: '160px'}} className="text-[11px] font-bold">Session Status</th>
-                              <th style={{width: '250px'}} className="text-[11px] font-bold">Return Address</th>
+                              <th style={{width: '150px'}} className="text-[11px] font-bold uppercase tracking-tight">AWB Number</th>
+                              <th style={{width: '200px'}} className="text-[11px] font-bold uppercase tracking-tight">Client Name</th>
+                              <th style={{width: '180px'}} className="text-[11px] font-bold uppercase tracking-tight">OTP Status</th>
+                              <th style={{width: '180px'}} className="text-[11px] font-bold uppercase tracking-tight">Session Status</th>
+                              <th style={{width: '350px'}} className="text-[11px] font-bold uppercase tracking-tight">Return Address</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -866,11 +917,11 @@ export default function PODTool() {
                               acc[row.client].push(row);
                               return acc;
                             }, {})).sort((a: any, b: any) => b[1].length - a[1].length).map(([client, rows]: any) => (
-                              <React.Fragment key={client}>
-                                <tr key={`otp-group-${client}`} className="bg-slate-800 text-white h-8">
+                              <React.Fragment key={`otp-frag-${client}`}>
+                                <tr key={`otp-banner-${client}`} className="bg-slate-800 text-white h-9">
                                   <td colSpan={6} className="text-left px-4">
                                     <div className="flex items-center justify-between">
-                                      <span className="text-amber-400 font-bold uppercase text-[10px] tracking-widest">{client} — {rows.length} PKT</span>
+                                      <span className="text-[10px] font-black uppercase tracking-[0.1em] text-amber-400">{client} — {rows.length} PKT</span>
                                       <button onClick={() => {
                                         const text = rows.map((r: any) => r.awb).join('\n');
                                         navigator.clipboard.writeText(text);
@@ -880,33 +931,33 @@ export default function PODTool() {
                                   </td>
                                 </tr>
                                 {rows.map((row: any) => (
-                                  <tr key={row.id} className={cn(
-                                    "border-b transition-all", 
-                                    row.hasMismatch ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" : "bg-white",
-                                    row.isFTPL && (row.otpStatus === 'dispatched' ? "bg-[#FFF5F5] border-l-[3px] border-l-red-600" : "bg-[#F0FDF4]")
+                                  <tr key={`otp-row-${row.id}`} className={cn(
+                                    "border-b transition-all hover:bg-slate-50", 
+                                    row.hasMismatch ? "bg-amber-50/30 border-l-[4px] border-l-amber-500" : "bg-white",
+                                    row.isFTPL && (row.otpStatus === 'dispatched' ? "bg-rose-50/50" : "bg-emerald-50/50")
                                   )}>
                                     <td className="px-2 py-2"><input type="checkbox" /></td>
-                                    <td className="px-4 py-2 text-[13px] font-mono font-bold cursor-pointer hover:underline" onClick={() => {
+                                    <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => {
                                       navigator.clipboard.writeText(row.awb);
                                       showToast("AWB Copied", "ok");
                                     }}>{row.awb}</td>
                                     <td className={cn(
-                                      "px-4 py-2 text-[13px] font-semibold", 
-                                      row.isFTPL && (row.otpStatus === 'dispatched' ? "text-red-600" : "text-emerald-600")
+                                      "px-4 py-2 text-[13px] font-black tracking-tight", 
+                                      row.isFTPL && (row.otpStatus === 'dispatched' ? "text-rose-600" : "text-emerald-600")
                                     )}>{row.client}</td>
                                     <td className="px-4 py-2">
                                       <div className="flex flex-col items-center gap-1">
                                         <span className={cn(
-                                          "px-2 py-0.5 rounded text-[10px] font-black uppercase border", 
-                                          row.otpStatus === 'dispatched' ? "bg-[#DC2626] text-white" : 
-                                          row.otpStatus === 'pending' ? "bg-[#D97706] text-white" : 
-                                          "bg-[#16A34A] text-white"
+                                          "px-2.5 py-0.5 rounded text-[10px] font-black uppercase border", 
+                                          row.otpStatus === 'dispatched' ? "bg-rose-600 text-white border-rose-500 shadow-sm" : 
+                                          row.otpStatus === 'pending' ? "bg-amber-500 text-white border-amber-400 shadow-sm" : 
+                                          "bg-emerald-600 text-white border-emerald-500 shadow-sm"
                                         )}>
                                           {row.otpStatus}
                                         </span>
                                         {row.logicCase > 0 && (
-                                          <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black uppercase border border-amber-200">
-                                            {row.logicCase === 1 ? 'RTO — Not Closed' : row.logicCase === 2 ? 'DTO — Not Closed' : 'Pending — Not Closed'}
+                                          <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black uppercase border border-amber-300 shadow-sm">
+                                            {row.logicCase === 1 ? 'RTO — NOT CLOSED' : row.logicCase === 2 ? 'DTO — NOT CLOSED' : 'PENDING — NOT CLOSED'}
                                           </span>
                                         )}
                                       </div>
@@ -921,13 +972,13 @@ export default function PODTool() {
                                         {row.sessionStatus}
                                       </span>
                                     </td>
-                                    <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[250px]">{row.returnAddress}</td>
+                                    <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[350px] font-medium leading-relaxed">{row.returnAddress}</td>
                                   </tr>
                                 ))}
                               </React.Fragment>
                             ))}
                             {otpFilteredRows.length === 0 && (
-                              <tr key="no-otp-matches"><td colSpan={6} className="py-10 font-bold text-slate-400">No matching data in this filter</td></tr>
+                              <tr key="no-otp-matches-row"><td colSpan={6} className="py-20 font-black text-slate-300 uppercase tracking-widest text-xs">No matching data in this filter</td></tr>
                             )}
                           </tbody>
                         </table>
