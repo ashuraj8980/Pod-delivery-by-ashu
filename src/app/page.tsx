@@ -41,7 +41,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Optimized for Status Mismatch Tracking, Dual Tab Placement, and Full Address Visibility.
+ * Fully restored with Dual Tab Placement, Global Word-Wrap Return Address (Excl. Export), and Clean AWB Copying.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -184,6 +184,7 @@ export default function PODTool() {
     }
   }, [sessions, isMounted]);
 
+  // Reset OTP module when session changes
   useEffect(() => {
     if (isMounted) {
       setOtpData([]);
@@ -212,6 +213,7 @@ export default function PODTool() {
 
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
+    // Strictly exclude Return Address from exports as requested
     const exportHeaders = headers.filter(h => h !== 'Return Address');
     
     const plainText = rows.map(r => 
@@ -402,6 +404,44 @@ export default function PODTool() {
     XLSX.writeFile(wb, `Report_${currentSession?.dspId || 'Export'}.xlsx`);
   };
 
+  const handleReplacerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsProcessing(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: 'array', raw: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
+        const headers = Object.keys(rawData[0] || {});
+        const remarkKey = headers.find(h => /remark|nsl|reason/i.test(h)) || "";
+        
+        const replaced = rawData.map(row => {
+          const original = String(row[remarkKey] || "").trim();
+          const target = REMARK_MAPPING[original];
+          return {
+            ...row,
+            [remarkKey]: target || original,
+            __isReplaced: !!target,
+            __id: crypto.randomUUID()
+          };
+        });
+        
+        setReplacerData(replaced);
+        setReplacerMeta({ headers, remarkKey });
+        showToast(`Converted ${replaced.filter(r => r.__isReplaced).length} remarks!`, "ok");
+      } catch (err) {
+        showToast("Replacer failed", "err");
+      } finally {
+        setIsProcessing(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
+
   const handleOTPFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -517,13 +557,25 @@ export default function PODTool() {
     let rows = otpData;
     if (otpStatusFilter !== 'all') {
       if (otpStatusFilter === 'dispatched') {
-        rows = rows.filter(r => (r.otpStatus === 'dispatched' && (r.sessionStatus === 'dispatched' || r.sessionStatus === 'NOT FOUND')) || r.logicCase === 1 || r.logicCase === 2);
+        // Dispatched Tab Rule: Dispatched in OTP AND (Dispatched or Not Found in CSV) OR Dispatched-in-OTP but RTO/DTO-in-CSV (Dual Placement)
+        rows = rows.filter(r => 
+          (r.otpStatus === 'dispatched' && (r.sessionStatus === 'dispatched' || r.sessionStatus === 'NOT FOUND')) ||
+          r.logicCase === 1 || 
+          r.logicCase === 2
+        );
       } else if (otpStatusFilter === 'rto') {
+        // RTO Tab Rule: RTO in OTP OR Dispatched-in-OTP but RTO-in-CSV (Dual Placement)
         rows = rows.filter(r => r.otpStatus === 'rto' || r.logicCase === 1);
       } else if (otpStatusFilter === 'dto') {
+        // DTO Tab Rule: DTO in OTP OR Dispatched-in-OTP but DTO-in-CSV (Dual Placement)
         rows = rows.filter(r => r.otpStatus === 'dto' || r.logicCase === 2);
       } else if (otpStatusFilter === 'pending') {
-        rows = rows.filter(r => r.otpStatus === 'pending' || r.logicCase === 3 || (r.sessionStatus === 'pending' && r.otpStatus === 'NOT FOUND'));
+        // Pending Tab Rule: Pending in OTP OR Dispatched-in-OTP but Pending-in-CSV (Relocated) OR Pending in Session but Not Found in OTP
+        rows = rows.filter(r => 
+          r.otpStatus === 'pending' || 
+          r.logicCase === 3 || 
+          (r.sessionStatus === 'pending' && r.otpStatus === 'NOT FOUND')
+        );
       }
     }
     if (otpSelectedClients.length > 0) {
@@ -700,7 +752,7 @@ export default function PODTool() {
           <div className="grid grid-cols-12 gap-8">
             <div className="col-span-8 space-y-6">
               <div className="bg-white rounded-xl p-8 border shadow-sm text-center border-dashed border-2 hover:border-blue-500 cursor-pointer relative">
-                <input type="file" onChange={e => handleReplacerUpload(e)} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                <input type="file" onChange={handleReplacerUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                 <FileSpreadsheet className="w-10 h-10 text-slate-300 mx-auto mb-4" />
                 <p className="font-black">Drop EOD Sheet to Convert Remarks</p>
               </div>
@@ -711,12 +763,14 @@ export default function PODTool() {
                       <thead className="sticky top-0 bg-[#0F172A] text-white h-12">
                         <tr>
                           {replacerMeta?.headers.map((h, i) => <th key={i} className="px-4 font-bold text-[10px] uppercase tracking-widest">{h}</th>)}
+                          <th style={{width: '250px'}} className="px-4 font-bold text-[10px] uppercase tracking-widest">Return Address</th>
                         </tr>
                       </thead>
                       <tbody>
                         {replacerData.map(row => (
                           <tr key={row.__id} className={cn("h-11 border-b", row.__isReplaced ? "bg-emerald-50/40" : "bg-amber-50/40")}>
                             {replacerMeta?.headers.map((h, i) => <td key={i} className="px-4 font-semibold truncate max-w-[200px]">{row[h]}</td>)}
+                            <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[250px]">{row.Return_Address || row.ReturnAddress || ""}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -747,6 +801,7 @@ export default function PODTool() {
               <div className="bg-white rounded-xl border p-8 text-center"><AlertCircle className="w-8 h-8 text-amber-600 mx-auto mb-3" /><p className="font-bold">Select a session in Daily EOD Rejection tab first.</p></div>
             ) : (
               <div className="space-y-6">
+                {/* Session Card Info at Top */}
                 <div className="bg-white border rounded-xl p-4 shadow-sm flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <User className="w-5 h-5" />
@@ -757,14 +812,16 @@ export default function PODTool() {
                   </div>
                   <div className="flex gap-2">
                     <span className="px-2 py-1 rounded bg-slate-100 text-[10px] font-black uppercase">Total: {stats.total}</span>
-                    <span className="px-2 py-1 rounded bg-amber-50 text-[10px] font-black uppercase">Pending: {stats.pending}</span>
-                    <span className="px-2 py-1 rounded bg-rose-50 text-[10px] font-black uppercase">RTO: {stats.rto}</span>
-                    <span className="px-2 py-1 rounded bg-emerald-50 text-[10px] font-black uppercase">DTO: {stats.dto}</span>
+                    <span className="px-2 py-1 rounded bg-amber-50 text-[10px] font-black uppercase text-amber-600">Pending: {stats.pending}</span>
+                    <span className="px-2 py-1 rounded bg-emerald-50 text-[10px] font-black uppercase text-emerald-600">RTO: {stats.rto}</span>
+                    <span className="px-2 py-1 rounded bg-emerald-50 text-[10px] font-black uppercase text-emerald-600">DTO: {stats.dto}</span>
                   </div>
                 </div>
 
+                {/* Upload Zone */}
                 <div className="bg-white rounded-xl border p-8 text-center space-y-4">
                   <h2 className="text-xl font-extrabold">Upload Delhivery OTP Report</h2>
+                  <p className="text-[12px] font-bold text-slate-400">Upload the default Delhivery export file for this FE session.</p>
                   <div className={cn("border-2 border-dashed rounded-xl p-10 bg-slate-50 hover:bg-white hover:border-blue-500 transition-all cursor-pointer relative mx-auto max-w-2xl", isProcessing && "opacity-50")}>
                     <input type="file" onChange={handleOTPFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                     <Download className="w-8 h-8 text-slate-300 mx-auto mb-2" />
@@ -804,7 +861,7 @@ export default function PODTool() {
                       <div className="overflow-x-auto">
                         <table className="w-full text-center border-collapse table-fixed">
                           <thead className="bg-[#0F172A] text-white h-11">
-                            <tr>
+                            <tr key="otp-head">
                               <th style={{width: '32px'}} className="px-2"><input type="checkbox" /></th>
                               <th style={{width: '150px'}} className="text-[11px] font-bold">AWB Number</th>
                               <th style={{width: '180px'}} className="text-[11px] font-bold">Client Name</th>
@@ -814,43 +871,74 @@ export default function PODTool() {
                             </tr>
                           </thead>
                           <tbody>
-                            {Object.entries(otpFilteredRows.reduce((acc: any, row) => {
-                              const key = row.client;
-                              if (!acc[key]) acc[key] = [];
-                              acc[key].push(row);
-                              return acc;
-                            }, {})).sort((a: any, b: any) => b[1].length - a[1].length).map(([client, rows]: any) => (
-                              <React.Fragment key={client}>
-                                <tr key={`header-${client}`} className="h-10 border-b bg-slate-800 text-white">
-                                  <td className="px-2"><input type="checkbox" /></td>
-                                  <td colSpan={5} className="px-3 text-left">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-amber-400 font-bold uppercase text-[11px]">{client} — {rows.length} pkt</span>
-                                      <button onClick={() => {
-                                        const text = rows.map((r: any) => r.awb).join('\n');
-                                        navigator.clipboard.writeText(text);
-                                        showToast(`Copied ${rows.length} AWBs`, "ok");
-                                      }} className="text-[10px] border px-2 py-0.5 rounded">Copy AWBs</button>
-                                    </div>
-                                  </td>
-                                </tr>
-                                {rows.map((row: any) => (
-                                  <tr key={row.id} className={cn("border-b", row.hasMismatch ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" : "bg-white", row.isFTPL && (row.otpStatus === 'dispatched' ? "bg-[#FFF5F5] border-l-[3px] border-l-red-600" : "bg-[#F0FDF4]"))}>
-                                    <td className="px-2 py-2"><input type="checkbox" /></td>
-                                    <td className="px-4 py-2 text-[13px] font-mono font-bold">{row.awb}</td>
-                                    <td className={cn("px-4 py-2 text-[13px] font-semibold", row.isFTPL && (row.otpStatus === 'dispatched' ? "text-red-600" : "text-emerald-600"))}>{row.client}</td>
-                                    <td className="px-4 py-2">
-                                      <div className="flex flex-col items-center gap-1">
-                                        <span className={cn("px-2 py-0.5 rounded text-[10px] font-black uppercase border", row.otpStatus === 'dispatched' ? "bg-[#DC2626] text-white" : row.otpStatus === 'pending' ? "bg-[#D97706] text-white" : "bg-[#16A34A] text-white")}>{row.otpStatus}</span>
-                                        {row.logicCase > 0 && <span className="text-[9px] font-black uppercase text-amber-700">Not Closed on Device</span>}
+                            {otpFilteredRows.length === 0 ? (
+                              <tr key="no-otp-matches"><td colSpan={6} className="py-10 font-bold text-slate-400">No matching data in this filter</td></tr>
+                            ) : (
+                              Object.entries(otpFilteredRows.reduce((acc: any, row) => {
+                                const key = row.client;
+                                if (!acc[key]) acc[key] = [];
+                                acc[key].push(row);
+                                return acc;
+                              }, {})).sort((a: any, b: any) => b[1].length - a[1].length).map(([client, rows]: any) => (
+                                <React.Fragment key={client}>
+                                  <tr key={`header-${client}`} className="h-10 border-b bg-slate-800 text-white">
+                                    <td className="px-2"><input type="checkbox" /></td>
+                                    <td colSpan={5} className="px-3 text-left">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-amber-400 font-bold uppercase text-[11px]">{client} — {rows.length} pkt</span>
+                                        <button onClick={() => {
+                                          const text = rows.map((r: any) => r.awb).join('\n');
+                                          navigator.clipboard.writeText(text);
+                                          showToast(`Copied ${rows.length} AWBs`, "ok");
+                                        }} className="text-[10px] border px-2 py-0.5 rounded">Copy AWBs</button>
                                       </div>
                                     </td>
-                                    <td className="px-4 py-2"><span className="px-2 py-0.5 rounded text-[10px] font-black uppercase border">{row.sessionStatus}</span></td>
-                                    <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[250px]">{row.returnAddress}</td>
                                   </tr>
-                                ))}
-                              </React.Fragment>
-                            ))}
+                                  {rows.map((row: any) => (
+                                    <tr key={row.id} className={cn(
+                                      "border-b", 
+                                      row.hasMismatch ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" : "bg-white",
+                                      row.isFTPL && (row.otpStatus === 'dispatched' ? "bg-[#FFF5F5] border-l-[3px] border-l-red-600" : "bg-[#F0FDF4]")
+                                    )}>
+                                      <td className="px-2 py-2"><input type="checkbox" /></td>
+                                      <td className="px-4 py-2 text-[13px] font-mono font-bold cursor-pointer hover:underline" onClick={() => navigator.clipboard.writeText(row.awb)}>{row.awb}</td>
+                                      <td className={cn(
+                                        "px-4 py-2 text-[13px] font-semibold", 
+                                        row.isFTPL && (row.otpStatus === 'dispatched' ? "text-red-600" : "text-emerald-600")
+                                      )}>{row.client}</td>
+                                      <td className="px-4 py-2">
+                                        <div className="flex flex-col items-center gap-1">
+                                          <span className={cn(
+                                            "px-2 py-0.5 rounded text-[10px] font-black uppercase border", 
+                                            row.otpStatus === 'dispatched' ? "bg-[#DC2626] text-white" : 
+                                            row.otpStatus === 'pending' ? "bg-[#D97706] text-white" : 
+                                            "bg-[#16A34A] text-white"
+                                          )}>
+                                            {row.otpStatus}
+                                          </span>
+                                          {row.logicCase > 0 && (
+                                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black uppercase border border-amber-200">
+                                              {row.logicCase === 1 ? 'RTO — Not Closed' : row.logicCase === 2 ? 'DTO — Not Closed' : 'Pending — Not Closed'}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <span className={cn(
+                                          "px-2 py-0.5 rounded text-[10px] font-black uppercase border",
+                                          row.sessionStatus === 'pending' ? "bg-amber-50 text-amber-700 border-amber-200" : 
+                                          row.sessionStatus === 'rto' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : 
+                                          "bg-slate-50 text-slate-700 border-slate-200"
+                                        )}>
+                                          {row.sessionStatus}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[250px]">{row.returnAddress}</td>
+                                    </tr>
+                                  ))}
+                                </React.Fragment>
+                              ))
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -865,4 +953,3 @@ export default function PODTool() {
     </div>
   );
 }
-
