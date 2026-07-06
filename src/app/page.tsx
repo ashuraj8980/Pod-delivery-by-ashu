@@ -400,7 +400,7 @@ export default function PODTool() {
 
   const handleCopyTable = useCallback(async () => {
     if (!filteredRows.length) return;
-    const headers = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'Return Address', 'FE Name'];
+    const headers = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
     const exportRows = filteredRows.map((r, i) => ({
       'Date': formatDate(r.date),
       'DSP ID': i === 0 ? r.dspId : "",
@@ -408,7 +408,6 @@ export default function PODTool() {
       'Client': r.client,
       'Order ID': r.orderId,
       'Remark': r.remark,
-      'Return Address': r.returnAddress || "",
       'FE Name': r.feName
     }));
     const success = await copyDataToClipboard(exportRows, headers);
@@ -417,7 +416,7 @@ export default function PODTool() {
 
   const downloadExcel = () => {
     if (!filteredRows.length) return;
-    const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'Return Address', 'FE Name'];
+    const header = ['Date', 'DSP ID', 'AWB Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
     const excelData = filteredRows.map((r, i) => [
       formatDate(r.date), 
       { v: i === 0 ? String(r.dspId) : "", t: 's' }, 
@@ -425,7 +424,6 @@ export default function PODTool() {
       r.client, 
       { v: String(r.orderId), t: 's' }, 
       r.remark, 
-      r.returnAddress || "",
       r.feName
     ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
@@ -611,16 +609,15 @@ export default function PODTool() {
 
   const handleOtpDownload = () => {
     if (!otpFilteredRows.length) return;
-    const header = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status', 'Return Address'];
+    const header = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status'];
     const data = otpFilteredRows.map(r => [
       { v: r.awb, t: 's' },
       r.client,
       r.otpStatus.toUpperCase(),
-      r.sessionStatus.toUpperCase(),
-      r.returnAddress
+      r.sessionStatus.toUpperCase()
     ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
-    ws['!cols'] = [{ wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 60 }];
+    ws['!cols'] = [{ wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 15 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "OTP Check");
     XLSX.writeFile(wb, `OTP_Check_${selectedSessionId?.slice(0, 8)}.xlsx`);
@@ -1565,13 +1562,12 @@ export default function PODTool() {
                       <div className="flex gap-2">
                         <button onClick={handleOtpDownload} className="h-10 px-5 bg-emerald-600 text-white rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-lg whitespace-nowrap">Download Excel</button>
                         <button onClick={async () => {
-                          const headers = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status', 'Return Address'];
+                          const headers = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status'];
                           const data = otpFilteredRows.map(r => ({
                             'AWB Number': r.awb,
                             'Client Name': r.client,
                             'OTP Status': r.otpStatus.toUpperCase(),
-                            'Session Status': r.sessionStatus.toUpperCase(),
-                            'Return Address': r.returnAddress
+                            'Session Status': r.sessionStatus.toUpperCase()
                           }));
                           const success = await copyDataToClipboard(data, headers);
                           if (success) showToast(`Copied ${otpFilteredRows.length} rows`, "ok");
