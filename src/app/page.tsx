@@ -45,8 +45,9 @@ import { Checkbox } from "@/components/ui/checkbox";
  * - Title Case styling for a professional look.
  * - No LocalStorage persistence (Starts fresh).
  * - Return Address visible (word-wrap) but excluded from export.
- * - Dual Tab placement for Not Closed shipments.
+ * - Dual Tab placement for Not Closed shipments in OTP module.
  * - Client-wise grouping with Dark Banners.
+ * - Strict Upload Requirement: DSP ID and FE Name must be filled.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -94,6 +95,7 @@ const formatDate = (val: any): string => {
 const normalizeAWB = (val: any): string => {
   if (val === null || val === undefined) return "";
   let s = String(val).trim();
+  // Handle scientific notation and rounding for precision
   if (s.toLowerCase().includes('e+') || s.includes('.')) {
     const num = Number(s);
     if (!isNaN(num)) {
@@ -105,6 +107,7 @@ const normalizeAWB = (val: any): string => {
 
 const isValidAWB = (val: any): boolean => {
   const s = normalizeAWB(val);
+  // Rule: Must be numeric and at least 8 digits long
   return /^\d{8,}$/.test(s) && !isNaN(Number(s));
 };
 
@@ -168,6 +171,7 @@ export default function PODTool() {
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
   }, []);
 
+  // Reset OTP module when session changes to ensure fresh state
   useEffect(() => {
     if (isMounted) {
       setOtpData([]);
@@ -197,19 +201,25 @@ export default function PODTool() {
 
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
+    // Rule: Exclude return address from export/clipboard
     const exportHeaders = headers.filter(h => !/return address|return_address/i.test(h));
+    
     const plainText = rows.map(r => 
       exportHeaders.map(h => String(r[h] || "").trim()).join("\t")
     ).join("\n");
+
     const rowsHtml = rows.map(r => {
       const cells = exportHeaders.map(h => {
         const val = String(r[h] || "").trim();
-        const style = h.toLowerCase().includes('awb') ? 'style=\'mso-number-format:"\\@"\'' : '';
+        // Force text format in Excel to prevent AWB digits rounding
+        const style = h.toLowerCase().includes('awb') || h.toLowerCase().includes('waybill') ? 'style=\'mso-number-format:"\\@"\'' : '';
         return `<td ${style}>${val}</td>`;
       }).join("");
       return `<tr>${cells}</tr>`;
     }).join("");
+
     const htmlTable = `<html><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
+
     try {
       const blobs: Record<string, Blob> = {
         'text/plain': new Blob([plainText], { type: 'text/plain' }),
@@ -221,6 +231,7 @@ export default function PODTool() {
   }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Rule: Require DSP ID and FE Name before upload
     if (!setupData.feName || !setupData.dspId) {
       showToast("Please Enter DSP ID And FE Name First!", "err");
       e.target.value = "";
@@ -243,6 +254,7 @@ export default function PODTool() {
             return key ? row[key] : "";
           };
           const rawAwb = findVal(/waybill|awb|awbnumber/);
+          // Strict Validation: Skip non-numeric or short AWBs
           if (!isValidAWB(rawAwb)) return null;
           const awb = normalizeAWB(rawAwb);
           const statusRaw = String(findVal(/status|currentstatus/)).toLowerCase().trim();
@@ -263,13 +275,26 @@ export default function PODTool() {
             isIntact: /reject|intact|barcode|content/i.test(remark)
           };
         }).filter((row): row is PODRow => row !== null && row.awb.length >= 8 && row.status !== "Unknown");
+        
         if (parsedRows.length === 0) throw new Error("No Valid Data Found In EOD Report.");
+        
         const newSessionId = crypto.randomUUID();
-        const newSession: Session = { id: newSessionId, feName: setupData.feName, dspId: setupData.dspId, date: formatDate(setupData.date), data: parsedRows, timestamp: Date.now() };
+        const newSession: Session = { 
+          id: newSessionId, 
+          feName: setupData.feName, 
+          dspId: setupData.dspId, 
+          date: formatDate(setupData.date), 
+          data: parsedRows, 
+          timestamp: Date.now() 
+        };
         setSessions(prev => [newSession, ...prev]);
         setSelectedSessionId(newSessionId);
         showToast(`Imported ${parsedRows.length} Rows!`, "ok");
-      } catch (err: any) { showToast(err.message || "Failed To Import File", "err"); } finally { setIsProcessing(false); }
+      } catch (err: any) { 
+        showToast(err.message || "Failed To Import File", "err"); 
+      } finally { 
+        setIsProcessing(false); 
+      }
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
@@ -301,7 +326,8 @@ export default function PODTool() {
 
   const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
-    const text = rowsToCopy.map(r => r.awb).join('\n');
+    // Rule: Clean copy without ' symbol
+    const text = rowsToCopy.map(r => normalizeAWB(r.awb)).join('\n');
     try {
       await navigator.clipboard.writeText(text);
       showToast(`Copied ${rowsToCopy.length} AWBs`, "ok");
@@ -314,7 +340,7 @@ export default function PODTool() {
     const exportRows = rowsToCopy.map((r, i) => ({
       'Date': formatDate(r.date),
       'DSP ID': i === 0 ? r.dspId : "",
-      'Waybill Number': r.awb,
+      'Waybill Number': normalizeAWB(r.awb),
       'Client': r.client,
       'Order ID': r.orderId,
       'Remark': r.remark,
@@ -330,7 +356,7 @@ export default function PODTool() {
     const excelData = rowsToDownload.map((r, i) => [
       formatDate(r.date), 
       { v: i === 0 ? String(r.dspId) : "", t: 's' }, 
-      { v: String(r.awb), t: 's' }, 
+      { v: String(normalizeAWB(r.awb)), t: 's' }, 
       r.client, 
       { v: String(r.orderId), t: 's' }, 
       r.remark, 
@@ -388,7 +414,7 @@ export default function PODTool() {
         const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
         
         const sessionMap = new Map<string, PODRow>();
-        currentSession.data.forEach(r => sessionMap.set(r.awb, r));
+        currentSession.data.forEach(r => sessionMap.set(normalizeAWB(r.awb), r));
         
         let matchCount = 0;
         const tempOtpData: OTPRow[] = [];
@@ -431,17 +457,19 @@ export default function PODTool() {
           otpAWBs.add(awb);
         });
 
+        // Rule: Zero match validation
         if (matchCount === 0) {
-          setOtpUploadError(`Wrong File Uploaded. No Waybill Numbers Match The Current Session. Please Upload The Delhivery OTP Report For ${currentSession.feName} ${currentSession.dspId}.`);
+          setOtpUploadError(`Wrong File Uploaded. No AWB Numbers Match The Current Session. Please Upload The Delhivery OTP Report For ${currentSession.feName} ${currentSession.dspId}.`);
           setIsProcessing(false);
           e.target.value = "";
           return;
         }
 
-        currentSession.data.filter(r => r.status === 'Pending' && !otpAWBs.has(r.awb)).forEach(sr => {
+        // Add session records not in OTP file (mostly pending)
+        currentSession.data.filter(r => r.status === 'Pending' && !otpAWBs.has(normalizeAWB(r.awb))).forEach(sr => {
           tempOtpData.push({
             id: crypto.randomUUID(),
-            awb: sr.awb, client: sr.client, otpStatus: 'Not Found', sessionStatus: 'Pending',
+            awb: normalizeAWB(sr.awb), client: sr.client, otpStatus: 'Not Found', sessionStatus: 'Pending',
             returnAddress: sr.returnAddress || "", isFTPL: sr.client.toUpperCase().includes('FTPL'),
             isNotClosed: false, notClosedType: null
           });
@@ -459,12 +487,18 @@ export default function PODTool() {
     let rows = otpData;
     if (otpStatusFilter !== 'All') {
       if (otpStatusFilter === 'Dispatched') {
-        rows = rows.filter(r => (r.otpStatus === 'Dispatched' && r.notClosedType !== 'Pending'));
+        // Show genuinely dispatched + RTO not closed + DTO not closed
+        rows = rows.filter(r => 
+          (r.otpStatus === 'Dispatched' && r.notClosedType !== 'Pending')
+        );
       } else if (otpStatusFilter === 'RTO') {
+        // Show OTP RTO + RTO not closed
         rows = rows.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO');
       } else if (otpStatusFilter === 'DTO') {
+        // Show OTP DTO + DTO not closed
         rows = rows.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO');
       } else if (otpStatusFilter === 'Pending') {
+        // Show OTP Pending + Pending not closed + Session Pending (Not found in OTP)
         rows = rows.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending' || (r.otpStatus === 'Not Found' && r.sessionStatus === 'Pending'));
       }
     }
@@ -535,11 +569,24 @@ export default function PODTool() {
                 <input type="text" value={setupData.feName} onChange={e => setSetupData({...setupData, feName: e.target.value})} className="bg-[#f9fafb] border-[1.5px] border-[#d1d5db] rounded-lg px-3.5 h-[42px] text-[14px] font-bold outline-none focus:border-blue-500" placeholder="FE Name" />
                 <input type="date" value={setupData.date} onChange={e => setSetupData({...setupData, date: e.target.value})} className="bg-[#f9fafb] border-[1.5px] border-[#d1d5db] rounded-lg px-3.5 h-[42px] text-[14px] font-bold outline-none focus:border-blue-500" />
               </div>
-              <div className="border-2 border-dashed rounded-xl p-8 text-center bg-slate-50 hover:bg-white hover:border-blue-500 transition-all cursor-pointer relative">
-                <input type="file" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+              
+              {/* Rule: Visual hint and lock for upload zone */}
+              <div className={cn(
+                "border-2 border-dashed rounded-xl p-8 text-center transition-all relative",
+                (!setupData.feName || !setupData.dspId) 
+                  ? "bg-slate-100 border-slate-200 cursor-not-allowed opacity-60" 
+                  : "bg-slate-50 hover:bg-white hover:border-blue-500 cursor-pointer"
+              )}>
+                {setupData.feName && setupData.dspId && (
+                  <input type="file" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                )}
                 <div className="space-y-3">
                   <FileSpreadsheet className="w-6 h-6 text-slate-400 mx-auto" />
-                  <p className="text-sm font-black">Import Daily EOD Report</p>
+                  <p className="text-sm font-black">
+                    {(!setupData.feName || !setupData.dspId) 
+                      ? "Enter DSP ID And FE Name To Upload" 
+                      : "Import Daily EOD Report"}
+                  </p>
                 </div>
               </div>
             </div>
@@ -628,7 +675,7 @@ export default function PODTool() {
                               <tr key={`row-${row.id}`} className={cn("border-b hover:bg-blue-50/40 transition-colors", selectedRowIds.has(row.id) && "bg-blue-50/50")}>
                                 <td className="px-2 py-2"><input type="checkbox" checked={selectedRowIds.has(row.id)} onChange={() => toggleRowSelection(row.id)} /></td>
                                 <td className="px-2 py-2 text-[13px] font-bold text-slate-600">{row.dspId}</td>
-                                <td className="px-2 py-2 text-[13px] font-bold font-mono text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(row.awb); showToast("Waybill Copied", "ok"); }}>{row.awb}</td>
+                                <td className="px-2 py-2 text-[13px] font-bold font-mono text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
                                 <td className="px-2 py-2 text-[13px] font-semibold text-slate-800">{row.client}</td>
                                 <td className="px-2 py-2 text-[13px] font-medium text-slate-500">{row.orderId}</td>
                                 <td className="px-2 py-2">
@@ -754,9 +801,9 @@ export default function PODTool() {
                       {[
                         {id: 'All', label: 'All', val: otpStats.total, color: 'text-slate-900'},
                         {id: 'Dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-rose-600'},
+                        {id: 'Pending', label: 'Pending', val: otpStats.pending, color: 'text-amber-600'},
                         {id: 'RTO', label: 'RTO', val: otpStats.rto, color: 'text-emerald-600'},
-                        {id: 'DTO', label: 'DTO', val: otpStats.dto, color: 'text-emerald-600'},
-                        {id: 'Pending', label: 'Pending', val: otpStats.pending, color: 'text-amber-600'}
+                        {id: 'DTO', label: 'DTO', val: otpStats.dto, color: 'text-emerald-600'}
                       ].map(t => (
                         <button key={`otp-tab-${t.id}`} onClick={() => setOtpStatusFilter(t.id)} className={cn("flex-1 py-6 flex flex-col items-center group h-[110px] transition-all relative", otpStatusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30")}>
                           <span className={cn("text-[36px] font-black leading-none mb-1", t.color)}>{t.val}</span>
@@ -807,7 +854,7 @@ export default function PODTool() {
                                     row.isFTPL && (row.otpStatus === 'Dispatched' ? "bg-rose-50/50" : "bg-emerald-50/50")
                                   )}>
                                     <td className="px-2 py-2"><input type="checkbox" /></td>
-                                    <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(row.awb); showToast("Waybill Copied", "ok"); }}>{row.awb}</td>
+                                    <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
                                     <td className={cn("px-4 py-2 text-[13px] font-black tracking-tight", row.isFTPL && (row.otpStatus === 'Dispatched' ? "text-rose-600" : "text-emerald-600"))}>{row.client}</td>
                                     <td className="px-4 py-2">
                                       <div className="flex flex-col items-center gap-1">
@@ -853,4 +900,3 @@ export default function PODTool() {
     </div>
   );
 }
-
