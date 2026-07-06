@@ -41,34 +41,36 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 
 /**
- * @fileOverview Delhivery POD Management Tool - Palam Vihar RPC Edition
- * Restored with Remark Chips, Colorful UI, Client Grouping, and Non-Exportable Return Address.
- * All text converted to Normal Case as per user request.
- * Removed LocalStorage persistence - App starts fresh on every reload.
+ * @fileOverview Delhivery POD Management Tool - Professional Edition
+ * - Title Case styling for a professional look.
+ * - No LocalStorage persistence (Starts fresh).
+ * - Return Address visible (word-wrap) but excluded from export.
+ * - Dual Tab placement for Not Closed shipments.
+ * - Client-wise grouping with Dark Banners.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
-  "Incomplete address & contact details": "Return address not found (Need to new contact number)",
-  "On Hold. Recipient unable to Accept Delivery": "Client out of station (Receive the shipment after 3 days)",
-  "On Hold. Recipient unable to Accept Delivery for 5 days": "Client out of station (Receive the shipment after 3 days)",
-  "Not Attempted": "Not attempted to client",
-  "Seller/CWH permanently closed": "Seller/CWH permanently closed",
-  "Recipient unavailable.Establishment closed": "Client office found close",
-  "Reject but package intact": "Client not share OTP",
-  "Reject - RID not found": "Not traced in client system",
-  "Barcode/QR mismatch": "Client rejected due to barcode/QR mismatch",
-  "Content mismatch/missing - package tampered": "Client rejected due to content mismatch",
-  "Short shipment": "Short shipment received by FE",
-  "Recipient wants delivery at a different address": "Return address shifted (Need to new return address)"
+  "Incomplete address & contact details": "Return Address Not Found (Need New Contact Number)",
+  "On Hold. Recipient unable to Accept Delivery": "Client Out Of Station (Receive Shipment After 3 Days)",
+  "On Hold. Recipient unable to Accept Delivery for 5 days": "Client Out Of Station (Receive Shipment After 3 Days)",
+  "Not Attempted": "Not Attempted To Client",
+  "Seller/CWH permanently closed": "Seller/CWH Permanently Closed",
+  "Recipient unavailable.Establishment closed": "Client Office Found Closed",
+  "Reject but package intact": "Client Not Shared OTP",
+  "Reject - RID not found": "Not Traced In Client System",
+  "Barcode/QR mismatch": "Client Rejected Due To Barcode/QR Mismatch",
+  "Content mismatch/missing - package tampered": "Client Rejected Due To Content Mismatch",
+  "Short shipment": "Short Shipment Received By FE",
+  "Recipient wants delivery at a different address": "Return Address Shifted (Need New Return Address)"
 };
 
 const STATUS_MAP: Record<string, string> = {
-  "pending": "pending",
-  "dispatched": "dispatched",
-  "dispatch": "dispatched",
-  "rto": "rto",
-  "dto": "dto",
-  "delivered": "rto"
+  "pending": "Pending",
+  "dispatched": "Dispatched",
+  "dispatch": "Dispatched",
+  "rto": "RTO",
+  "dto": "DTO",
+  "delivered": "RTO"
 };
 
 const formatDate = (val: any): string => {
@@ -103,7 +105,7 @@ const normalizeAWB = (val: any): string => {
 
 const isValidAWB = (val: any): boolean => {
   const s = normalizeAWB(val);
-  return /^\d{8,}$/.test(s);
+  return /^\d{8,}$/.test(s) && !isNaN(Number(s));
 };
 
 interface PODRow {
@@ -128,9 +130,8 @@ interface OTPRow {
   sessionStatus: string;
   returnAddress: string;
   isFTPL: boolean;
-  isRTONotClosed: boolean;
-  isDTONotClosed: boolean;
-  isPendingNotClosed: boolean;
+  isNotClosed: boolean;
+  notClosedType: 'RTO' | 'DTO' | 'Pending' | null;
 }
 
 interface Session {
@@ -146,7 +147,7 @@ export default function PODTool() {
   const [activeTab, setActiveTab] = useState<"eod" | "remark" | "otp">("eod");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
   const [activeRemarkChip, setActiveRemarkChip] = useState<string | null>(null);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
@@ -159,16 +160,14 @@ export default function PODTool() {
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
 
   const [otpData, setOtpData] = useState<OTPRow[]>([]);
-  const [otpStatusFilter, setOtpStatusFilter] = useState<string>("all");
+  const [otpStatusFilter, setOtpStatusFilter] = useState<string>("All");
   const [otpUploadError, setOtpUploadError] = useState<string | null>(null);
 
-  // Initial mount - Starts fresh every time (no localStorage persistence)
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
   }, []);
 
-  // Clear OTP data when session changes to maintain data integrity
   useEffect(() => {
     if (isMounted) {
       setOtpData([]);
@@ -176,7 +175,6 @@ export default function PODTool() {
     }
   }, [selectedSessionId, isMounted]);
 
-  // Reset remark chips when tab changes
   useEffect(() => {
     setActiveRemarkChip(null);
   }, [statusFilter]);
@@ -199,8 +197,7 @@ export default function PODTool() {
 
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
-    // Explicitly exclude Return Address from clipboard exports as per requirement
-    const exportHeaders = headers.filter(h => h !== 'Return Address' && h !== 'Return_Address' && h !== 'return address');
+    const exportHeaders = headers.filter(h => !/return address|return_address/i.test(h));
     const plainText = rows.map(r => 
       exportHeaders.map(h => String(r[h] || "").trim()).join("\t")
     ).join("\n");
@@ -225,7 +222,7 @@ export default function PODTool() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!setupData.feName || !setupData.dspId) {
-      showToast("please enter dsp id and fe name first!", "err");
+      showToast("Please Enter DSP ID And FE Name First!", "err");
       e.target.value = "";
       return;
     }
@@ -249,7 +246,7 @@ export default function PODTool() {
           if (!isValidAWB(rawAwb)) return null;
           const awb = normalizeAWB(rawAwb);
           const statusRaw = String(findVal(/status|currentstatus/)).toLowerCase().trim();
-          const status = STATUS_MAP[statusRaw] || "unknown";
+          const status = STATUS_MAP[statusRaw] || "Unknown";
           const remark = String(findVal(/remark|remarks|nsl/)).trim();
           const returnAddress = String(findVal(/return_address|returnaddress/)).trim();
           return {
@@ -258,21 +255,21 @@ export default function PODTool() {
             client: String(findVal(/client|clientname/)),
             orderId: normalizeAWB(findVal(/order|orderid/)),
             status,
-            remark: remark || "no remark",
+            remark: remark || "No Remark",
             feName: setupData.feName,
             dspId: setupData.dspId,
             date: formatDate(setupData.date),
             returnAddress,
             isIntact: /reject|intact|barcode|content/i.test(remark)
           };
-        }).filter((row): row is PODRow => row !== null && row.awb.length >= 8 && row.status !== "unknown");
-        if (parsedRows.length === 0) throw new Error("no valid data found in eod report.");
+        }).filter((row): row is PODRow => row !== null && row.awb.length >= 8 && row.status !== "Unknown");
+        if (parsedRows.length === 0) throw new Error("No Valid Data Found In EOD Report.");
         const newSessionId = crypto.randomUUID();
         const newSession: Session = { id: newSessionId, feName: setupData.feName, dspId: setupData.dspId, date: formatDate(setupData.date), data: parsedRows, timestamp: Date.now() };
         setSessions(prev => [newSession, ...prev]);
         setSelectedSessionId(newSessionId);
-        showToast(`imported ${parsedRows.length} rows!`, "ok");
-      } catch (err: any) { showToast(err.message || "failed to import file", "err"); } finally { setIsProcessing(false); }
+        showToast(`Imported ${parsedRows.length} Rows!`, "ok");
+      } catch (err: any) { showToast(err.message || "Failed To Import File", "err"); } finally { setIsProcessing(false); }
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
@@ -281,7 +278,7 @@ export default function PODTool() {
   const filteredRows = useMemo(() => {
     if (!currentSession) return [];
     let rows = currentSession.data;
-    if (statusFilter !== 'all') rows = rows.filter(r => r.status === statusFilter);
+    if (statusFilter !== 'All') rows = rows.filter(r => r.status === statusFilter);
     if (activeRemarkChip) rows = rows.filter(r => r.remark === activeRemarkChip);
     if (selectedClients.length > 0) rows = rows.filter(r => selectedClients.includes(r.client));
     if (searchTerm) {
@@ -295,42 +292,41 @@ export default function PODTool() {
     if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
     return {
       total: currentSession.data.length,
-      pending: currentSession.data.filter(r => r.status === 'pending').length,
-      dispatched: currentSession.data.filter(r => r.status === 'dispatched').length,
-      rto: currentSession.data.filter(r => r.status === 'rto').length,
-      dto: currentSession.data.filter(r => r.status === 'dto').length,
+      pending: currentSession.data.filter(r => r.status === 'Pending').length,
+      dispatched: currentSession.data.filter(r => r.status === 'Dispatched').length,
+      rto: currentSession.data.filter(r => r.status === 'RTO').length,
+      dto: currentSession.data.filter(r => r.status === 'DTO').length,
     };
   }, [currentSession]);
 
   const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
-    // Clean AWB copy without apostrophe as per user request
     const text = rowsToCopy.map(r => r.awb).join('\n');
     try {
       await navigator.clipboard.writeText(text);
-      showToast(`copied ${rowsToCopy.length} awb`, "ok");
-    } catch (err) { showToast("failed to copy awb", "err"); }
+      showToast(`Copied ${rowsToCopy.length} AWBs`, "ok");
+    } catch (err) { showToast("Failed To Copy AWBs", "err"); }
   };
 
   const handleCopyTable = useCallback(async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
-    const headers = ['date', 'dsp id', 'awb number', 'client', 'order id', 'remark', 'fe name'];
+    const headers = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
     const exportRows = rowsToCopy.map((r, i) => ({
-      'date': formatDate(r.date),
-      'dsp id': i === 0 ? r.dspId : "",
-      'awb number': r.awb,
-      'client': r.client,
-      'order id': r.orderId,
-      'remark': r.remark,
-      'fe name': r.feName
+      'Date': formatDate(r.date),
+      'DSP ID': i === 0 ? r.dspId : "",
+      'Waybill Number': r.awb,
+      'Client': r.client,
+      'Order ID': r.orderId,
+      'Remark': r.remark,
+      'FE Name': r.feName
     }));
     const success = await copyDataToClipboard(exportRows, headers);
-    if (success) showToast(`copied ${rowsToCopy.length} rows to clipboard`, "ok");
+    if (success) showToast(`Copied ${rowsToCopy.length} Rows To Clipboard`, "ok");
   }, [copyDataToClipboard, showToast]);
 
   const downloadExcel = (rowsToDownload: any[]) => {
     if (!rowsToDownload.length) return;
-    const header = ['date', 'dsp id', 'awb number', 'client', 'order id', 'remark', 'fe name'];
+    const header = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
     const excelData = rowsToDownload.map((r, i) => [
       formatDate(r.date), 
       { v: i === 0 ? String(r.dspId) : "", t: 's' }, 
@@ -342,8 +338,8 @@ export default function PODTool() {
     ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "report");
-    XLSX.writeFile(wb, `report_${currentSession?.dspId || 'export'}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, `Report_${currentSession?.dspId || 'Export'}.xlsx`);
   };
 
   const handleReplacerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -366,8 +362,8 @@ export default function PODTool() {
         });
         setReplacerData(replaced);
         setReplacerMeta({ headers, remarkKey });
-        showToast(`converted ${replaced.filter(r => r.__isReplaced).length} remarks!`, "ok");
-      } catch (err) { showToast("replacer failed", "err"); } finally { setIsProcessing(false); }
+        showToast(`Converted ${replaced.filter(r => r.__isReplaced).length} Remarks!`, "ok");
+      } catch (err) { showToast("Replacer Failed", "err"); } finally { setIsProcessing(false); }
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
@@ -377,7 +373,7 @@ export default function PODTool() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!selectedSessionId || !currentSession) {
-      showToast("please select a session in daily eod rejection tab first.", "err");
+      showToast("Please Select A Session In Daily EOD Rejection Tab First.", "err");
       e.target.value = "";
       return;
     }
@@ -411,47 +407,49 @@ export default function PODTool() {
           
           const client = String(findVal(/client/i)).trim();
           const otpStatusRaw = String(findVal(/status|currentstatus/i)).toLowerCase().trim();
-          let otpStatus = 'unknown';
-          if (otpStatusRaw.includes('dispatched') || otpStatusRaw.includes('dispatch')) otpStatus = 'dispatched';
-          else if (otpStatusRaw.includes('rto')) otpStatus = 'rto';
-          else if (otpStatusRaw.includes('dto')) otpStatus = 'dto';
-          else if (otpStatusRaw.includes('pending')) otpStatus = 'pending';
+          let otpStatus = 'Unknown';
+          if (otpStatusRaw.includes('dispatched') || otpStatusRaw.includes('dispatch')) otpStatus = 'Dispatched';
+          else if (otpStatusRaw.includes('rto')) otpStatus = 'RTO';
+          else if (otpStatusRaw.includes('dto')) otpStatus = 'DTO';
+          else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
 
           const sessionRow = sessionMap.get(awb);
-          const csvStatus = sessionRow?.status || 'not found';
+          const csvStatus = sessionRow?.status || 'Not Found';
           
+          const isRTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'RTO';
+          const isDTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'DTO';
+          const isPendingNotClosed = otpStatus === 'Dispatched' && csvStatus === 'Pending';
+
           tempOtpData.push({
             id: crypto.randomUUID(),
             awb, client, otpStatus, sessionStatus: csvStatus,
             returnAddress: sessionRow?.returnAddress || "",
             isFTPL: client.toUpperCase().includes('FTPL'),
-            isRTONotClosed: otpStatus === 'dispatched' && csvStatus === 'rto',
-            isDTONotClosed: otpStatus === 'dispatched' && csvStatus === 'dto',
-            isPendingNotClosed: otpStatus === 'dispatched' && csvStatus === 'pending'
+            isNotClosed: isRTONotClosed || isDTONotClosed || isPendingNotClosed,
+            notClosedType: isRTONotClosed ? 'RTO' : isDTONotClosed ? 'DTO' : isPendingNotClosed ? 'Pending' : null
           });
           otpAWBs.add(awb);
         });
 
         if (matchCount === 0) {
-          setOtpUploadError(`wrong file uploaded. no awb numbers match the current session. please upload the delhivery otp report for ${currentSession.feName} ${currentSession.dspId}.`);
+          setOtpUploadError(`Wrong File Uploaded. No Waybill Numbers Match The Current Session. Please Upload The Delhivery OTP Report For ${currentSession.feName} ${currentSession.dspId}.`);
           setIsProcessing(false);
           e.target.value = "";
           return;
         }
 
-        // Add session-only pending rows
-        currentSession.data.filter(r => r.status === 'pending' && !otpAWBs.has(r.awb)).forEach(sr => {
+        currentSession.data.filter(r => r.status === 'Pending' && !otpAWBs.has(r.awb)).forEach(sr => {
           tempOtpData.push({
             id: crypto.randomUUID(),
-            awb: sr.awb, client: sr.client, otpStatus: 'not found', sessionStatus: 'pending',
+            awb: sr.awb, client: sr.client, otpStatus: 'Not Found', sessionStatus: 'Pending',
             returnAddress: sr.returnAddress || "", isFTPL: sr.client.toUpperCase().includes('FTPL'),
-            isRTONotClosed: false, isDTONotClosed: false, isPendingNotClosed: false
+            isNotClosed: false, notClosedType: null
           });
         });
 
         setOtpData(tempOtpData);
-        showToast(`imported ${tempOtpData.length} records.`, "ok");
-      } catch (err) { showToast("failed to process otp report", "err"); } finally { setIsProcessing(false); }
+        showToast(`Imported ${tempOtpData.length} Records.`, "ok");
+      } catch (err) { showToast("Failed To Process OTP Report", "err"); } finally { setIsProcessing(false); }
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
@@ -459,19 +457,15 @@ export default function PODTool() {
 
   const otpFilteredRows = useMemo(() => {
     let rows = otpData;
-    if (otpStatusFilter !== 'all') {
-      if (otpStatusFilter === 'dispatched') {
-        // Genuiune dispatched + RTO/DTO not closed (Dual placement)
-        rows = rows.filter(r => (r.otpStatus === 'dispatched' && !r.isPendingNotClosed));
-      } else if (otpStatusFilter === 'rto') {
-        // OTP RTO + RTO not closed
-        rows = rows.filter(r => r.otpStatus === 'rto' || r.isRTONotClosed);
-      } else if (otpStatusFilter === 'dto') {
-        // OTP DTO + DTO not closed
-        rows = rows.filter(r => r.otpStatus === 'dto' || r.isDTONotClosed);
-      } else if (otpStatusFilter === 'pending') {
-        // OTP Pending + Pending not closed + Session only pending
-        rows = rows.filter(r => r.otpStatus === 'pending' || r.isPendingNotClosed || (r.otpStatus === 'not found' && r.sessionStatus === 'pending'));
+    if (otpStatusFilter !== 'All') {
+      if (otpStatusFilter === 'Dispatched') {
+        rows = rows.filter(r => (r.otpStatus === 'Dispatched' && r.notClosedType !== 'Pending'));
+      } else if (otpStatusFilter === 'RTO') {
+        rows = rows.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO');
+      } else if (otpStatusFilter === 'DTO') {
+        rows = rows.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO');
+      } else if (otpStatusFilter === 'Pending') {
+        rows = rows.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending' || (r.otpStatus === 'Not Found' && r.sessionStatus === 'Pending'));
       }
     }
     return rows;
@@ -480,10 +474,10 @@ export default function PODTool() {
   const otpStats = useMemo(() => {
     return {
       total: otpData.length,
-      dispatched: otpData.filter(r => (r.otpStatus === 'dispatched' && !r.isPendingNotClosed)).length,
-      rto: otpData.filter(r => r.otpStatus === 'rto' || r.isRTONotClosed).length,
-      dto: otpData.filter(r => r.otpStatus === 'dto' || r.isDTONotClosed).length,
-      pending: otpData.filter(r => r.otpStatus === 'pending' || r.isPendingNotClosed || (r.otpStatus === 'not found' && r.sessionStatus === 'pending')).length,
+      dispatched: otpData.filter(r => (r.otpStatus === 'Dispatched' && r.notClosedType !== 'Pending')).length,
+      rto: otpData.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO').length,
+      dto: otpData.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO').length,
+      pending: otpData.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending' || (r.otpStatus === 'Not Found' && r.sessionStatus === 'Pending')).length,
     };
   }, [otpData]);
 
@@ -514,18 +508,18 @@ export default function PODTool() {
             <Truck className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-[16px] font-extrabold text-white tracking-tight leading-none">pod tool</h1>
-            <p className="text-[10px] text-blue-400 font-bold tracking-widest leading-none mt-1">palam vihar rpc</p>
+            <h1 className="text-[16px] font-extrabold text-white tracking-tight leading-none">POD Tool</h1>
+            <p className="text-[10px] text-blue-400 font-bold tracking-widest leading-none mt-1">Palam Vihar RPC</p>
           </div>
         </div>
         <div className="flex gap-8 h-full">
           {['eod', 'remark', 'otp'].map(id => (
             <button key={id} onClick={() => setActiveTab(id as any)} className={cn("h-full px-1 text-[13px] font-semibold transition-all relative border-b-2", activeTab === id ? "text-white border-blue-500" : "text-slate-400 border-transparent hover:text-white")}>
-              {id === 'eod' ? 'daily eod rejection' : id === 'remark' ? 'eod rejection remark' : 'otp dispatch check'}
+              {id === 'eod' ? 'Daily EOD Rejection' : id === 'remark' ? 'EOD Rejection Remark' : 'OTP Dispatch Check'}
             </button>
           ))}
         </div>
-        <div className="text-[11px] font-black text-amber-400 tracking-widest">by ashu</div>
+        <div className="text-[11px] font-black text-amber-400 tracking-widest">By Ashu</div>
       </header>
 
       <main className="max-w-[1800px] mx-auto p-6 space-y-6">
@@ -534,18 +528,18 @@ export default function PODTool() {
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
               <div className="flex items-center gap-2 mb-2">
                 <Settings className="w-4 h-4 text-blue-600" />
-                <h2 className="text-[13px] font-bold text-[#111827] tracking-tight">session setup</h2>
+                <h2 className="text-[13px] font-bold text-[#111827] tracking-tight">Session Setup</h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <input type="text" value={setupData.dspId} onChange={e => setSetupData({...setupData, dspId: e.target.value.replace(/\D/g, '')})} className="bg-[#f9fafb] border-[1.5px] border-[#d1d5db] rounded-lg px-3.5 h-[42px] text-[14px] font-bold outline-none focus:border-blue-500" placeholder="dsp id" />
-                <input type="text" value={setupData.feName} onChange={e => setSetupData({...setupData, feName: e.target.value})} className="bg-[#f9fafb] border-[1.5px] border-[#d1d5db] rounded-lg px-3.5 h-[42px] text-[14px] font-bold outline-none focus:border-blue-500" placeholder="fe name" />
+                <input type="text" value={setupData.dspId} onChange={e => setSetupData({...setupData, dspId: e.target.value.replace(/\D/g, '')})} className="bg-[#f9fafb] border-[1.5px] border-[#d1d5db] rounded-lg px-3.5 h-[42px] text-[14px] font-bold outline-none focus:border-blue-500" placeholder="DSP ID" />
+                <input type="text" value={setupData.feName} onChange={e => setSetupData({...setupData, feName: e.target.value})} className="bg-[#f9fafb] border-[1.5px] border-[#d1d5db] rounded-lg px-3.5 h-[42px] text-[14px] font-bold outline-none focus:border-blue-500" placeholder="FE Name" />
                 <input type="date" value={setupData.date} onChange={e => setSetupData({...setupData, date: e.target.value})} className="bg-[#f9fafb] border-[1.5px] border-[#d1d5db] rounded-lg px-3.5 h-[42px] text-[14px] font-bold outline-none focus:border-blue-500" />
               </div>
               <div className="border-2 border-dashed rounded-xl p-8 text-center bg-slate-50 hover:bg-white hover:border-blue-500 transition-all cursor-pointer relative">
                 <input type="file" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                 <div className="space-y-3">
                   <FileSpreadsheet className="w-6 h-6 text-slate-400 mx-auto" />
-                  <p className="text-sm font-black">import daily eod report</p>
+                  <p className="text-sm font-black">Import Daily EOD Report</p>
                 </div>
               </div>
             </div>
@@ -557,7 +551,7 @@ export default function PODTool() {
                     <p className="font-extrabold text-[14px] text-slate-900">{s.feName}</p>
                     <p className="text-[11px] text-slate-500 font-bold">{s.dspId} • {s.date}</p>
                     <div className="mt-2 flex gap-1">
-                      <span className="text-[10px] font-black bg-slate-100 text-slate-600 px-2 py-0.5 rounded-lg border border-slate-200">{s.data.length} pkt</span>
+                      <span className="text-[10px] font-black bg-slate-100 text-slate-600 px-2 py-0.5 rounded-lg border border-slate-200">{s.data.length} Pkt</span>
                     </div>
                   </div>
                 ))}
@@ -568,11 +562,11 @@ export default function PODTool() {
               <div className="space-y-6">
                 <div className="bg-white rounded-xl border shadow-sm flex divide-x overflow-hidden">
                   {[
-                    {id: 'all', label: 'all', color: 'text-slate-900', val: stats.total},
-                    {id: 'pending', label: 'pending', color: 'text-amber-600', val: stats.pending},
-                    {id: 'dispatched', label: 'dispatched', color: 'text-blue-600', val: stats.dispatched},
-                    {id: 'rto', label: 'rto', color: 'text-emerald-600', val: stats.rto},
-                    {id: 'dto', label: 'dto', color: 'text-emerald-600', val: stats.dto}
+                    {id: 'All', label: 'All', color: 'text-slate-900', val: stats.total},
+                    {id: 'Pending', label: 'Pending', color: 'text-amber-600', val: stats.pending},
+                    {id: 'Dispatched', label: 'Dispatched', color: 'text-blue-600', val: stats.dispatched},
+                    {id: 'RTO', label: 'RTO', color: 'text-emerald-600', val: stats.rto},
+                    {id: 'DTO', label: 'DTO', color: 'text-emerald-600', val: stats.dto}
                   ].map(t => (
                     <button key={t.id} onClick={() => setStatusFilter(t.id)} className={cn("flex-1 py-6 flex flex-col items-center group h-[100px] transition-all relative", statusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30")}>
                       <span className={cn("text-[32px] font-extrabold leading-none mb-1", t.color)}>{t.val}</span>
@@ -582,9 +576,9 @@ export default function PODTool() {
                   ))}
                 </div>
 
-                {statusFilter === 'pending' && (
+                {statusFilter === 'Pending' && (
                   <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-2">
-                    {Array.from(new Set(currentSession.data.filter(r => r.status === 'pending').map(r => r.remark))).map(remark => (
+                    {Array.from(new Set(currentSession.data.filter(r => r.status === 'Pending').map(r => r.remark))).map(remark => (
                       <button key={`chip-${remark}`} onClick={() => setActiveRemarkChip(activeRemarkChip === remark ? null : remark)} className={cn("px-3 py-1.5 rounded-full text-[11px] font-black transition-all border shadow-sm tracking-tight", activeRemarkChip === remark ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:border-blue-400")}>
                         {remark}
                       </button>
@@ -594,10 +588,10 @@ export default function PODTool() {
 
                 <div className="flex gap-2 bg-white border rounded-xl p-1 shadow-sm items-center">
                   <button onClick={() => handleCopyAWBOnly(filteredRows)} className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
-                    <Copy className="w-3.5 h-3.5" /> copy selected awb
+                    <Copy className="w-3.5 h-3.5" /> Copy Selected AWBs
                   </button>
-                  <button onClick={() => handleCopyTable(filteredRows)} className="h-9 px-5 bg-blue-600 text-white rounded-lg text-[12px] font-black">copy table</button>
-                  <button onClick={() => downloadExcel(filteredRows)} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black">download excel</button>
+                  <button onClick={() => handleCopyTable(filteredRows)} className="h-9 px-5 bg-blue-600 text-white rounded-lg text-[12px] font-black">Copy Table</button>
+                  <button onClick={() => downloadExcel(filteredRows)} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black">Download Excel</button>
                 </div>
 
                 <div className="bg-white rounded-xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
@@ -606,13 +600,13 @@ export default function PODTool() {
                       <thead className="bg-[#0f172a] text-white h-11">
                         <tr key="main-header">
                           <th style={{width: '32px'}} className="px-2"><input type="checkbox" onChange={e => toggleGroupSelection(filteredRows, e.target.checked)} checked={filteredRows.length > 0 && filteredRows.every(r => selectedRowIds.has(r.id))} /></th>
-                          <th style={{width: '80px'}} className="text-[11px] font-bold tracking-tight">dsp id</th>
-                          <th style={{width: '140px'}} className="text-[11px] font-bold tracking-tight">awb number</th>
-                          <th style={{width: '180px'}} className="text-[11px] font-bold tracking-tight">client</th>
-                          <th style={{width: '120px'}} className="text-[11px] font-bold tracking-tight">order id</th>
-                          <th style={{width: '180px'}} className="text-[11px] font-bold tracking-tight">remark</th>
-                          <th style={{width: '300px'}} className="text-[11px] font-bold tracking-tight">return address</th>
-                          <th style={{width: '100px'}} className="text-[11px] font-bold tracking-tight">fe name</th>
+                          <th style={{width: '80px'}} className="text-[11px] font-bold tracking-tight">DSP ID</th>
+                          <th style={{width: '140px'}} className="text-[11px] font-bold tracking-tight">Waybill Number</th>
+                          <th style={{width: '180px'}} className="text-[11px] font-bold tracking-tight">Client</th>
+                          <th style={{width: '120px'}} className="text-[11px] font-bold tracking-tight">Order ID</th>
+                          <th style={{width: '180px'}} className="text-[11px] font-bold tracking-tight">Remark</th>
+                          <th style={{width: '300px'}} className="text-[11px] font-bold tracking-tight text-left px-4">Return Address</th>
+                          <th style={{width: '100px'}} className="text-[11px] font-bold tracking-tight">FE Name</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -625,8 +619,8 @@ export default function PODTool() {
                             <tr key={`group-banner-${client}`} className="bg-slate-800 text-white h-9">
                               <td colSpan={8} className="text-left px-4">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} pkt</span>
-                                  <button onClick={() => handleCopyAWBOnly(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 transition-all font-bold">copy awbs</button>
+                                  <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
+                                  <button onClick={() => handleCopyAWBOnly(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 transition-all font-bold">Copy AWBs</button>
                                 </div>
                               </td>
                             </tr>
@@ -634,7 +628,7 @@ export default function PODTool() {
                               <tr key={`row-${row.id}`} className={cn("border-b hover:bg-blue-50/40 transition-colors", selectedRowIds.has(row.id) && "bg-blue-50/50")}>
                                 <td className="px-2 py-2"><input type="checkbox" checked={selectedRowIds.has(row.id)} onChange={() => toggleRowSelection(row.id)} /></td>
                                 <td className="px-2 py-2 text-[13px] font-bold text-slate-600">{row.dspId}</td>
-                                <td className="px-2 py-2 text-[13px] font-bold font-mono text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(row.awb); showToast("awb copied", "ok"); }}>{row.awb}</td>
+                                <td className="px-2 py-2 text-[13px] font-bold font-mono text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(row.awb); showToast("Waybill Copied", "ok"); }}>{row.awb}</td>
                                 <td className="px-2 py-2 text-[13px] font-semibold text-slate-800">{row.client}</td>
                                 <td className="px-2 py-2 text-[13px] font-medium text-slate-500">{row.orderId}</td>
                                 <td className="px-2 py-2">
@@ -649,7 +643,7 @@ export default function PODTool() {
                           </React.Fragment>
                         ))}
                         {filteredRows.length === 0 && (
-                          <tr key="no-data-row"><td colSpan={8} className="py-20 text-slate-400 font-bold tracking-widest text-xs">no records found for this filter</td></tr>
+                          <tr key="no-data-row"><td colSpan={8} className="py-20 text-slate-400 font-bold tracking-widest text-xs">No Records Found For This Filter</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -666,7 +660,7 @@ export default function PODTool() {
               <div className="bg-white rounded-xl p-8 border shadow-sm text-center border-dashed border-2 hover:border-blue-500 cursor-pointer relative transition-all">
                 <input type="file" onChange={handleReplacerUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                 <FileSpreadsheet className="w-10 h-10 text-slate-300 mx-auto mb-4" />
-                <p className="font-black text-slate-600 tracking-tight">drop eod sheet to convert remarks</p>
+                <p className="font-black text-slate-600 tracking-tight">Drop EOD Sheet To Convert Remarks</p>
               </div>
               {replacerData.length > 0 && (
                 <div className="bg-white rounded-xl border border-emerald-500/20 shadow-xl overflow-hidden">
@@ -675,7 +669,7 @@ export default function PODTool() {
                       <thead className="sticky top-0 bg-[#0f172a] text-white h-12">
                         <tr key="replacer-head">
                           {replacerMeta?.headers.map((h, i) => <th key={`rep-h-${i}`} className="px-4 font-bold text-[10px] tracking-widest">{h}</th>)}
-                          <th style={{width: '300px'}} key="rep-h-addr" className="px-4 font-bold text-[10px] tracking-widest">return address</th>
+                          <th style={{width: '300px'}} key="rep-h-addr" className="px-4 font-bold text-[10px] tracking-widest text-left">Return Address</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -693,7 +687,7 @@ export default function PODTool() {
             </div>
             <div className="col-span-4">
               <div className="bg-white rounded-xl border shadow-sm sticky top-20 overflow-hidden">
-                <div className="bg-blue-600 p-4 text-white font-black text-[12px] tracking-widest">replacement matrix</div>
+                <div className="bg-blue-600 p-4 text-white font-black text-[12px] tracking-widest">Replacement Matrix</div>
                 <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
                   {Object.entries(REMARK_MAPPING).map(([nsl, off]) => (
                     <div key={`matrix-${nsl}`} className="p-4 bg-slate-50 rounded-xl border space-y-2 border-slate-200 group hover:border-blue-400 transition-all">
@@ -712,8 +706,8 @@ export default function PODTool() {
             {!selectedSessionId ? (
               <div className="bg-white rounded-xl border p-20 text-center animate-in fade-in zoom-in">
                 <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-                <h3 className="text-lg font-black text-slate-900 mb-1">session not selected</h3>
-                <p className="text-sm font-bold text-slate-400">please select a session in daily eod rejection tab first.</p>
+                <h3 className="text-lg font-black text-slate-900 mb-1">Session Not Selected</h3>
+                <p className="text-sm font-bold text-slate-400">Please Select A Session In Daily EOD Rejection Tab First.</p>
               </div>
             ) : (
               <>
@@ -728,10 +722,10 @@ export default function PODTool() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-[10px] font-black text-slate-600 border border-slate-200">total: {stats.total}</span>
-                    <span className="px-3 py-1.5 rounded-lg bg-amber-50 text-[10px] font-black text-amber-600 border border-amber-200">pending: {stats.pending}</span>
-                    <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-[10px] font-black text-emerald-600 border border-emerald-200">rto: {stats.rto}</span>
-                    <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-[10px] font-black text-emerald-600 border border-emerald-200">dto: {stats.dto}</span>
+                    <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-[10px] font-black text-slate-600 border border-slate-200">Total: {stats.total} Pkt</span>
+                    <span className="px-3 py-1.5 rounded-lg bg-amber-50 text-[10px] font-black text-amber-600 border border-amber-200">Pending: {stats.pending}</span>
+                    <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-[10px] font-black text-emerald-600 border border-emerald-200">RTO: {stats.rto}</span>
+                    <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-[10px] font-black text-emerald-600 border border-emerald-200">DTO: {stats.dto}</span>
                   </div>
                 </div>
 
@@ -741,13 +735,13 @@ export default function PODTool() {
                       <Download className="w-8 h-8" />
                     </div>
                     <div>
-                      <h2 className="text-xl font-black text-slate-900 tracking-tight">upload delhivery otp report</h2>
-                      <p className="text-[12px] font-bold text-slate-400 tracking-wider">upload the default delhivery export file for this fe session.</p>
+                      <h2 className="text-xl font-black text-slate-900 tracking-tight">Upload Delhivery OTP Report</h2>
+                      <p className="text-[12px] font-bold text-slate-400 tracking-wider">Upload The Default Delhivery Export File For This FE Session.</p>
                     </div>
                     <div className="relative cursor-pointer group">
                       <input type="file" onChange={handleOTPFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                       <div className="h-14 bg-white border-2 border-slate-200 rounded-xl flex items-center justify-center font-black text-slate-600 group-hover:border-blue-500 group-hover:text-blue-600 transition-all">
-                        select file
+                        Select File
                       </div>
                     </div>
                     {otpUploadError && <p className="text-rose-600 font-black text-[12px] tracking-tight">{otpUploadError}</p>}
@@ -758,11 +752,11 @@ export default function PODTool() {
                   <div className="space-y-6">
                     <div className="bg-white rounded-xl border shadow-sm flex divide-x overflow-hidden">
                       {[
-                        {id: 'all', label: 'all', val: otpStats.total, color: 'text-slate-900'},
-                        {id: 'dispatched', label: 'dispatched', val: otpStats.dispatched, color: 'text-rose-600'},
-                        {id: 'rto', label: 'rto', val: otpStats.rto, color: 'text-emerald-600'},
-                        {id: 'dto', label: 'dto', val: otpStats.dto, color: 'text-emerald-600'},
-                        {id: 'pending', label: 'pending', val: otpStats.pending, color: 'text-amber-600'}
+                        {id: 'All', label: 'All', val: otpStats.total, color: 'text-slate-900'},
+                        {id: 'Dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-rose-600'},
+                        {id: 'RTO', label: 'RTO', val: otpStats.rto, color: 'text-emerald-600'},
+                        {id: 'DTO', label: 'DTO', val: otpStats.dto, color: 'text-emerald-600'},
+                        {id: 'Pending', label: 'Pending', val: otpStats.pending, color: 'text-amber-600'}
                       ].map(t => (
                         <button key={`otp-tab-${t.id}`} onClick={() => setOtpStatusFilter(t.id)} className={cn("flex-1 py-6 flex flex-col items-center group h-[110px] transition-all relative", otpStatusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30")}>
                           <span className={cn("text-[36px] font-black leading-none mb-1", t.color)}>{t.val}</span>
@@ -774,7 +768,7 @@ export default function PODTool() {
 
                     <div className="flex gap-2">
                       <button onClick={() => handleCopyTable(otpFilteredRows)} className="h-9 px-6 bg-slate-900 text-white rounded-xl text-[12px] font-black tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all">
-                        <Copy className="w-4 h-4" /> copy table
+                        <Copy className="w-4 h-4" /> Copy Table
                       </button>
                     </div>
 
@@ -784,11 +778,11 @@ export default function PODTool() {
                           <thead className="bg-[#0f172a] text-white h-11">
                             <tr key="otp-main-header">
                               <th style={{width: '32px'}} className="px-2"><input type="checkbox" /></th>
-                              <th style={{width: '150px'}} className="text-[11px] font-bold tracking-tight">awb number</th>
-                              <th style={{width: '200px'}} className="text-[11px] font-bold tracking-tight">client name</th>
-                              <th style={{width: '180px'}} className="text-[11px] font-bold tracking-tight">otp status</th>
-                              <th style={{width: '180px'}} className="text-[11px] font-bold tracking-tight">session status</th>
-                              <th style={{width: '350px'}} className="text-[11px] font-bold tracking-tight">return address</th>
+                              <th style={{width: '150px'}} className="text-[11px] font-bold tracking-tight">Waybill Number</th>
+                              <th style={{width: '200px'}} className="text-[11px] font-bold tracking-tight">Client Name</th>
+                              <th style={{width: '180px'}} className="text-[11px] font-bold tracking-tight">OTP Status</th>
+                              <th style={{width: '180px'}} className="text-[11px] font-bold tracking-tight">Session Status</th>
+                              <th style={{width: '350px'}} className="text-[11px] font-bold tracking-tight text-left px-4">Return Address</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -801,39 +795,39 @@ export default function PODTool() {
                                 <tr key={`otp-banner-${client}`} className="bg-slate-800 text-white h-9">
                                   <td colSpan={6} className="text-left px-4">
                                     <div className="flex items-center justify-between">
-                                      <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} pkt</span>
-                                      <button onClick={() => handleCopyAWBOnly(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 transition-all font-bold">copy awbs</button>
+                                      <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
+                                      <button onClick={() => handleCopyAWBOnly(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 transition-all font-bold">Copy AWBs</button>
                                     </div>
                                   </td>
                                 </tr>
                                 {rows.map((row: any) => (
                                   <tr key={`otp-row-${row.id}`} className={cn(
                                     "border-b transition-all hover:bg-slate-50", 
-                                    (row.isRTONotClosed || row.isDTONotClosed || row.isPendingNotClosed) ? "bg-amber-50/30 border-l-[4px] border-l-amber-500" : "bg-white",
-                                    row.isFTPL && (row.otpStatus === 'dispatched' ? "bg-rose-50/50" : "bg-emerald-50/50")
+                                    row.isNotClosed ? "bg-amber-50/30 border-l-[4px] border-l-amber-500" : "bg-white",
+                                    row.isFTPL && (row.otpStatus === 'Dispatched' ? "bg-rose-50/50" : "bg-emerald-50/50")
                                   )}>
                                     <td className="px-2 py-2"><input type="checkbox" /></td>
-                                    <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(row.awb); showToast("awb copied", "ok"); }}>{row.awb}</td>
-                                    <td className={cn("px-4 py-2 text-[13px] font-black tracking-tight", row.isFTPL && (row.otpStatus === 'dispatched' ? "text-rose-600" : "text-emerald-600"))}>{row.client}</td>
+                                    <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(row.awb); showToast("Waybill Copied", "ok"); }}>{row.awb}</td>
+                                    <td className={cn("px-4 py-2 text-[13px] font-black tracking-tight", row.isFTPL && (row.otpStatus === 'Dispatched' ? "text-rose-600" : "text-emerald-600"))}>{row.client}</td>
                                     <td className="px-4 py-2">
                                       <div className="flex flex-col items-center gap-1">
                                         <span className={cn(
                                           "px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm", 
-                                          row.otpStatus === 'dispatched' ? "bg-rose-600 text-white border-rose-500" : 
-                                          row.otpStatus === 'pending' ? "bg-amber-500 text-white border-amber-400" : 
+                                          row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : 
+                                          row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : 
                                           "bg-emerald-600 text-white border-emerald-500"
                                         )}>
                                           {row.otpStatus}
                                         </span>
-                                        {(row.isRTONotClosed || row.isDTONotClosed || row.isPendingNotClosed) && (
+                                        {row.isNotClosed && (
                                           <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black border border-amber-300 shadow-sm">
-                                            {row.isRTONotClosed ? 'rto — not closed' : row.isDTONotClosed ? 'dto — not closed' : 'pending — not closed'}
+                                            {row.notClosedType} — Not Closed On Device
                                           </span>
                                         )}
                                       </div>
                                     </td>
                                     <td className="px-4 py-2">
-                                      <span className={cn("px-2 py-0.5 rounded text-[10px] font-black border", row.sessionStatus === 'pending' ? "bg-amber-50 text-amber-700 border-amber-200" : row.sessionStatus === 'rto' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-700 border-slate-200")}>
+                                      <span className={cn("px-2 py-0.5 rounded text-[10px] font-black border", row.sessionStatus === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" : row.sessionStatus === 'RTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-700 border-slate-200")}>
                                         {row.sessionStatus}
                                       </span>
                                     </td>
@@ -843,7 +837,7 @@ export default function PODTool() {
                               </React.Fragment>
                             ))}
                             {otpFilteredRows.length === 0 && (
-                              <tr key="no-otp-matches-row"><td colSpan={6} className="py-20 font-black text-slate-300 tracking-widest text-xs">no matching data in this filter</td></tr>
+                              <tr key="no-otp-matches-row"><td colSpan={6} className="py-20 font-black text-slate-300 tracking-widest text-xs">No Matching Data In This Filter</td></tr>
                             )}
                           </tbody>
                         </table>
@@ -859,3 +853,4 @@ export default function PODTool() {
     </div>
   );
 }
+
