@@ -185,6 +185,17 @@ export default function PODTool() {
     }
   }, [sessions, isMounted]);
 
+  // RESET OTP MODULE COMPLETELY ON SESSION SWITCH
+  useEffect(() => {
+    if (isMounted) {
+      setOtpData([]);
+      setOtpUploadError(null);
+      setOtpSelectedClients([]);
+      setOtpClientSearchQuery("");
+      console.log("OTP Module Reset for new session:", selectedSessionId);
+    }
+  }, [selectedSessionId]);
+
   const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
 
   // Reset dropdown when tab/remark changes
@@ -563,7 +574,6 @@ export default function PODTool() {
           processedAWBs.add(awb);
         });
 
-        // CHANGE 2: Wrong file validation
         if (matchedCount === 0) {
           setOtpUploadError(`Wrong file uploaded. No AWB numbers match the current session. Please upload the Delhivery OTP report for ${currentSession.feName} ${currentSession.dspId}.`);
           setIsProcessing(false);
