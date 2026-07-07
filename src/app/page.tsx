@@ -21,9 +21,8 @@ import { cn } from "@/lib/utils";
  * - Return Address visible (word-wrap) but excluded from export.
  * - Client-wise grouping with Dark Banners.
  * - Strict Upload Requirement: DSP ID and FE Name must be filled.
- * - Colorful Session Cards with all status counts.
+ * - Colorful Session Cards with all status counts in Grid Layout.
  * - One session per DSP ID (Overwrites on re-upload).
- * - Portrait (Full Width) session card layout.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -135,7 +134,6 @@ export default function PODTool() {
 
   const [otpData, setOtpData] = useState<OTPRow[]>([]);
   const [otpStatusFilter, setOtpStatusFilter] = useState<string>("All");
-  const [otpUploadError, setOtpUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -430,7 +428,7 @@ export default function PODTool() {
             </div>
 
             {sessions.length > 0 && (
-              <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {sessions.map(s => {
                   const sStats = {
                     total: s.data.length,
@@ -440,7 +438,7 @@ export default function PODTool() {
                     dto: s.data.filter(r => r.status === 'DTO').length,
                   };
                   return (
-                    <div key={s.id} onClick={() => setSelectedSessionId(s.id)} className={cn("p-5 border-[1.5px] rounded-2xl cursor-pointer transition-all w-full shadow-sm", selectedSessionId === s.id ? "border-blue-500 bg-blue-50/20 ring-1 ring-blue-500" : "hover:border-blue-300 bg-white")}>
+                    <div key={s.id} onClick={() => setSelectedSessionId(s.id)} className={cn("p-5 border-[1.5px] rounded-2xl cursor-pointer transition-all shadow-sm", selectedSessionId === s.id ? "border-blue-500 bg-blue-50/20 ring-1 ring-blue-500" : "hover:border-blue-300 bg-white")}>
                       <p className="font-extrabold text-[16px] text-slate-900 mb-1">{s.feName}</p>
                       <p className="text-[12px] text-slate-500 font-bold mb-4">{s.dspId} • {s.date}</p>
                       <div className="flex flex-wrap gap-2">
@@ -489,7 +487,10 @@ export default function PODTool() {
                 )}
 
                 <div className="flex gap-2 bg-white border rounded-xl p-1 shadow-sm items-center">
-                  <button onClick={() => handleCopyAWBOnly(filteredRows.filter(r => selectedRowIds.has(r.id)))} className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
+                  <button onClick={() => {
+                    const rows = filteredRows.filter(r => selectedRowIds.has(r.id));
+                    handleCopyAWBOnly(rows);
+                  }} className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
                     <Copy className="w-3.5 h-3.5" /> Copy Selected AWBs
                   </button>
                   <button onClick={() => handleCopyAWBOnly(filteredRows)} className="h-9 px-4 bg-slate-800 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
@@ -749,3 +750,4 @@ export default function PODTool() {
     </div>
   );
 }
+
