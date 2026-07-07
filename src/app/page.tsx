@@ -444,7 +444,6 @@ export default function PODTool() {
                   <h3 className="text-sm font-black text-slate-700 tracking-tight">Recent Sessions</h3>
                   <button onClick={() => setSessions([])} className="text-[12px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest">Clear All History</button>
                 </div>
-                {/* Fixed Grid Container for Side-by-Side Cards */}
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-[10px]">
                   {sessions.map(s => {
                     const sStats = {
@@ -456,16 +455,12 @@ export default function PODTool() {
                     };
                     return (
                       <div key={s.id} onClick={() => setSelectedSessionId(s.id)} className={cn("relative p-[12px_14px] border-[1.5px] rounded-xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white max-w-[280px]", selectedSessionId === s.id ? "border-blue-500 ring-1 ring-blue-500" : "hover:border-blue-300")}>
-                        {/* Blue Accent Bar */}
                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
-                        
                         <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="absolute right-3 top-3 text-slate-300 hover:text-rose-500 transition-colors">
                           <X className="w-3.5 h-3.5" />
                         </button>
-
                         <p className="text-[14px] font-bold text-slate-900 mb-0.5 tracking-tight">{s.feName}</p>
                         <p className="text-[11px] text-slate-400 font-medium mb-3 uppercase">{s.dspId} — {s.date}</p>
-                        
                         <div className="flex flex-wrap gap-[5px]">
                           <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100">{sStats.total} PKT</span>
                           {sStats.pending > 0 && <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-[4px] border border-amber-100">{sStats.pending} PENDING</span>}
@@ -535,9 +530,9 @@ export default function PODTool() {
                           <th style={{width: '80px'}} className="text-[11px] font-bold tracking-tight">DSP ID</th>
                           <th style={{width: '140px'}} className="text-[11px] font-bold tracking-tight">Waybill Number</th>
                           <th style={{width: '180px'}} className="text-[11px] font-bold tracking-tight">Client</th>
-                          <th style={{width: '120px'}} className="text-[11px] font-bold tracking-tight">Order ID</th>
-                          <th style={{width: '180px'}} className="text-[11px] font-bold tracking-tight">Remark</th>
-                          <th style={{width: '300px'}} className="text-[11px] font-bold tracking-tight text-left px-4">Return Address</th>
+                          <th style={{width: '150px'}} className="text-[11px] font-bold tracking-tight">Order ID</th>
+                          <th style={{width: '200px'}} className="text-[11px] font-bold tracking-tight">Remark</th>
+                          <th style={{width: '350px'}} className="text-[11px] font-bold tracking-tight text-left px-4">Return Address</th>
                           <th style={{width: '100px'}} className="text-[11px] font-bold tracking-tight">FE Name</th>
                         </tr>
                       </thead>
@@ -568,9 +563,9 @@ export default function PODTool() {
                                 <td className="px-2 py-2 text-[13px] font-bold text-slate-600">{row.dspId}</td>
                                 <td className="px-2 py-2 text-[13px] font-bold font-mono text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
                                 <td className="px-2 py-2 text-[13px] font-semibold text-slate-800">{row.client}</td>
-                                <td className="px-2 py-2 text-[13px] font-medium text-slate-500">{row.orderId}</td>
+                                <td className="px-2 py-2 text-[13px] font-medium text-slate-500 whitespace-normal break-words">{row.orderId}</td>
                                 <td className="px-2 py-2">
-                                  <span className={cn("px-2 py-0.5 rounded text-[10px] font-black border", row.isIntact ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200")}>{row.remark}</span>
+                                  <span className={cn("inline-block px-2 py-1 rounded text-[10px] font-black border whitespace-normal leading-normal max-w-full", row.isIntact ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200")}>{row.remark}</span>
                                 </td>
                                 <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[300px] font-medium leading-relaxed">{row.returnAddress}</td>
                                 <td className="px-2 py-2 text-[13px] font-bold text-slate-700">{row.feName}</td>
@@ -666,9 +661,7 @@ export default function PODTool() {
             ) : (
               <>
                 <div className="bg-white border-[1.5px] border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between relative overflow-hidden">
-                  {/* Blue Accent Bar for Consistency */}
                   <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
-                  
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg"><User className="w-6 h-6" /></div>
                     <div>
@@ -751,9 +744,9 @@ export default function PODTool() {
                                     <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
                                     <td className="px-4 py-2 text-[13px] font-black tracking-tight">{row.client}</td>
                                     <td className="px-4 py-2">
-                                      <div className="flex flex-col items-center gap-1">
+                                      <div className="flex flex-col items-center gap-1.5 py-1">
                                         <span className={cn("px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm", row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : "bg-emerald-600 text-white border-emerald-500")}>{row.otpStatus}</span>
-                                        {row.isNotClosed && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black border border-amber-300">{row.notClosedType} — Not Closed On Device</span>}
+                                        {row.isNotClosed && <span className="px-1.5 py-1 rounded bg-amber-100 text-amber-800 text-[9px] font-black border border-amber-300 whitespace-normal leading-tight text-center">{row.notClosedType} — Not Closed On Device</span>}
                                       </div>
                                     </td>
                                     <td className="px-4 py-2">
