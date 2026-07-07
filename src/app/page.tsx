@@ -25,7 +25,6 @@ import { cn } from "@/lib/utils";
  * - Strict Upload Requirement: DSP ID and FE Name must be filled.
  * - Colorful Session Cards with all status counts in Grid Layout.
  * - One session per DSP ID (Overwrites on re-upload).
- * - Show All Pending: Combined view for all pending shipments.
  * - Restored Back Button for Pending Remarks.
  */
 
@@ -506,23 +505,6 @@ export default function PODTool() {
                   <div className="flex flex-col gap-4">
                     <div className="flex items-center justify-between">
                       <div className="flex flex-wrap gap-3 items-center">
-                        <button 
-                          onClick={() => {
-                            const newState = !showAllPending;
-                            setShowAllPending(newState);
-                            if (newState) setActiveRemarkChip(null);
-                          }}
-                          className={cn(
-                            "inline-flex items-center gap-2 px-4 py-2 min-h-[36px] rounded-lg text-[13px] font-black transition-all border shadow-sm",
-                            showAllPending 
-                              ? "bg-slate-900 text-white border-slate-900" 
-                              : "bg-white text-slate-900 border-slate-300 hover:border-blue-500"
-                          )}
-                        >
-                          <LayoutGrid className="w-4 h-4" />
-                          {showAllPending ? "Showing Combined List" : "Show All Pending"}
-                        </button>
-
                         {Array.from(new Set(currentSession.data.filter(r => r.status === 'Pending').map(r => r.remark))).map(remark => {
                           const count = currentSession.data.filter(r => r.status === 'Pending' && r.remark === remark).length;
                           return (
@@ -537,7 +519,7 @@ export default function PODTool() {
                                 activeRemarkChip === remark ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:border-blue-400"
                               )}
                             >
-                              <span>{remark}</span>
+                              <span className="font-semibold">{remark}</span>
                               <span className={cn("px-[10px] py-[2px] rounded-full text-[12px] font-bold border", activeRemarkChip === remark ? "bg-white/20 border-white/30" : "bg-slate-100 border-slate-200 text-slate-600")}>{count}</span>
                             </button>
                           );
