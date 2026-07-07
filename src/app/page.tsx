@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -445,7 +444,8 @@ export default function PODTool() {
                   <h3 className="text-sm font-black text-slate-700 tracking-tight">Recent Sessions</h3>
                   <button onClick={() => setSessions([])} className="text-[12px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest">Clear All History</button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Fixed Grid Container for Side-by-Side Cards */}
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-[10px]">
                   {sessions.map(s => {
                     const sStats = {
                       total: s.data.length,
@@ -455,22 +455,22 @@ export default function PODTool() {
                       dto: s.data.filter(r => r.status === 'DTO').length,
                     };
                     return (
-                      <div key={s.id} onClick={() => setSelectedSessionId(s.id)} className={cn("relative p-5 border-[1.5px] rounded-2xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white", selectedSessionId === s.id ? "border-blue-500 ring-1 ring-blue-500" : "hover:border-blue-300")}>
+                      <div key={s.id} onClick={() => setSelectedSessionId(s.id)} className={cn("relative p-[12px_14px] border-[1.5px] rounded-xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white max-w-[280px]", selectedSessionId === s.id ? "border-blue-500 ring-1 ring-blue-500" : "hover:border-blue-300")}>
                         {/* Blue Accent Bar */}
                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
                         
-                        <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="absolute right-4 top-4 text-slate-300 hover:text-rose-500 transition-colors">
-                          <X className="w-4 h-4" />
+                        <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="absolute right-3 top-3 text-slate-300 hover:text-rose-500 transition-colors">
+                          <X className="w-3.5 h-3.5" />
                         </button>
 
-                        <p className="font-black text-[17px] text-slate-900 mb-0.5 tracking-tight">{s.feName}</p>
-                        <p className="text-[11px] text-slate-400 font-bold mb-4 tracking-tighter uppercase">{s.dspId} — {s.date}</p>
+                        <p className="text-[14px] font-bold text-slate-900 mb-0.5 tracking-tight">{s.feName}</p>
+                        <p className="text-[11px] text-slate-400 font-medium mb-3 uppercase">{s.dspId} — {s.date}</p>
                         
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className="text-[9px] font-black bg-slate-50 text-slate-600 px-2.5 py-1 rounded-md border border-slate-100 shadow-sm">{sStats.total} PKT</span>
-                          {sStats.pending > 0 && <span className="text-[9px] font-black bg-amber-50 text-amber-600 px-2.5 py-1 rounded-md border border-amber-100 shadow-sm">{sStats.pending} PENDING</span>}
-                          {sStats.rto > 0 && <span className="text-[9px] font-black bg-rose-50 text-rose-600 px-2.5 py-1 rounded-md border border-rose-100 shadow-sm">{sStats.rto} RTO</span>}
-                          {sStats.dto > 0 && <span className="text-[9px] font-black bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-md border border-emerald-100 shadow-sm">{sStats.dto} DTO</span>}
+                        <div className="flex flex-wrap gap-[5px]">
+                          <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100">{sStats.total} PKT</span>
+                          {sStats.pending > 0 && <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-[4px] border border-amber-100">{sStats.pending} PENDING</span>}
+                          {sStats.rto > 0 && <span className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-[4px] border border-rose-100">{sStats.rto} RTO</span>}
+                          {sStats.dto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100">{sStats.dto} DTO</span>}
                         </div>
                       </div>
                     );
@@ -778,4 +778,3 @@ export default function PODTool() {
     </div>
   );
 }
-
