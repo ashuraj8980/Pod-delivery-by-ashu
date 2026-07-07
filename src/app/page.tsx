@@ -9,7 +9,9 @@ import {
   Settings,
   Download,
   User,
-  AlertCircle
+  AlertCircle,
+  X,
+  Trash2
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -21,7 +23,7 @@ import { cn } from "@/lib/utils";
  * - Return Address visible (word-wrap) but excluded from export.
  * - Client-wise grouping with Dark Banners.
  * - Strict Upload Requirement: DSP ID and FE Name must be filled.
- * - Colorful Session Cards with all status counts in Grid Layout.
+ * - Colorful Session Cards with all status counts in Grid Layout (Matching Screenshot).
  * - One session per DSP ID (Overwrites on re-upload).
  */
 
@@ -189,6 +191,10 @@ export default function PODTool() {
   }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!setupData.feName || !setupData.dspId) {
+      showToast("Please Enter FE Name and DSP ID First", "err");
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessing(true);
@@ -303,6 +309,12 @@ export default function PODTool() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Report");
     XLSX.writeFile(wb, `Report_${currentSession?.dspId || 'Export'}.xlsx`);
+  };
+
+  const deleteSession = (sessionId: string) => {
+    setSessions(prev => prev.filter(s => s.id !== sessionId));
+    if (selectedSessionId === sessionId) setSelectedSessionId(null);
+    showToast("Session Deleted", "ok");
   };
 
   const handleOTPFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -428,29 +440,42 @@ export default function PODTool() {
             </div>
 
             {sessions.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sessions.map(s => {
-                  const sStats = {
-                    total: s.data.length,
-                    pending: s.data.filter(r => r.status === 'Pending').length,
-                    dispatched: s.data.filter(r => r.status === 'Dispatched').length,
-                    rto: s.data.filter(r => r.status === 'RTO').length,
-                    dto: s.data.filter(r => r.status === 'DTO').length,
-                  };
-                  return (
-                    <div key={s.id} onClick={() => setSelectedSessionId(s.id)} className={cn("p-5 border-[1.5px] rounded-2xl cursor-pointer transition-all shadow-sm", selectedSessionId === s.id ? "border-blue-500 bg-blue-50/20 ring-1 ring-blue-500" : "hover:border-blue-300 bg-white")}>
-                      <p className="font-extrabold text-[16px] text-slate-900 mb-1">{s.feName}</p>
-                      <p className="text-[12px] text-slate-500 font-bold mb-4">{s.dspId} • {s.date}</p>
-                      <div className="flex flex-wrap gap-2">
-                        <span className="text-[10px] font-black bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">Total: {sStats.total}</span>
-                        <span className="text-[10px] font-black bg-amber-50 text-amber-600 px-3 py-1.5 rounded-lg border border-amber-200 shadow-sm">Pending: {sStats.pending}</span>
-                        <span className="text-[10px] font-black bg-rose-50 text-rose-600 px-3 py-1.5 rounded-lg border border-rose-200 shadow-sm">Disp: {sStats.dispatched}</span>
-                        <span className="text-[10px] font-black bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg border border-emerald-200 shadow-sm">RTO: {sStats.rto}</span>
-                        <span className="text-[10px] font-black bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg border border-emerald-200 shadow-sm">DTO: {sStats.dto}</span>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-black text-slate-700 tracking-tight">Recent Sessions</h3>
+                  <button onClick={() => setSessions([])} className="text-[12px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest">Clear All History</button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {sessions.map(s => {
+                    const sStats = {
+                      total: s.data.length,
+                      pending: s.data.filter(r => r.status === 'Pending').length,
+                      dispatched: s.data.filter(r => r.status === 'Dispatched').length,
+                      rto: s.data.filter(r => r.status === 'RTO').length,
+                      dto: s.data.filter(r => r.status === 'DTO').length,
+                    };
+                    return (
+                      <div key={s.id} onClick={() => setSelectedSessionId(s.id)} className={cn("relative p-5 border-[1.5px] rounded-2xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white", selectedSessionId === s.id ? "border-blue-500 ring-1 ring-blue-500" : "hover:border-blue-300")}>
+                        {/* Blue Accent Bar */}
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
+                        
+                        <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="absolute right-4 top-4 text-slate-300 hover:text-rose-500 transition-colors">
+                          <X className="w-4 h-4" />
+                        </button>
+
+                        <p className="font-black text-[17px] text-slate-900 mb-0.5 tracking-tight">{s.feName}</p>
+                        <p className="text-[11px] text-slate-400 font-bold mb-4 tracking-tighter uppercase">{s.dspId} — {s.date}</p>
+                        
+                        <div className="flex flex-wrap gap-1.5">
+                          <span className="text-[9px] font-black bg-slate-50 text-slate-600 px-2.5 py-1 rounded-md border border-slate-100 shadow-sm">{sStats.total} PKT</span>
+                          {sStats.pending > 0 && <span className="text-[9px] font-black bg-amber-50 text-amber-600 px-2.5 py-1 rounded-md border border-amber-100 shadow-sm">{sStats.pending} PENDING</span>}
+                          {sStats.rto > 0 && <span className="text-[9px] font-black bg-rose-50 text-rose-600 px-2.5 py-1 rounded-md border border-rose-100 shadow-sm">{sStats.rto} RTO</span>}
+                          {sStats.dto > 0 && <span className="text-[9px] font-black bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-md border border-emerald-100 shadow-sm">{sStats.dto} DTO</span>}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -464,7 +489,7 @@ export default function PODTool() {
                     {id: 'RTO', label: 'RTO', color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500', val: stats.rto},
                     {id: 'DTO', label: 'DTO', color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500', val: stats.dto}
                   ].map(t => (
-                    <button key={t.id} onClick={() => setStatusFilter(t.id)} className={cn("flex-1 py-6 flex flex-col items-center group h-[100px] transition-all relative", statusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
+                    <button key={t.id} onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); }} className={cn("flex-1 py-6 flex flex-col items-center group h-[100px] transition-all relative", statusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
                       <span className={cn("text-[32px] font-extrabold leading-none mb-1", t.color)}>{t.val}</span>
                       <span className="text-[13px] font-black">{t.label}</span>
                       {statusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[3px]", t.borderColor)} />}
@@ -640,20 +665,23 @@ export default function PODTool() {
               </div>
             ) : (
               <>
-                <div className="bg-white border-[1.5px] border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between">
+                <div className="bg-white border-[1.5px] border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between relative overflow-hidden">
+                  {/* Blue Accent Bar for Consistency */}
+                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
+                  
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg"><User className="w-6 h-6" /></div>
                     <div>
                       <p className="text-lg font-black text-slate-900 leading-tight">{currentSession.feName}</p>
-                      <p className="text-[10px] font-black text-slate-400 tracking-widest">{currentSession.dspId} • {currentSession.date}</p>
+                      <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase">{currentSession.dspId} — {currentSession.date}</p>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-[10px] font-black text-slate-600 border border-slate-200">Total: {stats.total}</span>
-                    <span className="px-3 py-1.5 rounded-lg bg-amber-50 text-[10px] font-black text-amber-600 border border-amber-200">Pending: {stats.pending}</span>
-                    <span className="px-3 py-1.5 rounded-lg bg-rose-50 text-[10px] font-black text-rose-600 border border-rose-200">Disp: {stats.dispatched}</span>
-                    <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-[10px] font-black text-emerald-600 border border-emerald-200">RTO: {stats.rto}</span>
-                    <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-[10px] font-black text-emerald-600 border border-emerald-200">DTO: {stats.dto}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="px-2.5 py-1 rounded-md bg-slate-50 text-[9px] font-black text-slate-600 border border-slate-100 shadow-sm">{stats.total} PKT</span>
+                    {stats.pending > 0 && <span className="px-2.5 py-1 rounded-md bg-amber-50 text-[9px] font-black text-amber-600 border border-amber-100 shadow-sm">{stats.pending} PENDING</span>}
+                    {stats.dispatched > 0 && <span className="px-2.5 py-1 rounded-md bg-rose-50 text-[9px] font-black text-rose-600 border border-rose-100 shadow-sm">{stats.dispatched} DISPATCHED</span>}
+                    {stats.rto > 0 && <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-[9px] font-black text-emerald-600 border border-emerald-100 shadow-sm">{stats.rto} RTO</span>}
+                    {stats.dto > 0 && <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-[9px] font-black text-emerald-600 border border-emerald-100 shadow-sm">{stats.dto} DTO</span>}
                   </div>
                 </div>
 
