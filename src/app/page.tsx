@@ -95,7 +95,6 @@ const formatDate = (val: any): string => {
 const normalizeAWB = (val: any): string => {
   if (val === null || val === undefined) return "";
   let s = String(val).trim();
-  // Handle scientific notation and rounding for precision
   if (s.toLowerCase().includes('e+') || s.includes('.')) {
     const num = Number(s);
     if (!isNaN(num)) {
@@ -107,7 +106,6 @@ const normalizeAWB = (val: any): string => {
 
 const isValidAWB = (val: any): boolean => {
   const s = normalizeAWB(val);
-  // Rule: Must be numeric and at least 8 digits long
   return /^\d{8,}$/.test(s) && !isNaN(Number(s));
 };
 
@@ -171,7 +169,6 @@ export default function PODTool() {
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
   }, []);
 
-  // Reset OTP module when session changes to ensure fresh state
   useEffect(() => {
     if (isMounted) {
       setOtpData([]);
@@ -199,9 +196,17 @@ export default function PODTool() {
     }, 3000);
   }, []);
 
+  const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
+    if (!rowsToCopy.length) return;
+    const text = rowsToCopy.map(r => normalizeAWB(r.awb)).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(`Copied ${rowsToCopy.length} AWB numbers`, "ok");
+    } catch (err) { showToast("Failed To Copy AWBs", "err"); }
+  };
+
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
-    // Rule: Exclude return address from export/clipboard
     const exportHeaders = headers.filter(h => !/return address|return_address/i.test(h));
     
     const plainText = rows.map(r => 
@@ -211,7 +216,6 @@ export default function PODTool() {
     const rowsHtml = rows.map(r => {
       const cells = exportHeaders.map(h => {
         const val = String(r[h] || "").trim();
-        // Force text format in Excel to prevent AWB digits rounding
         const style = h.toLowerCase().includes('awb') || h.toLowerCase().includes('waybill') ? 'style=\'mso-number-format:"\\@"\'' : '';
         return `<td ${style}>${val}</td>`;
       }).join("");
@@ -231,7 +235,6 @@ export default function PODTool() {
   }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Rule: Require DSP ID and FE Name before upload
     if (!setupData.feName || !setupData.dspId) {
       showToast("Please Enter DSP ID And FE Name First!", "err");
       e.target.value = "";
@@ -254,7 +257,6 @@ export default function PODTool() {
             return key ? row[key] : "";
           };
           const rawAwb = findVal(/waybill|awb|awbnumber/);
-          // Strict Validation: Skip non-numeric or short AWBs
           if (!isValidAWB(rawAwb)) return null;
           const awb = normalizeAWB(rawAwb);
           const statusRaw = String(findVal(/status|currentstatus/)).toLowerCase().trim();
@@ -323,16 +325,6 @@ export default function PODTool() {
       dto: currentSession.data.filter(r => r.status === 'DTO').length,
     };
   }, [currentSession]);
-
-  const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
-    if (!rowsToCopy.length) return;
-    // Rule: Clean copy without ' symbol
-    const text = rowsToCopy.map(r => normalizeAWB(r.awb)).join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast(`Copied ${rowsToCopy.length} AWBs`, "ok");
-    } catch (err) { showToast("Failed To Copy AWBs", "err"); }
-  };
 
   const handleCopyTable = useCallback(async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
@@ -457,7 +449,6 @@ export default function PODTool() {
           otpAWBs.add(awb);
         });
 
-        // Rule: Zero match validation
         if (matchCount === 0) {
           setOtpUploadError(`Wrong File Uploaded. No AWB Numbers Match The Current Session. Please Upload The Delhivery OTP Report For ${currentSession.feName} ${currentSession.dspId}.`);
           setIsProcessing(false);
@@ -465,7 +456,6 @@ export default function PODTool() {
           return;
         }
 
-        // Add session records not in OTP file (mostly pending)
         currentSession.data.filter(r => r.status === 'Pending' && !otpAWBs.has(normalizeAWB(r.awb))).forEach(sr => {
           tempOtpData.push({
             id: crypto.randomUUID(),
@@ -487,18 +477,14 @@ export default function PODTool() {
     let rows = otpData;
     if (otpStatusFilter !== 'All') {
       if (otpStatusFilter === 'Dispatched') {
-        // Show genuinely dispatched + RTO not closed + DTO not closed
         rows = rows.filter(r => 
           (r.otpStatus === 'Dispatched' && r.notClosedType !== 'Pending')
         );
       } else if (otpStatusFilter === 'RTO') {
-        // Show OTP RTO + RTO not closed
         rows = rows.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO');
       } else if (otpStatusFilter === 'DTO') {
-        // Show OTP DTO + DTO not closed
         rows = rows.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO');
       } else if (otpStatusFilter === 'Pending') {
-        // Show OTP Pending + Pending not closed + Session Pending (Not found in OTP)
         rows = rows.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending' || (r.otpStatus === 'Not Found' && r.sessionStatus === 'Pending'));
       }
     }
@@ -570,7 +556,6 @@ export default function PODTool() {
                 <input type="date" value={setupData.date} onChange={e => setSetupData({...setupData, date: e.target.value})} className="bg-[#f9fafb] border-[1.5px] border-[#d1d5db] rounded-lg px-3.5 h-[42px] text-[14px] font-bold outline-none focus:border-blue-500" />
               </div>
               
-              {/* Rule: Visual hint and lock for upload zone */}
               <div className={cn(
                 "border-2 border-dashed rounded-xl p-8 text-center transition-all relative",
                 (!setupData.feName || !setupData.dspId) 
@@ -609,36 +594,71 @@ export default function PODTool() {
               <div className="space-y-6">
                 <div className="bg-white rounded-xl border shadow-sm flex divide-x overflow-hidden">
                   {[
-                    {id: 'All', label: 'All', color: 'text-slate-900', val: stats.total},
-                    {id: 'Pending', label: 'Pending', color: 'text-amber-600', val: stats.pending},
-                    {id: 'Dispatched', label: 'Dispatched', color: 'text-blue-600', val: stats.dispatched},
-                    {id: 'RTO', label: 'RTO', color: 'text-emerald-600', val: stats.rto},
-                    {id: 'DTO', label: 'DTO', color: 'text-emerald-600', val: stats.dto}
+                    {id: 'All', label: 'All', color: 'text-slate-900', bgColor: 'bg-[#EFF6FF]', borderColor: 'bg-blue-500', val: stats.total},
+                    {id: 'Pending', label: 'Pending', color: 'text-amber-600', bgColor: 'bg-[#FFFBEB]', borderColor: 'bg-amber-500', val: stats.pending},
+                    {id: 'Dispatched', label: 'Dispatched', color: 'text-rose-600', bgColor: 'bg-[#FFF5F5]', borderColor: 'bg-rose-500', val: stats.dispatched},
+                    {id: 'RTO', label: 'RTO', color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500', val: stats.rto},
+                    {id: 'DTO', label: 'DTO', color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500', val: stats.dto}
                   ].map(t => (
-                    <button key={t.id} onClick={() => setStatusFilter(t.id)} className={cn("flex-1 py-6 flex flex-col items-center group h-[100px] transition-all relative", statusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30")}>
+                    <button key={t.id} onClick={() => setStatusFilter(t.id)} className={cn("flex-1 py-6 flex flex-col items-center group h-[100px] transition-all relative", statusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
                       <span className={cn("text-[32px] font-extrabold leading-none mb-1", t.color)}>{t.val}</span>
                       <span className="text-[13px] font-black">{t.label}</span>
-                      {statusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[3px]", t.color.replace('text-', 'bg-'))} />}
+                      {statusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[3px]", t.borderColor)} />}
                     </button>
                   ))}
                 </div>
 
                 {statusFilter === 'Pending' && (
-                  <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-2">
-                    {Array.from(new Set(currentSession.data.filter(r => r.status === 'Pending').map(r => r.remark))).map(remark => (
-                      <button key={`chip-${remark}`} onClick={() => setActiveRemarkChip(activeRemarkChip === remark ? null : remark)} className={cn("px-3 py-1.5 rounded-full text-[11px] font-black transition-all border shadow-sm tracking-tight", activeRemarkChip === remark ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:border-blue-400")}>
-                        {remark}
-                      </button>
-                    ))}
+                  <div className="flex flex-wrap gap-3 animate-in fade-in slide-in-from-top-2">
+                    {Array.from(new Set(currentSession.data.filter(r => r.status === 'Pending').map(r => r.remark))).map(remark => {
+                      const count = currentSession.data.filter(r => r.status === 'Pending' && r.remark === remark).length;
+                      return (
+                        <button 
+                          key={`chip-${remark}`} 
+                          onClick={() => setActiveRemarkChip(activeRemarkChip === remark ? null : remark)} 
+                          className={cn(
+                            "inline-flex items-center gap-2 px-4 py-2 h-9 rounded-lg text-[13px] font-semibold transition-all border shadow-sm tracking-tight", 
+                            activeRemarkChip === remark 
+                              ? "bg-blue-600 text-white border-blue-600" 
+                              : "bg-white text-slate-600 border-slate-200 hover:border-blue-400"
+                          )}
+                        >
+                          <span>{remark}</span>
+                          <span className={cn(
+                            "px-[10px] py-[2px] rounded-full text-[12px] font-bold border",
+                            activeRemarkChip === remark ? "bg-white/20 border-white/30" : "bg-slate-100 border-slate-200 text-slate-600"
+                          )}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
 
                 <div className="flex gap-2 bg-white border rounded-xl p-1 shadow-sm items-center">
-                  <button onClick={() => handleCopyAWBOnly(filteredRows)} className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
+                  <button 
+                    onClick={() => {
+                      const selected = filteredRows.filter(r => selectedRowIds.has(r.id));
+                      if (selected.length === 0) {
+                        showToast("No Rows Selected", "err");
+                        return;
+                      }
+                      handleCopyAWBOnly(selected);
+                    }} 
+                    className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2"
+                  >
                     <Copy className="w-3.5 h-3.5" /> Copy Selected AWBs
                   </button>
-                  <button onClick={() => handleCopyTable(filteredRows)} className="h-9 px-5 bg-blue-600 text-white rounded-lg text-[12px] font-black">Copy Table</button>
+                  <button 
+                    onClick={() => handleCopyAWBOnly(filteredRows)} 
+                    className="h-9 px-4 bg-slate-800 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy All AWB
+                  </button>
                   <button onClick={() => downloadExcel(filteredRows)} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black">Download Excel</button>
+                  <div className="flex-1" />
+                  <button onClick={() => handleCopyTable(filteredRows)} className="h-9 px-5 bg-blue-600 text-white rounded-lg text-[12px] font-black">Copy Table</button>
                 </div>
 
                 <div className="bg-white rounded-xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
@@ -799,24 +819,43 @@ export default function PODTool() {
                   <div className="space-y-6">
                     <div className="bg-white rounded-xl border shadow-sm flex divide-x overflow-hidden">
                       {[
-                        {id: 'All', label: 'All', val: otpStats.total, color: 'text-slate-900'},
-                        {id: 'Dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-rose-600'},
-                        {id: 'Pending', label: 'Pending', val: otpStats.pending, color: 'text-amber-600'},
-                        {id: 'RTO', label: 'RTO', val: otpStats.rto, color: 'text-emerald-600'},
-                        {id: 'DTO', label: 'DTO', val: otpStats.dto, color: 'text-emerald-600'}
+                        {id: 'All', label: 'All', val: otpStats.total, color: 'text-slate-900', bgColor: 'bg-[#EFF6FF]', borderColor: 'bg-blue-500'},
+                        {id: 'Dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-rose-600', bgColor: 'bg-[#FFF5F5]', borderColor: 'bg-rose-500'},
+                        {id: 'Pending', label: 'Pending', val: otpStats.pending, color: 'text-amber-600', bgColor: 'bg-[#FFFBEB]', borderColor: 'bg-amber-500'},
+                        {id: 'RTO', label: 'RTO', val: otpStats.rto, color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500'},
+                        {id: 'DTO', label: 'DTO', val: otpStats.dto, color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500'}
                       ].map(t => (
-                        <button key={`otp-tab-${t.id}`} onClick={() => setOtpStatusFilter(t.id)} className={cn("flex-1 py-6 flex flex-col items-center group h-[110px] transition-all relative", otpStatusFilter === t.id ? "bg-slate-50" : "hover:bg-slate-50/30")}>
+                        <button key={`otp-tab-${t.id}`} onClick={() => setOtpStatusFilter(t.id)} className={cn("flex-1 py-6 flex flex-col items-center group h-[110px] transition-all relative", otpStatusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
                           <span className={cn("text-[36px] font-black leading-none mb-1", t.color)}>{t.val}</span>
                           <span className={cn("text-[13px] font-black tracking-widest", otpStatusFilter === t.id ? t.color : "text-slate-400")}>{t.label}</span>
-                          {otpStatusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[4px]", t.color.replace('text-', 'bg-'))} />}
+                          {otpStatusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[4px]", t.borderColor)} />}
                         </button>
                       ))}
                     </div>
 
-                    <div className="flex gap-2">
-                      <button onClick={() => handleCopyTable(otpFilteredRows)} className="h-9 px-6 bg-slate-900 text-white rounded-xl text-[12px] font-black tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all">
-                        <Copy className="w-4 h-4" /> Copy Table
+                    <div className="flex gap-2 bg-white border rounded-xl p-1 shadow-sm items-center">
+                      <button 
+                        onClick={() => {
+                          const selected = otpFilteredRows.filter(r => selectedRowIds.has(r.id));
+                          if (selected.length === 0) {
+                            showToast("No Rows Selected", "err");
+                            return;
+                          }
+                          handleCopyAWBOnly(selected);
+                        }} 
+                        className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copy Selected AWBs
                       </button>
+                      <button 
+                        onClick={() => handleCopyAWBOnly(otpFilteredRows)} 
+                        className="h-9 px-4 bg-slate-800 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copy All AWB
+                      </button>
+                      <button onClick={() => downloadExcel(otpFilteredRows)} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black">Download Excel</button>
+                      <div className="flex-1" />
+                      <button onClick={() => handleCopyTable(otpFilteredRows)} className="h-9 px-5 bg-blue-600 text-white rounded-lg text-[12px] font-black">Copy Table</button>
                     </div>
 
                     <div className="bg-white rounded-xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
@@ -900,3 +939,4 @@ export default function PODTool() {
     </div>
   );
 }
+
