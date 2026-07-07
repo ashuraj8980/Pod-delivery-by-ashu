@@ -10,7 +10,8 @@ import {
   User,
   AlertCircle,
   X,
-  Trash2
+  Trash2,
+  LayoutGrid
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ import { cn } from "@/lib/utils";
  * - Strict Upload Requirement: DSP ID and FE Name must be filled.
  * - Colorful Session Cards with all status counts in Grid Layout (Matching Screenshot).
  * - One session per DSP ID (Overwrites on re-upload).
+ * - Show All Pending: Combined view for all pending shipments.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -125,6 +127,7 @@ export default function PODTool() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [activeRemarkChip, setActiveRemarkChip] = useState<string | null>(null);
+  const [showAllPending, setShowAllPending] = useState(false);
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
   const [isMounted, setIsMounted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -261,9 +264,16 @@ export default function PODTool() {
     if (!currentSession) return [];
     let rows = currentSession.data;
     if (statusFilter !== 'All') rows = rows.filter(r => r.status === statusFilter);
-    if (activeRemarkChip) rows = rows.filter(r => r.remark === activeRemarkChip);
+    
+    // Toggle combined pending view or remark-wise view
+    if (statusFilter === 'Pending' && showAllPending) {
+      // Don't apply remark filter, show all pending
+    } else if (activeRemarkChip) {
+      rows = rows.filter(r => r.remark === activeRemarkChip);
+    }
+    
     return rows;
-  }, [currentSession, statusFilter, activeRemarkChip]);
+  }, [currentSession, statusFilter, activeRemarkChip, showAllPending]);
 
   const stats = useMemo(() => {
     if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
@@ -454,7 +464,7 @@ export default function PODTool() {
                       dto: s.data.filter(r => r.status === 'DTO').length,
                     };
                     return (
-                      <div key={s.id} onClick={() => setSelectedSessionId(s.id)} className={cn("relative p-[12px_14px] border-[1.5px] rounded-xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white max-w-[280px]", selectedSessionId === s.id ? "border-blue-500 ring-1 ring-blue-500" : "hover:border-blue-300")}>
+                      <div key={s.id} onClick={() => { setSelectedSessionId(s.id); setStatusFilter("All"); setShowAllPending(false); }} className={cn("relative p-[12px_14px] border-[1.5px] rounded-xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white max-w-[280px]", selectedSessionId === s.id ? "border-blue-500 ring-1 ring-blue-500" : "hover:border-blue-300")}>
                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
                         <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="absolute right-3 top-3 text-slate-300 hover:text-rose-500 transition-colors">
                           <X className="w-3.5 h-3.5" />
@@ -484,7 +494,7 @@ export default function PODTool() {
                     {id: 'RTO', label: 'RTO', color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500', val: stats.rto},
                     {id: 'DTO', label: 'DTO', color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500', val: stats.dto}
                   ].map(t => (
-                    <button key={t.id} onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); }} className={cn("flex-1 py-6 flex flex-col items-center group h-[100px] transition-all relative", statusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
+                    <button key={t.id} onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); setShowAllPending(false); }} className={cn("flex-1 py-6 flex flex-col items-center group h-[100px] transition-all relative", statusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
                       <span className={cn("text-[32px] font-extrabold leading-none mb-1", t.color)}>{t.val}</span>
                       <span className="text-[13px] font-black">{t.label}</span>
                       {statusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[3px]", t.borderColor)} />}
@@ -493,11 +503,35 @@ export default function PODTool() {
                 </div>
 
                 {statusFilter === 'Pending' && (
-                  <div className="flex flex-wrap gap-4">
+                  <div className="flex flex-wrap gap-4 items-center">
+                    <button 
+                      onClick={() => {
+                        const newState = !showAllPending;
+                        setShowAllPending(newState);
+                        if (newState) setActiveRemarkChip(null);
+                      }}
+                      className={cn(
+                        "inline-flex items-center gap-2 px-4 py-2 min-h-[36px] rounded-lg text-[13px] font-black transition-all border shadow-sm",
+                        showAllPending 
+                          ? "bg-slate-900 text-white border-slate-900" 
+                          : "bg-white text-slate-900 border-slate-300 hover:border-blue-500"
+                      )}
+                    >
+                      <LayoutGrid className="w-4 h-4" />
+                      {showAllPending ? "Showing Combined List" : "Show All Pending"}
+                    </button>
+
                     {Array.from(new Set(currentSession.data.filter(r => r.status === 'Pending').map(r => r.remark))).map(remark => {
                       const count = currentSession.data.filter(r => r.status === 'Pending' && r.remark === remark).length;
                       return (
-                        <button key={`chip-${remark}`} onClick={() => setActiveRemarkChip(activeRemarkChip === remark ? null : remark)} className={cn("inline-flex items-center gap-3 px-4 py-2 min-h-[36px] rounded-lg text-[13px] font-semibold transition-all border shadow-sm", activeRemarkChip === remark ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:border-blue-400")}>
+                        <button 
+                          key={`chip-${remark}`} 
+                          onClick={() => {
+                            setActiveRemarkChip(activeRemarkChip === remark ? null : remark);
+                            setShowAllPending(false);
+                          }} 
+                          className={cn("inline-flex items-center gap-3 px-4 py-2 min-h-[36px] rounded-lg text-[13px] font-semibold transition-all border shadow-sm", activeRemarkChip === remark ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:border-blue-400")}
+                        >
                           <span>{remark}</span>
                           <span className={cn("px-[10px] py-[2px] rounded-full text-[12px] font-bold border", activeRemarkChip === remark ? "bg-white/20 border-white/30" : "bg-slate-100 border-slate-200 text-slate-600")}>{count}</span>
                         </button>
