@@ -42,10 +42,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Professional Edition
- * - Title Case styling for a professional look.
+ * - Professional Title Case styling.
  * - No LocalStorage persistence (Starts fresh).
  * - Return Address visible (word-wrap) but excluded from export.
- * - Dual Tab placement for Not Closed shipments in OTP module.
  * - Client-wise grouping with Dark Banners.
  * - Strict Upload Requirement: DSP ID and FE Name must be filled.
  */
@@ -201,7 +200,7 @@ export default function PODTool() {
     const text = rowsToCopy.map(r => normalizeAWB(r.awb)).join('\n');
     try {
       await navigator.clipboard.writeText(text);
-      showToast(`Copied ${rowsToCopy.length} AWB numbers`, "ok");
+      showToast(`Copied ${rowsToCopy.length} AWB Numbers`, "ok");
     } catch (err) { showToast("Failed To Copy AWBs", "err"); }
   };
 
@@ -609,7 +608,7 @@ export default function PODTool() {
                 </div>
 
                 {statusFilter === 'Pending' && (
-                  <div className="flex flex-wrap gap-3 animate-in fade-in slide-in-from-top-2">
+                  <div className="flex flex-wrap gap-4 animate-in fade-in slide-in-from-top-2">
                     {Array.from(new Set(currentSession.data.filter(r => r.status === 'Pending').map(r => r.remark))).map(remark => {
                       const count = currentSession.data.filter(r => r.status === 'Pending' && r.remark === remark).length;
                       return (
@@ -617,7 +616,7 @@ export default function PODTool() {
                           key={`chip-${remark}`} 
                           onClick={() => setActiveRemarkChip(activeRemarkChip === remark ? null : remark)} 
                           className={cn(
-                            "inline-flex items-center gap-2 px-4 py-2 h-9 rounded-lg text-[13px] font-semibold transition-all border shadow-sm tracking-tight", 
+                            "inline-flex items-center gap-3 px-4 py-2 min-h-[36px] rounded-lg text-[13px] font-semibold transition-all border shadow-sm tracking-tight", 
                             activeRemarkChip === remark 
                               ? "bg-blue-600 text-white border-blue-600" 
                               : "bg-white text-slate-600 border-slate-200 hover:border-blue-400"
@@ -939,4 +938,3 @@ export default function PODTool() {
     </div>
   );
 }
-
