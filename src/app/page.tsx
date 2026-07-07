@@ -47,6 +47,7 @@ import { Checkbox } from "@/components/ui/checkbox";
  * - Return Address visible (word-wrap) but excluded from export.
  * - Client-wise grouping with Dark Banners.
  * - Strict Upload Requirement: DSP ID and FE Name must be filled.
+ * - Colorful Session Cards with all status counts.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -576,16 +577,29 @@ export default function PODTool() {
             </div>
 
             {sessions.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-4">
-                {sessions.map(s => (
-                  <div key={s.id} onClick={() => setSelectedSessionId(s.id)} className={cn("p-4 border rounded-xl cursor-pointer transition-all", selectedSessionId === s.id ? "ring-2 ring-blue-500" : "hover:border-blue-300")}>
-                    <p className="font-extrabold text-[14px] text-slate-900">{s.feName}</p>
-                    <p className="text-[11px] text-slate-500 font-bold">{s.dspId} • {s.date}</p>
-                    <div className="mt-2 flex gap-1">
-                      <span className="text-[10px] font-black bg-slate-100 text-slate-600 px-2 py-0.5 rounded-lg border border-slate-200">{s.data.length} Pkt</span>
+              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+                {sessions.map(s => {
+                  const sStats = {
+                    total: s.data.length,
+                    pending: s.data.filter(r => r.status === 'Pending').length,
+                    dispatched: s.data.filter(r => r.status === 'Dispatched').length,
+                    rto: s.data.filter(r => r.status === 'RTO').length,
+                    dto: s.data.filter(r => r.status === 'DTO').length,
+                  };
+                  return (
+                    <div key={s.id} onClick={() => setSelectedSessionId(s.id)} className={cn("p-4 border rounded-xl cursor-pointer transition-all", selectedSessionId === s.id ? "ring-2 ring-blue-500 bg-blue-50/20" : "hover:border-blue-300 bg-white")}>
+                      <p className="font-extrabold text-[14px] text-slate-900">{s.feName}</p>
+                      <p className="text-[11px] text-slate-500 font-bold mb-3">{s.dspId} • {s.date}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="text-[9px] font-black bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200">Total: {sStats.total}</span>
+                        <span className="text-[9px] font-black bg-amber-50 text-amber-600 px-2 py-0.5 rounded-md border border-amber-200">Pending: {sStats.pending}</span>
+                        <span className="text-[9px] font-black bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md border border-rose-200">Disp: {sStats.dispatched}</span>
+                        <span className="text-[9px] font-black bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md border border-emerald-200">RTO: {sStats.rto}</span>
+                        <span className="text-[9px] font-black bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md border border-emerald-200">DTO: {sStats.dto}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -787,11 +801,12 @@ export default function PODTool() {
                       <p className="text-[10px] font-black text-slate-400 tracking-widest">{currentSession.dspId} • {currentSession.date}</p>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-[10px] font-black text-slate-600 border border-slate-200">Total: {stats.total} Pkt</span>
-                    <span className="px-3 py-1.5 rounded-lg bg-amber-50 text-[10px] font-black text-amber-600 border border-amber-200">Pending: {stats.pending}</span>
-                    <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-[10px] font-black text-emerald-600 border border-emerald-200">RTO: {stats.rto}</span>
-                    <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-[10px] font-black text-emerald-600 border border-emerald-200">DTO: {stats.dto}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="px-2.5 py-1 rounded-md bg-slate-100 text-[9px] font-black text-slate-600 border border-slate-200">Total: {stats.total}</span>
+                    <span className="px-2.5 py-1 rounded-md bg-amber-50 text-[9px] font-black text-amber-600 border border-amber-200">Pending: {stats.pending}</span>
+                    <span className="px-2.5 py-1 rounded-md bg-rose-50 text-[9px] font-black text-rose-600 border border-rose-200">Disp: {stats.dispatched}</span>
+                    <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-[9px] font-black text-emerald-600 border border-emerald-200">RTO: {stats.rto}</span>
+                    <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-[9px] font-black text-emerald-600 border border-emerald-200">DTO: {stats.dto}</span>
                   </div>
                 </div>
 
