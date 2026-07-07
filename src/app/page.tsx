@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -18,14 +19,9 @@ import { cn } from "@/lib/utils";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Professional Edition
- * - Professional Title Case styling.
- * - No LocalStorage persistence (Starts fresh).
- * - Return Address visible (word-wrap) but excluded from export.
- * - Client-wise grouping with Dark Banners.
- * - Strict Upload Requirement: DSP ID and FE Name must be filled.
- * - Colorful Session Cards with all status counts in Grid Layout.
- * - One session per DSP ID (Overwrites on re-upload).
- * - Restored Back Button for Pending Remarks.
+ * - Fix 1: Multi-select Remark Chips.
+ * - Fix 2: Client Dropdown Filter in both EOD and OTP tabs.
+ * - Fix 3: Reordered Action Bar (Copy All AWB at extreme left).
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -126,7 +122,12 @@ export default function PODTool() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("All");
-  const [activeRemarkChip, setActiveRemarkChip] = useState<string | null>(null);
+  
+  // Filtering states
+  const [selectedRemarkChips, setSelectedRemarkChips] = useState<string[]>([]);
+  const [clientFilter, setClientFilter] = useState<string>("All Clients");
+  const [otpClientFilter, setOtpClientFilter] = useState<string>("All Clients");
+  
   const [showAllPending, setShowAllPending] = useState(false);
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
   const [isMounted, setIsMounted] = useState(false);
@@ -260,19 +261,37 @@ export default function PODTool() {
     e.target.value = "";
   };
 
+  // EOD Dropdown options
+  const uniqueClients = useMemo(() => {
+    if (!currentSession) return [];
+    let rows = currentSession.data;
+    if (statusFilter !== 'All') {
+      rows = rows.filter(r => r.status === statusFilter);
+    }
+    return Array.from(new Set(rows.map(r => r.client))).sort();
+  }, [currentSession, statusFilter]);
+
   const filteredRows = useMemo(() => {
     if (!currentSession) return [];
     let rows = currentSession.data;
-    if (statusFilter !== 'All') rows = rows.filter(r => r.status === statusFilter);
     
-    if (statusFilter === 'Pending' && showAllPending) {
-      // Combined list: no remark filter
-    } else if (activeRemarkChip) {
-      rows = rows.filter(r => r.remark === activeRemarkChip);
+    // Status Filter
+    if (statusFilter !== 'All') {
+      rows = rows.filter(r => r.status === statusFilter);
+    }
+    
+    // Remark Chips Filter (Multi-select)
+    if (statusFilter === 'Pending' && !showAllPending && selectedRemarkChips.length > 0) {
+      rows = rows.filter(r => selectedRemarkChips.includes(r.remark));
+    }
+    
+    // Client Filter
+    if (clientFilter !== 'All Clients') {
+      rows = rows.filter(r => r.client === clientFilter);
     }
     
     return rows;
-  }, [currentSession, statusFilter, activeRemarkChip, showAllPending]);
+  }, [currentSession, statusFilter, selectedRemarkChips, clientFilter, showAllPending]);
 
   const stats = useMemo(() => {
     if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
@@ -382,6 +401,18 @@ export default function PODTool() {
     e.target.value = "";
   };
 
+  // OTP Dropdown options
+  const uniqueOtpClients = useMemo(() => {
+    let rows = otpData;
+    if (otpStatusFilter !== 'All') {
+      if (otpStatusFilter === 'Dispatched') rows = rows.filter(r => (r.otpStatus === 'Dispatched' && r.notClosedType !== 'Pending'));
+      else if (otpStatusFilter === 'RTO') rows = rows.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO');
+      else if (otpStatusFilter === 'DTO') rows = rows.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO');
+      else if (otpStatusFilter === 'Pending') rows = rows.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending' || (r.otpStatus === 'Not Found' && r.sessionStatus === 'Pending'));
+    }
+    return Array.from(new Set(rows.map(r => r.client))).sort();
+  }, [otpData, otpStatusFilter]);
+
   const otpFilteredRows = useMemo(() => {
     let rows = otpData;
     if (otpStatusFilter !== 'All') {
@@ -390,8 +421,14 @@ export default function PODTool() {
       else if (otpStatusFilter === 'DTO') rows = rows.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO');
       else if (otpStatusFilter === 'Pending') rows = rows.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending' || (r.otpStatus === 'Not Found' && r.sessionStatus === 'Pending'));
     }
+    
+    // Client Filter
+    if (otpClientFilter !== 'All Clients') {
+      rows = rows.filter(r => r.client === otpClientFilter);
+    }
+    
     return rows;
-  }, [otpData, otpStatusFilter]);
+  }, [otpData, otpStatusFilter, otpClientFilter]);
 
   const otpStats = useMemo(() => ({
     total: otpData.length,
@@ -463,7 +500,13 @@ export default function PODTool() {
                       dto: s.data.filter(r => r.status === 'DTO').length,
                     };
                     return (
-                      <div key={s.id} onClick={() => { setSelectedSessionId(s.id); setStatusFilter("All"); setShowAllPending(false); }} className={cn("relative p-[12px_14px] border-[1.5px] rounded-xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white max-w-[280px]", selectedSessionId === s.id ? "border-blue-500 ring-1 ring-blue-500" : "hover:border-blue-300")}>
+                      <div key={s.id} onClick={() => { 
+                        setSelectedSessionId(s.id); 
+                        setStatusFilter("All"); 
+                        setSelectedRemarkChips([]);
+                        setClientFilter("All Clients");
+                        setShowAllPending(false); 
+                      }} className={cn("relative p-[12px_14px] border-[1.5px] rounded-xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white max-w-[280px]", selectedSessionId === s.id ? "border-blue-500 ring-1 ring-blue-500" : "hover:border-blue-300")}>
                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
                         <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="absolute right-3 top-3 text-slate-300 hover:text-rose-500 transition-colors">
                           <X className="w-3.5 h-3.5" />
@@ -493,7 +536,12 @@ export default function PODTool() {
                     {id: 'RTO', label: 'RTO', color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500', val: stats.rto},
                     {id: 'DTO', label: 'DTO', color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500', val: stats.dto}
                   ].map(t => (
-                    <button key={t.id} onClick={() => { setStatusFilter(t.id); setActiveRemarkChip(null); setShowAllPending(false); }} className={cn("flex-1 py-6 flex flex-col items-center group h-[100px] transition-all relative", statusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
+                    <button key={t.id} onClick={() => { 
+                      setStatusFilter(t.id); 
+                      setSelectedRemarkChips([]); 
+                      setClientFilter("All Clients");
+                      setShowAllPending(false); 
+                    }} className={cn("flex-1 py-6 flex flex-col items-center group h-[100px] transition-all relative", statusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
                       <span className={cn("text-[32px] font-extrabold leading-none mb-1", t.color)}>{t.val}</span>
                       <span className="text-[13px] font-black">{t.label}</span>
                       {statusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[3px]", t.borderColor)} />}
@@ -507,29 +555,32 @@ export default function PODTool() {
                       <div className="flex flex-wrap gap-3 items-center">
                         {Array.from(new Set(currentSession.data.filter(r => r.status === 'Pending').map(r => r.remark))).map(remark => {
                           const count = currentSession.data.filter(r => r.status === 'Pending' && r.remark === remark).length;
+                          const isSelected = selectedRemarkChips.includes(remark);
                           return (
                             <button 
                               key={`chip-${remark}`} 
                               onClick={() => {
-                                setActiveRemarkChip(activeRemarkChip === remark ? null : remark);
+                                setSelectedRemarkChips(prev => 
+                                  prev.includes(remark) ? prev.filter(c => c !== remark) : [...prev, remark]
+                                );
                                 setShowAllPending(false);
                               }} 
                               className={cn(
                                 "inline-flex items-center gap-3 px-4 py-2 min-h-[36px] rounded-lg text-[13px] font-semibold transition-all border shadow-sm", 
-                                activeRemarkChip === remark ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:border-blue-400"
+                                isSelected ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:border-blue-400"
                               )}
                             >
                               <span className="font-semibold">{remark}</span>
-                              <span className={cn("px-[10px] py-[2px] rounded-full text-[12px] font-bold border", activeRemarkChip === remark ? "bg-white/20 border-white/30" : "bg-slate-100 border-slate-200 text-slate-600")}>{count}</span>
+                              <span className={cn("px-[10px] py-[2px] rounded-full text-[12px] font-bold border", isSelected ? "bg-white/20 border-white/30" : "bg-slate-100 border-slate-200 text-slate-600")}>{count}</span>
                             </button>
                           );
                         })}
                       </div>
 
-                      {activeRemarkChip && (
+                      {selectedRemarkChips.length > 0 && (
                         <button 
                           onClick={() => {
-                            setActiveRemarkChip(null);
+                            setSelectedRemarkChips([]);
                             setShowAllPending(true);
                           }}
                           className="bg-[#1C2333] text-white px-[14px] py-[6px] rounded-[8px] text-[11.5px] font-semibold whitespace-nowrap transition-all active:scale-95 shadow-sm"
@@ -541,18 +592,36 @@ export default function PODTool() {
                   </div>
                 )}
 
+                {/* Filters Section */}
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Client Filter</label>
+                    <select
+                      value={clientFilter}
+                      onChange={(e) => setClientFilter(e.target.value)}
+                      className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[200px] shadow-sm"
+                    >
+                      <option value="All Clients">All Clients</option>
+                      {uniqueClients.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Action Bar */}
                 <div className="flex gap-2 bg-white border rounded-xl p-1 shadow-sm items-center">
+                  <button onClick={() => handleCopyAWBOnly(filteredRows)} className="h-9 px-4 bg-slate-800 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
+                    <Copy className="w-3.5 h-3.5" /> Copy All AWB
+                  </button>
                   <button onClick={() => {
                     const rows = filteredRows.filter(r => selectedRowIds.has(r.id));
                     handleCopyAWBOnly(rows);
                   }} className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
                     <Copy className="w-3.5 h-3.5" /> Copy Selected AWBs
                   </button>
-                  <button onClick={() => handleCopyAWBOnly(filteredRows)} className="h-9 px-4 bg-slate-800 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
-                    <Copy className="w-3.5 h-3.5" /> Copy All AWB
-                  </button>
-                  <button onClick={() => downloadExcel(filteredRows)} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black">Download Excel</button>
+                  
                   <div className="flex-1" />
+                  
+                  <button onClick={() => downloadExcel(filteredRows)} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black">Download Excel</button>
                   <button onClick={() => handleCopyTable(filteredRows)} className="h-9 px-5 bg-blue-600 text-white rounded-lg text-[12px] font-black">Copy Table</button>
                 </div>
 
@@ -737,12 +806,30 @@ export default function PODTool() {
                         {id: 'RTO', label: 'RTO', val: otpStats.rto, color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500'},
                         {id: 'DTO', label: 'DTO', val: otpStats.dto, color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500'}
                       ].map(t => (
-                        <button key={`otp-tab-${t.id}`} onClick={() => setOtpStatusFilter(t.id)} className={cn("flex-1 py-6 flex flex-col items-center group h-[110px] transition-all relative", otpStatusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
+                        <button key={`otp-tab-${t.id}`} onClick={() => {
+                          setOtpStatusFilter(t.id);
+                          setOtpClientFilter("All Clients");
+                        }} className={cn("flex-1 py-6 flex flex-col items-center group h-[110px] transition-all relative", otpStatusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
                           <span className={cn("text-[36px] font-black leading-none mb-1", t.color)}>{t.val}</span>
                           <span className={cn("text-[13px] font-black tracking-widest", otpStatusFilter === t.id ? t.color : "text-slate-400")}>{t.label}</span>
                           {otpStatusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[4px]", t.borderColor)} />}
                         </button>
                       ))}
+                    </div>
+
+                    {/* OTP Client Filter */}
+                    <div className="flex items-center gap-4 mb-2">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Client Filter</label>
+                        <select
+                          value={otpClientFilter}
+                          onChange={(e) => setOtpClientFilter(e.target.value)}
+                          className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[200px] shadow-sm"
+                        >
+                          <option value="All Clients">All Clients</option>
+                          {uniqueOtpClients.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
                     </div>
 
                     <div className="bg-white rounded-xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
@@ -806,3 +893,4 @@ export default function PODTool() {
     </div>
   );
 }
+
