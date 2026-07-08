@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -19,10 +18,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Professional Edition
- * - Restore 1: Individual row delete button.
- * - Restore 2: Master Select All checkbox.
- * - Restore 3: Delete Selected button with count.
- * - Logic: Persistent storage with localStorage.
+ * Optimized for EOD Rejection management and OTP Dispatch verification.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -104,7 +100,6 @@ interface OTPRow {
   otpStatus: string;
   sessionStatus: string;
   returnAddress: string;
-  isFTPL: boolean;
   isNotClosed: boolean;
   notClosedType: 'RTO' | 'DTO' | 'Pending' | null;
 }
@@ -159,6 +154,13 @@ export default function PODTool() {
       localStorage.setItem('pod_sessions', JSON.stringify(sessions));
     }
   }, [sessions, isMounted]);
+
+  // FIX 5: Reset OTP data when session changes
+  useEffect(() => {
+    setOtpData([]);
+    setOtpStatusFilter("All");
+    setOtpClientFilter("All Clients");
+  }, [selectedSessionId]);
 
   const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
 
@@ -402,6 +404,7 @@ export default function PODTool() {
     showToast("Session Deleted", "ok");
   };
 
+  // FIX 1 & 2: Process OTP Report with strict matching and correct status logic
   const handleOTPFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -414,70 +417,82 @@ export default function PODTool() {
         const wb = XLSX.read(data, { type: 'array', raw: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
+        
         const sessionMap = new Map<string, PODRow>();
         currentSession.data.forEach(r => sessionMap.set(normalizeAWB(r.awb), r));
+        
         const tempOtpData: OTPRow[] = [];
-        const otpAWBs = new Set<string>();
+        let matchedCount = 0;
 
         rawData.forEach((row: any) => {
           const rawAwb = row['Waybill'] || row['AWB'] || row['waybill'] || row['awb'];
           if (!isValidAWB(rawAwb)) return;
           const awb = normalizeAWB(rawAwb);
+          
+          // FIX 1: Only process if AWB matches current session
+          const sessionRow = sessionMap.get(awb);
+          if (!sessionRow) return;
+          
+          matchedCount++;
           const otpStatusRaw = String(row['Status'] || row['Current Status'] || "").toLowerCase().trim();
           let otpStatus = 'Unknown';
           if (otpStatusRaw.includes('dispatched') || otpStatusRaw.includes('dispatch')) otpStatus = 'Dispatched';
           else if (otpStatusRaw.includes('rto')) otpStatus = 'RTO';
           else if (otpStatusRaw.includes('dto')) otpStatus = 'DTO';
           else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
-          const sessionRow = sessionMap.get(awb);
-          const csvStatus = sessionRow?.status || 'Not Found';
+          
+          const csvStatus = sessionRow.status;
+          
+          // FIX 2 & 3: Not closed logic
           const isRTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'RTO';
           const isDTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'DTO';
           const isPendingNotClosed = otpStatus === 'Dispatched' && csvStatus === 'Pending';
+          
           tempOtpData.push({
             id: crypto.randomUUID(),
-            awb, client: String(row['Client'] || sessionRow?.client || "Unknown").trim(), 
-            otpStatus, sessionStatus: csvStatus, returnAddress: sessionRow?.returnAddress || "",
-            isFTPL: String(row['Client'] || sessionRow?.client || "").toUpperCase().includes('FTPL'),
+            awb, 
+            client: sessionRow.client, 
+            otpStatus, 
+            sessionStatus: csvStatus, 
+            returnAddress: sessionRow.returnAddress || "",
             isNotClosed: isRTONotClosed || isDTONotClosed || isPendingNotClosed,
             notClosedType: isRTONotClosed ? 'RTO' : isDTONotClosed ? 'DTO' : isPendingNotClosed ? 'Pending' : null
           });
-          otpAWBs.add(awb);
         });
-        currentSession.data.filter(r => r.status === 'Pending' && !otpAWBs.has(normalizeAWB(r.awb))).forEach(sr => {
-          tempOtpData.push({
-            id: crypto.randomUUID(), awb: normalizeAWB(sr.awb), client: sr.client, otpStatus: 'Not Found', sessionStatus: 'Pending',
-            returnAddress: sr.returnAddress || "", isFTPL: sr.client.toUpperCase().includes('FTPL'),
-            isNotClosed: false, notClosedType: null
-          });
-        });
+
+        if (matchedCount === 0) {
+          showToast("Wrong file — no AWBs match current session. Please upload the correct Delhivery OTP report for this FE.", "err");
+          return;
+        }
+
         setOtpData(tempOtpData);
-        showToast(`Imported ${tempOtpData.length} Records.`, "ok");
+        showToast(`Imported ${tempOtpData.length} Matched Records.`, "ok");
       } catch (err) { showToast("Failed To Process OTP Report", "err"); } finally { setIsProcessing(false); }
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
   };
 
-  // OTP Dropdown options
-  const uniqueOtpClients = useMemo(() => {
-    let rows = otpData;
-    if (otpStatusFilter !== 'All') {
-      if (otpStatusFilter === 'Dispatched') rows = rows.filter(r => (r.otpStatus === 'Dispatched' && r.notClosedType !== 'Pending'));
-      else if (otpStatusFilter === 'RTO') rows = rows.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO');
-      else if (otpStatusFilter === 'DTO') rows = rows.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO');
-      else if (otpStatusFilter === 'Pending') rows = rows.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending' || (r.otpStatus === 'Not Found' && r.sessionStatus === 'Pending'));
-    }
-    return Array.from(new Set(rows.map(r => r.client))).sort();
-  }, [otpData, otpStatusFilter]);
-
+  // FIX 3: OTP Dropdown and Filter Logic
   const otpFilteredRows = useMemo(() => {
     let rows = otpData;
     if (otpStatusFilter !== 'All') {
-      if (otpStatusFilter === 'Dispatched') rows = rows.filter(r => (r.otpStatus === 'Dispatched' && r.notClosedType !== 'Pending'));
-      else if (otpStatusFilter === 'RTO') rows = rows.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO');
-      else if (otpStatusFilter === 'DTO') rows = rows.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO');
-      else if (otpStatusFilter === 'Pending') rows = rows.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending' || (r.otpStatus === 'Not Found' && r.sessionStatus === 'Pending'));
+      if (otpStatusFilter === 'Dispatched') {
+        // Dispatched = (OTP Disp + CSV Disp) OR (OTP Disp + CSV RTO/DTO)
+        rows = rows.filter(r => 
+          r.otpStatus === 'Dispatched' && 
+          (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')
+        );
+      } else if (otpStatusFilter === 'RTO') {
+        // RTO = OTP RTO OR (OTP Disp + CSV RTO)
+        rows = rows.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO');
+      } else if (otpStatusFilter === 'DTO') {
+        // DTO = OTP DTO OR (OTP Disp + CSV DTO)
+        rows = rows.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO');
+      } else if (otpStatusFilter === 'Pending') {
+        // Pending = OTP Pending OR (OTP Disp + CSV Pending)
+        rows = rows.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending');
+      }
     }
     
     // Client Filter
@@ -488,13 +503,35 @@ export default function PODTool() {
     return rows;
   }, [otpData, otpStatusFilter, otpClientFilter]);
 
+  // FIX 2: Correct Status Counts
   const otpStats = useMemo(() => ({
     total: otpData.length,
-    dispatched: otpData.filter(r => (r.otpStatus === 'Dispatched' && r.notClosedType !== 'Pending')).length,
+    dispatched: otpData.filter(r => 
+      r.otpStatus === 'Dispatched' && 
+      (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')
+    ).length,
     rto: otpData.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO').length,
     dto: otpData.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO').length,
-    pending: otpData.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending' || (r.otpStatus === 'Not Found' && r.sessionStatus === 'Pending')).length,
+    pending: otpData.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending').length,
   }), [otpData]);
+
+  // FIX 4: Download Excel for OTP module
+  const downloadOTPExcel = () => {
+    if (!otpFilteredRows.length) return;
+    const header = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status', 'Return Address'];
+    const excelData = otpFilteredRows.map(r => [
+      { v: String(r.awb), t: 's' },
+      r.client,
+      r.otpStatus,
+      r.sessionStatus,
+      r.returnAddress
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "OTP_Report");
+    XLSX.writeFile(wb, `OTP_Verification_${currentSession?.dspId || 'Export'}.xlsx`);
+  };
 
   if (!isMounted) return null;
 
@@ -624,7 +661,7 @@ export default function PODTool() {
                                 setShowAllPending(false);
                               }} 
                               className={cn(
-                                "inline-flex items-center gap-3 px-4 py-2 min-h-[36px] rounded-lg text-[13px] font-semibold transition-all border shadow-sm", 
+                                "inline-flex items-center gap-3 px-4 py-2 min-h-[36px] rounded-lg text-[13px] transition-all border shadow-sm", 
                                 isSelected ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:border-blue-400"
                               )}
                             >
@@ -909,9 +946,13 @@ export default function PODTool() {
                           className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[200px] shadow-sm"
                         >
                           <option value="All Clients">All Clients</option>
-                          {uniqueOtpClients.map(c => <option key={c} value={c}>{c}</option>)}
+                          {Array.from(new Set(otpData.map(r => r.client))).sort().map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
+                      <div className="flex-1" />
+                      <button onClick={downloadOTPExcel} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black flex items-center gap-2">
+                        <Download className="w-4 h-4" /> Download OTP Report
+                      </button>
                     </div>
 
                     <div className="bg-white rounded-xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
@@ -943,14 +984,14 @@ export default function PODTool() {
                                   </td>
                                 </tr>
                                 {rows.map((row: any) => (
-                                  <tr key={`otp-row-${row.id}`} className={cn("border-b", row.isNotClosed ? "bg-amber-50/30 border-l-[4px] border-l-amber-500" : "bg-white")}>
+                                  <tr key={`otp-row-${row.id}`} className={cn("border-b", row.isNotClosed ? "bg-amber-50/30 border-l-[3px] border-l-amber-500" : "bg-white")}>
                                     <td className="px-2 py-2"><input type="checkbox" /></td>
                                     <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
                                     <td className="px-4 py-2 text-[13px] font-black tracking-tight">{row.client}</td>
                                     <td className="px-4 py-2">
                                       <div className="flex flex-col items-center gap-1.5 py-1">
                                         <span className={cn("px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm", row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : "bg-emerald-600 text-white border-emerald-500")}>{row.otpStatus}</span>
-                                        {row.isNotClosed && <span className="px-1.5 py-1 rounded bg-amber-100 text-amber-800 text-[9px] font-black border border-amber-300 whitespace-normal leading-tight text-center">{row.notClosedType} — Not Closed On Device</span>}
+                                        {row.isNotClosed && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black border border-amber-300 whitespace-normal leading-tight text-center">Not closed on device</span>}
                                       </div>
                                     </td>
                                     <td className="px-4 py-2">
@@ -975,4 +1016,3 @@ export default function PODTool() {
     </div>
   );
 }
-
