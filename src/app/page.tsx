@@ -532,6 +532,29 @@ export default function PODTool() {
     XLSX.writeFile(wb, `OTP_Verification_${currentSession?.dspId || 'Export'}.xlsx`);
   };
 
+  const handleSessionClick = (s: Session) => {
+    setSelectedSessionId(s.id);
+    setStatusFilter("All");
+    setSelectedRemarkChips([]);
+    setClientFilter("All Clients");
+    setShowAllPending(false);
+
+    // Auto-fill inputs
+    let isoDate = "";
+    if (s.date && s.date.includes('-')) {
+      const parts = s.date.split('-');
+      if (parts.length === 3) {
+        // DD-MM-YYYY to YYYY-MM-DD
+        isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+    }
+    setSetupData({
+      feName: s.feName,
+      dspId: s.dspId,
+      date: isoDate || s.date
+    });
+  };
+
   if (!isMounted) return null;
 
   return (
@@ -594,13 +617,7 @@ export default function PODTool() {
                       dto: s.data.filter(r => r.status === 'DTO').length,
                     };
                     return (
-                      <div key={s.id} onClick={() => { 
-                        setSelectedSessionId(s.id); 
-                        setStatusFilter("All"); 
-                        setSelectedRemarkChips([]);
-                        setClientFilter("All Clients");
-                        setShowAllPending(false); 
-                      }} className={cn("relative p-[12px_14px] border-[1.5px] rounded-xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white max-w-[280px]", selectedSessionId === s.id ? "border-blue-500 ring-1 ring-blue-500" : "hover:border-blue-300")}>
+                      <div key={s.id} onClick={() => handleSessionClick(s)} className={cn("relative p-[12px_14px] border-[1.5px] rounded-xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white max-w-[280px]", selectedSessionId === s.id ? "border-blue-500 ring-1 ring-blue-500" : "hover:border-blue-300")}>
                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
                         <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="absolute right-3 top-3 text-slate-300 hover:text-rose-500 transition-colors">
                           <X className="w-3.5 h-3.5" />
