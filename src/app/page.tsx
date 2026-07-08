@@ -19,9 +19,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * @fileOverview Delhivery POD Management Tool - Professional Edition
- * - Fix 1: Multi-select Remark Chips.
- * - Fix 2: Client Dropdown Filter in both EOD and OTP tabs.
- * - Fix 3: Reordered Action Bar (Copy All AWB at extreme left).
+ * - Restore 1: Individual row delete button.
+ * - Restore 2: Master Select All checkbox.
+ * - Restore 3: Delete Selected button with count.
+ * - Logic: Persistent storage with localStorage.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -140,10 +141,24 @@ export default function PODTool() {
   const [otpData, setOtpData] = useState<OTPRow[]>([]);
   const [otpStatusFilter, setOtpStatusFilter] = useState<string>("All");
 
+  // Load from localStorage
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
+    const saved = localStorage.getItem('pod_sessions');
+    if (saved) {
+      try {
+        setSessions(JSON.parse(saved));
+      } catch (e) {}
+    }
   }, []);
+
+  // Save to localStorage
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem('pod_sessions', JSON.stringify(sessions));
+    }
+  }, [sessions, isMounted]);
 
   const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
 
@@ -261,6 +276,34 @@ export default function PODTool() {
     e.target.value = "";
   };
 
+  const deleteRow = (rowId: string) => {
+    if (!selectedSessionId) return;
+    setSessions(prev => prev.map(s => {
+      if (s.id === selectedSessionId) {
+        return { ...s, data: s.data.filter(r => r.id !== rowId) };
+      }
+      return s;
+    }));
+    setSelectedRowIds(prev => {
+      const next = new Set(prev);
+      next.delete(rowId);
+      return next;
+    });
+  };
+
+  const deleteSelectedRows = () => {
+    if (!selectedSessionId || selectedRowIds.size === 0) return;
+    setSessions(prev => prev.map(s => {
+      if (s.id === selectedSessionId) {
+        return { ...s, data: s.data.filter(r => !selectedRowIds.has(r.id)) };
+      }
+      return s;
+    }));
+    const count = selectedRowIds.size;
+    setSelectedRowIds(new Set());
+    showToast(`Deleted ${count} Rows`, "ok");
+  };
+
   // EOD Dropdown options
   const uniqueClients = useMemo(() => {
     if (!currentSession) return [];
@@ -292,6 +335,21 @@ export default function PODTool() {
     
     return rows;
   }, [currentSession, statusFilter, selectedRemarkChips, clientFilter, showAllPending]);
+
+  const isAllSelected = filteredRows.length > 0 && filteredRows.every(r => selectedRowIds.has(r.id));
+  const isSomeSelected = filteredRows.some(r => selectedRowIds.has(r.id)) && !isAllSelected;
+
+  const handleSelectAll = () => {
+    if (isAllSelected) {
+      const next = new Set(selectedRowIds);
+      filteredRows.forEach(r => next.delete(r.id));
+      setSelectedRowIds(next);
+    } else {
+      const next = new Set(selectedRowIds);
+      filteredRows.forEach(r => next.add(r.id));
+      setSelectedRowIds(next);
+    }
+  };
 
   const stats = useMemo(() => {
     if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
@@ -488,7 +546,7 @@ export default function PODTool() {
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-black text-slate-700 tracking-tight">Recent Sessions</h3>
-                  <button onClick={() => setSessions([])} className="text-[12px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest">Clear All History</button>
+                  <button onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); }} className="text-[12px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest">Clear All History</button>
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-[10px]">
                   {sessions.map(s => {
@@ -592,7 +650,6 @@ export default function PODTool() {
                   </div>
                 )}
 
-                {/* Filters Section */}
                 <div className="flex items-center gap-4 mb-2">
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Client Filter</label>
@@ -607,7 +664,6 @@ export default function PODTool() {
                   </div>
                 </div>
 
-                {/* Action Bar */}
                 <div className="flex gap-2 bg-white border rounded-xl p-1 shadow-sm items-center">
                   <button onClick={() => handleCopyAWBOnly(filteredRows)} className="h-9 px-4 bg-slate-800 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
                     <Copy className="w-3.5 h-3.5" /> Copy All AWB
@@ -618,6 +674,15 @@ export default function PODTool() {
                   }} className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
                     <Copy className="w-3.5 h-3.5" /> Copy Selected AWBs
                   </button>
+
+                  {selectedRowIds.size > 0 && (
+                    <button 
+                      onClick={deleteSelectedRows}
+                      className="h-9 px-4 bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2 hover:bg-[#DC2626] hover:text-white transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete Selected {selectedRowIds.size}
+                    </button>
+                  )}
                   
                   <div className="flex-1" />
                   
@@ -630,7 +695,15 @@ export default function PODTool() {
                     <table className="w-full text-center border-collapse table-fixed">
                       <thead className="bg-[#0f172a] text-white h-11">
                         <tr key="main-header">
-                          <th style={{width: '32px'}} className="px-2"><input type="checkbox" /></th>
+                          <th style={{width: '32px'}} className="px-2">
+                            <input 
+                              type="checkbox" 
+                              checked={isAllSelected}
+                              ref={el => { if (el) el.indeterminate = isSomeSelected; }}
+                              onChange={handleSelectAll}
+                            />
+                          </th>
+                          <th style={{width: '40px'}} className="px-2"></th>
                           <th style={{width: '80px'}} className="text-[11px] font-bold tracking-tight">DSP ID</th>
                           <th style={{width: '140px'}} className="text-[11px] font-bold tracking-tight">Waybill Number</th>
                           <th style={{width: '180px'}} className="text-[11px] font-bold tracking-tight">Client</th>
@@ -648,7 +721,7 @@ export default function PODTool() {
                         }, {})).map(([client, rows]: any) => (
                           <React.Fragment key={`group-frag-${client}`}>
                             <tr className="bg-slate-800 text-white h-9">
-                              <td colSpan={8} className="text-left px-4">
+                              <td colSpan={9} className="text-left px-4">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
                                   <button onClick={() => handleCopyAWBOnly(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 font-bold">Copy AWBs</button>
@@ -657,13 +730,23 @@ export default function PODTool() {
                             </tr>
                             {rows.map((row: any) => (
                               <tr key={`row-${row.id}`} className={cn("border-b hover:bg-blue-50/40", selectedRowIds.has(row.id) && "bg-blue-50/50")}>
-                                <td className="px-2 py-2"><input type="checkbox" checked={selectedRowIds.has(row.id)} onChange={() => {
-                                  setSelectedRowIds(prev => {
-                                    const next = new Set(prev);
-                                    if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
-                                    return next;
-                                  });
-                                }} /></td>
+                                <td className="px-2 py-2">
+                                  <input type="checkbox" checked={selectedRowIds.has(row.id)} onChange={() => {
+                                    setSelectedRowIds(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
+                                      return next;
+                                    });
+                                  }} />
+                                </td>
+                                <td className="px-1 py-2">
+                                  <button 
+                                    onClick={() => deleteRow(row.id)}
+                                    className="w-[26px] h-[26px] flex items-center justify-center rounded-md text-slate-300 hover:bg-[#FEF2F2] hover:text-[#DC2626] transition-all"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
                                 <td className="px-2 py-2 text-[13px] font-bold text-slate-600">{row.dspId}</td>
                                 <td className="px-2 py-2 text-[13px] font-bold font-mono text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
                                 <td className="px-2 py-2 text-[13px] font-semibold text-slate-800">{row.client}</td>
@@ -817,7 +900,6 @@ export default function PODTool() {
                       ))}
                     </div>
 
-                    {/* OTP Client Filter */}
                     <div className="flex items-center gap-4 mb-2">
                       <div className="flex flex-col gap-1.5">
                         <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Client Filter</label>
