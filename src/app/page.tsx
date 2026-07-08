@@ -155,7 +155,7 @@ export default function PODTool() {
     }
   }, [sessions, isMounted]);
 
-  // FIX 5: Reset OTP data when session changes
+  // Reset OTP data when session changes
   useEffect(() => {
     setOtpData([]);
     setOtpStatusFilter("All");
@@ -306,7 +306,7 @@ export default function PODTool() {
     showToast(`Deleted ${count} Rows`, "ok");
   };
 
-  // EOD Dropdown options
+  // EOD Dropdown options - Optimized to show only clients in the active tab
   const uniqueClients = useMemo(() => {
     if (!currentSession) return [];
     let rows = currentSession.data;
@@ -404,7 +404,7 @@ export default function PODTool() {
     showToast("Session Deleted", "ok");
   };
 
-  // FIX 1 & 2: Process OTP Report with strict matching and correct status logic
+  // Process OTP Report with strict matching
   const handleOTPFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -429,7 +429,6 @@ export default function PODTool() {
           if (!isValidAWB(rawAwb)) return;
           const awb = normalizeAWB(rawAwb);
           
-          // FIX 1: Only process if AWB matches current session
           const sessionRow = sessionMap.get(awb);
           if (!sessionRow) return;
           
@@ -443,7 +442,6 @@ export default function PODTool() {
           
           const csvStatus = sessionRow.status;
           
-          // FIX 2 & 3: Not closed logic
           const isRTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'RTO';
           const isDTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'DTO';
           const isPendingNotClosed = otpStatus === 'Dispatched' && csvStatus === 'Pending';
@@ -473,37 +471,40 @@ export default function PODTool() {
     e.target.value = "";
   };
 
-  // FIX 3: OTP Dropdown and Filter Logic
-  const otpFilteredRows = useMemo(() => {
+  // OTP filter helper for client list and table
+  const getOtpBaseFilteredRows = useCallback((status: string) => {
     let rows = otpData;
-    if (otpStatusFilter !== 'All') {
-      if (otpStatusFilter === 'Dispatched') {
-        // Dispatched = (OTP Disp + CSV Disp) OR (OTP Disp + CSV RTO/DTO)
+    if (status !== 'All') {
+      if (status === 'Dispatched') {
         rows = rows.filter(r => 
           r.otpStatus === 'Dispatched' && 
           (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')
         );
-      } else if (otpStatusFilter === 'RTO') {
-        // RTO = OTP RTO OR (OTP Disp + CSV RTO)
+      } else if (status === 'RTO') {
         rows = rows.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO');
-      } else if (otpStatusFilter === 'DTO') {
-        // DTO = OTP DTO OR (OTP Disp + CSV DTO)
+      } else if (status === 'DTO') {
         rows = rows.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO');
-      } else if (otpStatusFilter === 'Pending') {
-        // Pending = OTP Pending OR (OTP Disp + CSV Pending)
+      } else if (status === 'Pending') {
         rows = rows.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending');
       }
     }
-    
-    // Client Filter
+    return rows;
+  }, [otpData]);
+
+  // OTP Client list optimized for active tab
+  const uniqueOtpClients = useMemo(() => {
+    const rows = getOtpBaseFilteredRows(otpStatusFilter);
+    return Array.from(new Set(rows.map(r => r.client))).sort();
+  }, [getOtpBaseFilteredRows, otpStatusFilter]);
+
+  const otpFilteredRows = useMemo(() => {
+    let rows = getOtpBaseFilteredRows(otpStatusFilter);
     if (otpClientFilter !== 'All Clients') {
       rows = rows.filter(r => r.client === otpClientFilter);
     }
-    
     return rows;
-  }, [otpData, otpStatusFilter, otpClientFilter]);
+  }, [getOtpBaseFilteredRows, otpStatusFilter, otpClientFilter]);
 
-  // FIX 2: Correct Status Counts
   const otpStats = useMemo(() => ({
     total: otpData.length,
     dispatched: otpData.filter(r => 
@@ -515,7 +516,6 @@ export default function PODTool() {
     pending: otpData.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending').length,
   }), [otpData]);
 
-  // FIX 4: Download Excel for OTP module
   const downloadOTPExcel = () => {
     if (!otpFilteredRows.length) return;
     const header = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status', 'Return Address'];
@@ -526,7 +526,6 @@ export default function PODTool() {
       r.sessionStatus,
       r.returnAddress
     ]);
-
     const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "OTP_Report");
@@ -946,7 +945,7 @@ export default function PODTool() {
                           className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[200px] shadow-sm"
                         >
                           <option value="All Clients">All Clients</option>
-                          {Array.from(new Set(otpData.map(r => r.client))).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                          {uniqueOtpClients.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
                       <div className="flex-1" />
