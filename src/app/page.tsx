@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -11,7 +12,10 @@ import {
   AlertCircle,
   X,
   Trash2,
-  LayoutGrid
+  ChevronDown,
+  ChevronRight,
+  Save,
+  Calendar
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -113,12 +117,30 @@ interface Session {
   timestamp: number;
 }
 
+interface MonthlyRecord extends Session {
+  stats: {
+    total: number;
+    pending: number;
+    dispatched: number;
+    rto: number;
+    dto: number;
+  };
+}
+
+// Structure: { "2024-03": { "2024-03-25": [Session, Session] } }
+type MonthlyStorage = Record<string, Record<string, MonthlyRecord[]>>;
+
 export default function PODTool() {
   const [activeTab, setActiveTab] = useState<"eod" | "remark" | "otp">("eod");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("All");
   
+  // Monthly Records State
+  const [monthlyRecords, setMonthlyRecords] = useState<MonthlyStorage>({});
+  const [selectedMonth, setSelectedMonth] = useState<string>("");
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+
   // Filtering states
   const [selectedRemarkChips, setSelectedRemarkChips] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string>("All Clients");
@@ -140,10 +162,21 @@ export default function PODTool() {
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
+    
     const saved = localStorage.getItem('pod_sessions');
     if (saved) {
       try {
         setSessions(JSON.parse(saved));
+      } catch (e) {}
+    }
+
+    const savedMonthly = localStorage.getItem('pod_monthly_records');
+    if (savedMonthly) {
+      try {
+        const parsed = JSON.parse(savedMonthly);
+        setMonthlyRecords(parsed);
+        const months = Object.keys(parsed).sort().reverse();
+        if (months.length > 0) setSelectedMonth(months[0]);
       } catch (e) {}
     }
   }, []);
@@ -155,6 +188,12 @@ export default function PODTool() {
     }
   }, [sessions, isMounted]);
 
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem('pod_monthly_records', JSON.stringify(monthlyRecords));
+    }
+  }, [monthlyRecords, isMounted]);
+
   // Reset OTP data when session changes
   useEffect(() => {
     setOtpData([]);
@@ -163,6 +202,17 @@ export default function PODTool() {
   }, [selectedSessionId]);
 
   const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
+
+  const stats = useMemo(() => {
+    if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
+    return {
+      total: currentSession.data.length,
+      pending: currentSession.data.filter(r => r.status === 'Pending').length,
+      dispatched: currentSession.data.filter(r => r.status === 'Dispatched').length,
+      rto: currentSession.data.filter(r => r.status === 'RTO').length,
+      dto: currentSession.data.filter(r => r.status === 'DTO').length,
+    };
+  }, [currentSession]);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err') => {
     if (typeof document === 'undefined') return;
@@ -177,6 +227,43 @@ export default function PODTool() {
       setTimeout(() => toast.remove(), 300);
     }, 3000);
   }, []);
+
+  const handleSaveDailyReport = () => {
+    if (!currentSession) return;
+    const { feName, dspId, date } = currentSession;
+    
+    // date is DD-MM-YYYY
+    const dateParts = date.split('-');
+    if (dateParts.length !== 3) {
+      showToast("Invalid session date format", "err");
+      return;
+    }
+    const yearMonth = `${dateParts[2]}-${dateParts[1]}`;
+    const fullDateKey = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+
+    const newRecord: MonthlyRecord = {
+      ...currentSession,
+      stats: { ...stats }
+    };
+
+    const existing = monthlyRecords[yearMonth]?.[fullDateKey]?.find(s => s.dspId === dspId);
+    if (existing) {
+      if (!window.confirm(`A report for DSP ID ${dspId} on this date (${date}) already exists. Replace it?`)) return;
+    }
+
+    setMonthlyRecords(prev => {
+      const next = { ...prev };
+      if (!next[yearMonth]) next[yearMonth] = {};
+      if (!next[yearMonth][fullDateKey]) next[yearMonth][fullDateKey] = [];
+      
+      const filtered = next[yearMonth][fullDateKey].filter(s => s.dspId !== dspId);
+      next[yearMonth][fullDateKey] = [newRecord, ...filtered];
+      return next;
+    });
+
+    if (!selectedMonth) setSelectedMonth(yearMonth);
+    showToast(`Daily report saved — ${feName}, ${date}`, "ok");
+  };
 
   const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
@@ -306,7 +393,6 @@ export default function PODTool() {
     showToast(`Deleted ${count} Rows`, "ok");
   };
 
-  // EOD Dropdown options - Optimized to show only clients in the active tab
   const uniqueClients = useMemo(() => {
     if (!currentSession) return [];
     let rows = currentSession.data;
@@ -319,22 +405,15 @@ export default function PODTool() {
   const filteredRows = useMemo(() => {
     if (!currentSession) return [];
     let rows = currentSession.data;
-    
-    // Status Filter
     if (statusFilter !== 'All') {
       rows = rows.filter(r => r.status === statusFilter);
     }
-    
-    // Remark Chips Filter (Multi-select)
     if (statusFilter === 'Pending' && !showAllPending && selectedRemarkChips.length > 0) {
       rows = rows.filter(r => selectedRemarkChips.includes(r.remark));
     }
-    
-    // Client Filter
     if (clientFilter !== 'All Clients') {
       rows = rows.filter(r => r.client === clientFilter);
     }
-    
     return rows;
   }, [currentSession, statusFilter, selectedRemarkChips, clientFilter, showAllPending]);
 
@@ -352,17 +431,6 @@ export default function PODTool() {
       setSelectedRowIds(next);
     }
   };
-
-  const stats = useMemo(() => {
-    if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
-    return {
-      total: currentSession.data.length,
-      pending: currentSession.data.filter(r => r.status === 'Pending').length,
-      dispatched: currentSession.data.filter(r => r.status === 'Dispatched').length,
-      rto: currentSession.data.filter(r => r.status === 'RTO').length,
-      dto: currentSession.data.filter(r => r.status === 'DTO').length,
-    };
-  }, [currentSession]);
 
   const handleCopyTable = useCallback(async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
@@ -404,7 +472,6 @@ export default function PODTool() {
     showToast("Session Deleted", "ok");
   };
 
-  // Process OTP Report with strict matching
   const handleOTPFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -417,21 +484,16 @@ export default function PODTool() {
         const wb = XLSX.read(data, { type: 'array', raw: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
-        
         const sessionMap = new Map<string, PODRow>();
         currentSession.data.forEach(r => sessionMap.set(normalizeAWB(r.awb), r));
-        
         const tempOtpData: OTPRow[] = [];
         let matchedCount = 0;
-
         rawData.forEach((row: any) => {
           const rawAwb = row['Waybill'] || row['AWB'] || row['waybill'] || row['awb'];
           if (!isValidAWB(rawAwb)) return;
           const awb = normalizeAWB(rawAwb);
-          
           const sessionRow = sessionMap.get(awb);
           if (!sessionRow) return;
-          
           matchedCount++;
           const otpStatusRaw = String(row['Status'] || row['Current Status'] || "").toLowerCase().trim();
           let otpStatus = 'Unknown';
@@ -439,13 +501,10 @@ export default function PODTool() {
           else if (otpStatusRaw.includes('rto')) otpStatus = 'RTO';
           else if (otpStatusRaw.includes('dto')) otpStatus = 'DTO';
           else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
-          
           const csvStatus = sessionRow.status;
-          
           const isRTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'RTO';
           const isDTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'DTO';
           const isPendingNotClosed = otpStatus === 'Dispatched' && csvStatus === 'Pending';
-          
           tempOtpData.push({
             id: crypto.randomUUID(),
             awb, 
@@ -457,12 +516,10 @@ export default function PODTool() {
             notClosedType: isRTONotClosed ? 'RTO' : isDTONotClosed ? 'DTO' : isPendingNotClosed ? 'Pending' : null
           });
         });
-
         if (matchedCount === 0) {
           showToast("Wrong file — no AWBs match current session. Please upload the correct Delhivery OTP report for this FE.", "err");
           return;
         }
-
         setOtpData(tempOtpData);
         showToast(`Imported ${tempOtpData.length} Matched Records.`, "ok");
       } catch (err) { showToast("Failed To Process OTP Report", "err"); } finally { setIsProcessing(false); }
@@ -471,15 +528,11 @@ export default function PODTool() {
     e.target.value = "";
   };
 
-  // OTP filter helper for client list and table
   const getOtpBaseFilteredRows = useCallback((status: string) => {
     let rows = otpData;
     if (status !== 'All') {
       if (status === 'Dispatched') {
-        rows = rows.filter(r => 
-          r.otpStatus === 'Dispatched' && 
-          (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')
-        );
+        rows = rows.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO'));
       } else if (status === 'RTO') {
         rows = rows.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO');
       } else if (status === 'DTO') {
@@ -491,7 +544,6 @@ export default function PODTool() {
     return rows;
   }, [otpData]);
 
-  // OTP Client list optimized for active tab
   const uniqueOtpClients = useMemo(() => {
     const rows = getOtpBaseFilteredRows(otpStatusFilter);
     return Array.from(new Set(rows.map(r => r.client))).sort();
@@ -507,10 +559,7 @@ export default function PODTool() {
 
   const otpStats = useMemo(() => ({
     total: otpData.length,
-    dispatched: otpData.filter(r => 
-      r.otpStatus === 'Dispatched' && 
-      (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')
-    ).length,
+    dispatched: otpData.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')).length,
     rto: otpData.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO').length,
     dto: otpData.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO').length,
     pending: otpData.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending').length,
@@ -538,21 +587,26 @@ export default function PODTool() {
     setSelectedRemarkChips([]);
     setClientFilter("All Clients");
     setShowAllPending(false);
-
-    // Auto-fill inputs
     let isoDate = "";
     if (s.date && s.date.includes('-')) {
       const parts = s.date.split('-');
-      if (parts.length === 3) {
-        // DD-MM-YYYY to YYYY-MM-DD
-        isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-      }
+      if (parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
     }
-    setSetupData({
-      feName: s.feName,
-      dspId: s.dspId,
-      date: isoDate || s.date
+    setSetupData({ feName: s.feName, dspId: s.dspId, date: isoDate || s.date });
+  };
+
+  const toggleDateExpand = (date: string) => {
+    setExpandedDates(prev => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date); else next.add(date);
+      return next;
     });
+  };
+
+  const getMonthName = (yearMonth: string) => {
+    const [y, m] = yearMonth.split('-');
+    const date = new Date(parseInt(y), parseInt(m) - 1, 1);
+    return date.toLocaleString('default', { month: 'long', year: 'numeric' });
   };
 
   if (!isMounted) return null;
@@ -612,7 +666,6 @@ export default function PODTool() {
                     const sStats = {
                       total: s.data.length,
                       pending: s.data.filter(r => r.status === 'Pending').length,
-                      dispatched: s.data.filter(r => r.status === 'Dispatched').length,
                       rto: s.data.filter(r => r.status === 'RTO').length,
                       dto: s.data.filter(r => r.status === 'DTO').length,
                     };
@@ -633,6 +686,69 @@ export default function PODTool() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            )}
+
+            {/* Monthly Records Section */}
+            {Object.keys(monthlyRecords).length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-blue-600" />
+                    <h3 className="text-sm font-black text-slate-700 tracking-tight">Monthly Records</h3>
+                  </div>
+                  <select 
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] font-bold bg-slate-50 outline-none focus:border-blue-500 shadow-sm"
+                  >
+                    {Object.keys(monthlyRecords).sort().reverse().map(month => (
+                      <option key={month} value={month}>{getMonthName(month)}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  {selectedMonth && monthlyRecords[selectedMonth] && 
+                    Object.keys(monthlyRecords[selectedMonth]).sort().reverse().map(dateKey => {
+                      const isExpanded = expandedDates.has(dateKey);
+                      const sessionsOnDate = monthlyRecords[selectedMonth][dateKey];
+                      const dateDisplay = formatDate(dateKey);
+                      return (
+                        <div key={dateKey} className="border border-slate-100 rounded-xl overflow-hidden bg-white shadow-sm">
+                          <button 
+                            onClick={() => toggleDateExpand(dateKey)}
+                            className="w-full px-4 py-3 flex items-center justify-between bg-slate-50/50 hover:bg-slate-50 transition-colors"
+                          >
+                            <span className="text-[13px] font-bold text-slate-800">{dateDisplay} — {sessionsOnDate.length} Sessions</span>
+                            {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                          </button>
+                          {isExpanded && (
+                            <div className="p-4 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3 bg-white">
+                              {sessionsOnDate.map(s => (
+                                <div 
+                                  key={`hist-${s.id}`} 
+                                  onClick={() => handleSessionClick(s)}
+                                  className="p-3 border-[1.5px] border-slate-100 rounded-lg cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group relative overflow-hidden"
+                                >
+                                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-slate-300 group-hover:bg-blue-500" />
+                                  <p className="text-[12px] font-black text-slate-900">{s.feName}</p>
+                                  <p className="text-[10px] text-slate-400 font-bold mb-2 uppercase">{s.dspId}</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    <span className="text-[9px] font-bold bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{s.stats.total} Pkt</span>
+                                    <span className="text-[9px] font-bold bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-100">{s.stats.pending} P</span>
+                                    <span className="text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100">{s.stats.rto} R</span>
+                                    <span className="text-[9px] font-bold bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-100">{s.stats.dto} D</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  }
                 </div>
               </div>
             )}
@@ -726,6 +842,10 @@ export default function PODTool() {
                     handleCopyAWBOnly(rows);
                   }} className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
                     <Copy className="w-3.5 h-3.5" /> Copy Selected AWBs
+                  </button>
+
+                  <button onClick={handleSaveDailyReport} className="h-9 px-4 bg-[#0f172a] text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2 hover:bg-slate-800 transition-all shadow-sm">
+                    <Save className="w-3.5 h-3.5" /> Save Daily Report
                   </button>
 
                   {selectedRowIds.size > 0 && (
