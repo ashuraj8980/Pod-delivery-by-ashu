@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -228,41 +227,49 @@ export default function PODTool() {
     }, 3000);
   }, []);
 
-  const handleSaveDailyReport = () => {
-    if (!currentSession) return;
-    const { feName, dspId, date } = currentSession;
-    
-    // date is DD-MM-YYYY
-    const dateParts = date.split('-');
-    if (dateParts.length !== 3) {
-      showToast("Invalid session date format", "err");
+  const handleSaveAllSessions = () => {
+    if (sessions.length === 0) {
+      showToast("No sessions to save", "err");
       return;
-    }
-    const yearMonth = `${dateParts[2]}-${dateParts[1]}`;
-    const fullDateKey = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
-
-    const newRecord: MonthlyRecord = {
-      ...currentSession,
-      stats: { ...stats }
-    };
-
-    const existing = monthlyRecords[yearMonth]?.[fullDateKey]?.find(s => s.dspId === dspId);
-    if (existing) {
-      if (!window.confirm(`A report for DSP ID ${dspId} on this date (${date}) already exists. Replace it?`)) return;
     }
 
     setMonthlyRecords(prev => {
       const next = { ...prev };
-      if (!next[yearMonth]) next[yearMonth] = {};
-      if (!next[yearMonth][fullDateKey]) next[yearMonth][fullDateKey] = [];
-      
-      const filtered = next[yearMonth][fullDateKey].filter(s => s.dspId !== dspId);
-      next[yearMonth][fullDateKey] = [newRecord, ...filtered];
+      sessions.forEach(session => {
+        // Date is DD-MM-YYYY
+        const parts = session.date.split('-');
+        if (parts.length !== 3) return;
+        const yearMonth = `${parts[2]}-${parts[1]}`;
+        const fullDateKey = `${parts[2]}-${parts[1]}-${parts[0]}`;
+
+        if (!next[yearMonth]) next[yearMonth] = {};
+        if (!next[yearMonth][fullDateKey]) next[yearMonth][fullDateKey] = [];
+
+        const sessionStats = {
+          total: session.data.length,
+          pending: session.data.filter(r => r.status === 'Pending').length,
+          dispatched: session.data.filter(r => r.status === 'Dispatched').length,
+          rto: session.data.filter(r => r.status === 'RTO').length,
+          dto: session.data.filter(r => r.status === 'DTO').length,
+        };
+
+        const newRecord: MonthlyRecord = {
+          ...session,
+          stats: sessionStats
+        };
+
+        // Replace if exists
+        const filtered = next[yearMonth][fullDateKey].filter(s => s.dspId !== session.dspId);
+        next[yearMonth][fullDateKey] = [newRecord, ...filtered];
+      });
       return next;
     });
 
-    if (!selectedMonth) setSelectedMonth(yearMonth);
-    showToast(`Daily report saved — ${feName}, ${date}`, "ok");
+    // Auto select newest month if not set
+    const months = Object.keys(monthlyRecords).sort().reverse();
+    if (months.length > 0 && !selectedMonth) setSelectedMonth(months[0]);
+
+    showToast("All sessions saved to monthly records", "ok");
   };
 
   const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
@@ -659,7 +666,20 @@ export default function PODTool() {
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-black text-slate-700 tracking-tight">Recent Sessions</h3>
-                  <button onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); }} className="text-[12px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest">Clear All History</button>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={handleSaveAllSessions}
+                      className="bg-[#0f172a] text-white px-3 py-1 rounded-[6px] text-[11px] font-bold hover:bg-slate-800 transition-all shadow-sm"
+                    >
+                      SAVE DAILY REPORT
+                    </button>
+                    <button 
+                      onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); }} 
+                      className="text-[12px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest"
+                    >
+                      CLEAR ALL HISTORY
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-[10px]">
                   {sessions.map(s => {
@@ -690,68 +710,67 @@ export default function PODTool() {
               </div>
             )}
 
-            {/* Monthly Records Section */}
-            {Object.keys(monthlyRecords).length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-blue-600" />
-                    <h3 className="text-sm font-black text-slate-700 tracking-tight">Monthly Records</h3>
-                  </div>
-                  <select 
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] font-bold bg-slate-50 outline-none focus:border-blue-500 shadow-sm"
-                  >
-                    {Object.keys(monthlyRecords).sort().reverse().map(month => (
-                      <option key={month} value={month}>{getMonthName(month)}</option>
-                    ))}
-                  </select>
+            {/* Monthly Records Viewer Section */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-blue-600" />
+                  <h3 className="text-sm font-black text-slate-700 tracking-tight">Monthly Records</h3>
                 </div>
-
-                <div className="space-y-2">
-                  {selectedMonth && monthlyRecords[selectedMonth] && 
-                    Object.keys(monthlyRecords[selectedMonth]).sort().reverse().map(dateKey => {
-                      const isExpanded = expandedDates.has(dateKey);
-                      const sessionsOnDate = monthlyRecords[selectedMonth][dateKey];
-                      const dateDisplay = formatDate(dateKey);
-                      return (
-                        <div key={dateKey} className="border border-slate-100 rounded-xl overflow-hidden bg-white shadow-sm">
-                          <button 
-                            onClick={() => toggleDateExpand(dateKey)}
-                            className="w-full px-4 py-3 flex items-center justify-between bg-slate-50/50 hover:bg-slate-50 transition-colors"
-                          >
-                            <span className="text-[13px] font-bold text-slate-800">{dateDisplay} — {sessionsOnDate.length} Sessions</span>
-                            {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                          </button>
-                          {isExpanded && (
-                            <div className="p-4 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3 bg-white">
-                              {sessionsOnDate.map(s => (
-                                <div 
-                                  key={`hist-${s.id}`} 
-                                  onClick={() => handleSessionClick(s)}
-                                  className="p-3 border-[1.5px] border-slate-100 rounded-lg cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group relative overflow-hidden"
-                                >
-                                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-slate-300 group-hover:bg-blue-500" />
-                                  <p className="text-[12px] font-black text-slate-900">{s.feName}</p>
-                                  <p className="text-[10px] text-slate-400 font-bold mb-2 uppercase">{s.dspId}</p>
-                                  <div className="flex flex-wrap gap-1">
-                                    <span className="text-[9px] font-bold bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{s.stats.total} Pkt</span>
-                                    <span className="text-[9px] font-bold bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-100">{s.stats.pending} P</span>
-                                    <span className="text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100">{s.stats.rto} R</span>
-                                    <span className="text-[9px] font-bold bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-100">{s.stats.dto} D</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  }
-                </div>
+                <select 
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] font-bold bg-slate-50 outline-none focus:border-blue-500 shadow-sm"
+                >
+                  <option value="">Select Month</option>
+                  {Object.keys(monthlyRecords).sort().reverse().map(month => (
+                    <option key={month} value={month}>{getMonthName(month)}</option>
+                  ))}
+                </select>
               </div>
-            )}
+
+              {selectedMonth && monthlyRecords[selectedMonth] && (
+                <div className="space-y-2">
+                  {Object.keys(monthlyRecords[selectedMonth]).sort().reverse().map(dateKey => {
+                    const isExpanded = expandedDates.has(dateKey);
+                    const sessionsOnDate = monthlyRecords[selectedMonth][dateKey];
+                    const dateDisplay = formatDate(dateKey);
+                    return (
+                      <div key={dateKey} className="border border-slate-100 rounded-xl overflow-hidden bg-white shadow-sm">
+                        <button 
+                          onClick={() => toggleDateExpand(dateKey)}
+                          className="w-full px-4 py-3 flex items-center justify-between bg-slate-50/50 hover:bg-slate-50 transition-colors"
+                        >
+                          <span className="text-[13px] font-bold text-slate-800">{dateDisplay} — {sessionsOnDate.length} Sessions</span>
+                          {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                        </button>
+                        {isExpanded && (
+                          <div className="p-4 grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 bg-white">
+                            {sessionsOnDate.map(s => (
+                              <div 
+                                key={`hist-${s.id}`} 
+                                onClick={() => handleSessionClick(s as any)}
+                                className="p-3 border-[1.5px] border-slate-100 rounded-lg cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group relative overflow-hidden bg-white"
+                              >
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-slate-300 group-hover:bg-blue-500" />
+                                <p className="text-[14px] font-bold text-slate-900 leading-tight mb-0.5">{s.feName}</p>
+                                <p className="text-[10px] text-slate-400 font-bold mb-2 uppercase">{s.dspId} — {s.date}</p>
+                                <div className="flex flex-wrap gap-1">
+                                  <span className="text-[9px] font-bold bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{s.stats.total} Pkt</span>
+                                  <span className="text-[9px] font-bold bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-100">{s.stats.pending} P</span>
+                                  <span className="text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100">{s.stats.rto} R</span>
+                                  <span className="text-[9px] font-bold bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-100">{s.stats.dto} D</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             {currentSession && (
               <div className="space-y-6">
@@ -843,19 +862,6 @@ export default function PODTool() {
                   }} className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2">
                     <Copy className="w-3.5 h-3.5" /> Copy Selected AWBs
                   </button>
-
-                  <button onClick={handleSaveDailyReport} className="h-9 px-4 bg-[#0f172a] text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2 hover:bg-slate-800 transition-all shadow-sm">
-                    <Save className="w-3.5 h-3.5" /> Save Daily Report
-                  </button>
-
-                  {selectedRowIds.size > 0 && (
-                    <button 
-                      onClick={deleteSelectedRows}
-                      className="h-9 px-4 bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2 hover:bg-[#DC2626] hover:text-white transition-all"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" /> Delete Selected {selectedRowIds.size}
-                    </button>
-                  )}
                   
                   <div className="flex-1" />
                   
@@ -1109,7 +1115,7 @@ export default function PODTool() {
                               if (!acc[row.client]) acc[row.client] = [];
                               acc[row.client].push(row);
                               return acc;
-                            }, {})).sort((a: any, b: any) => b[1].length - a[1].length).map(([client, rows]: any) => (
+                        }, {})).sort((a: any, b: any) => b[1].length - a[1].length).map(([client, rows]: any) => (
                               <React.Fragment key={`otp-frag-${client}`}>
                                 <tr className="bg-slate-800 text-white h-9">
                                   <td colSpan={6} className="text-left px-4">
