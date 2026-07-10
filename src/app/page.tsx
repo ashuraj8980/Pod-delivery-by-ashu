@@ -173,8 +173,8 @@ export default function PODTool() {
     if (savedMonthly) {
       try {
         const parsed = JSON.parse(savedMonthly);
-        setMonthlyRecords(parsed);
-        const months = Object.keys(parsed).sort().reverse();
+        setMonthlyRecords(parsed || {});
+        const months = Object.keys(parsed || {}).sort().reverse();
         if (months.length > 0) setSelectedMonth(months[0]);
       } catch (e) {}
     }
@@ -233,24 +233,29 @@ export default function PODTool() {
       return;
     }
 
-    setMonthlyRecords(prev => {
-      const next = { ...prev };
+    try {
+      // Create a deep copy to avoid mutations
+      const nextMonthly: MonthlyStorage = JSON.parse(JSON.stringify(monthlyRecords || {}));
+
       sessions.forEach(session => {
-        // Date is DD-MM-YYYY
-        const parts = session.date.split('-');
+        // Date is DD-MM-YYYY or similar
+        const dateStr = formatDate(session.date);
+        const parts = dateStr.split('-');
         if (parts.length !== 3) return;
+        
         const yearMonth = `${parts[2]}-${parts[1]}`;
         const fullDateKey = `${parts[2]}-${parts[1]}-${parts[0]}`;
 
-        if (!next[yearMonth]) next[yearMonth] = {};
-        if (!next[yearMonth][fullDateKey]) next[yearMonth][fullDateKey] = [];
+        if (!nextMonthly[yearMonth]) nextMonthly[yearMonth] = {};
+        if (!nextMonthly[yearMonth][fullDateKey]) nextMonthly[yearMonth][fullDateKey] = [];
 
+        const rows = session.data || [];
         const sessionStats = {
-          total: session.data.length,
-          pending: session.data.filter(r => r.status === 'Pending').length,
-          dispatched: session.data.filter(r => r.status === 'Dispatched').length,
-          rto: session.data.filter(r => r.status === 'RTO').length,
-          dto: session.data.filter(r => r.status === 'DTO').length,
+          total: rows.length,
+          pending: rows.filter(r => r.status === 'Pending').length,
+          dispatched: rows.filter(r => r.status === 'Dispatched').length,
+          rto: rows.filter(r => r.status === 'RTO').length,
+          dto: rows.filter(r => r.status === 'DTO').length,
         };
 
         const newRecord: MonthlyRecord = {
@@ -258,18 +263,23 @@ export default function PODTool() {
           stats: sessionStats
         };
 
-        // Replace if exists
-        const filtered = next[yearMonth][fullDateKey].filter(s => s.dspId !== session.dspId);
-        next[yearMonth][fullDateKey] = [newRecord, ...filtered];
+        // Replace if exists for this DSP ID on this date
+        const filtered = nextMonthly[yearMonth][fullDateKey].filter((s: MonthlyRecord) => s.dspId !== session.dspId);
+        nextMonthly[yearMonth][fullDateKey] = [newRecord, ...filtered];
       });
-      return next;
-    });
 
-    // Auto select newest month if not set
-    const months = Object.keys(monthlyRecords).sort().reverse();
-    if (months.length > 0 && !selectedMonth) setSelectedMonth(months[0]);
+      setMonthlyRecords(nextMonthly);
 
-    showToast("All sessions saved to monthly records", "ok");
+      // Auto select newest month if not set
+      const months = Object.keys(nextMonthly).sort().reverse();
+      if (months.length > 0 && !selectedMonth) {
+        setSelectedMonth(months[0]);
+      }
+
+      showToast("All sessions saved to monthly records", "ok");
+    } catch (e: any) {
+      showToast("Error saving report: " + (e.message || "Unknown Error"), "err");
+    }
   };
 
   const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
@@ -597,6 +607,7 @@ export default function PODTool() {
     let isoDate = "";
     if (s.date && s.date.includes('-')) {
       const parts = s.date.split('-');
+      // Convert DD-MM-YYYY to YYYY-MM-DD for date input
       if (parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
     }
     setSetupData({ feName: s.feName, dspId: s.dspId, date: isoDate || s.date });
@@ -684,10 +695,10 @@ export default function PODTool() {
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-[10px]">
                   {sessions.map(s => {
                     const sStats = {
-                      total: s.data.length,
-                      pending: s.data.filter(r => r.status === 'Pending').length,
-                      rto: s.data.filter(r => r.status === 'RTO').length,
-                      dto: s.data.filter(r => r.status === 'DTO').length,
+                      total: (s.data || []).length,
+                      pending: (s.data || []).filter(r => r.status === 'Pending').length,
+                      rto: (s.data || []).filter(r => r.status === 'RTO').length,
+                      dto: (s.data || []).filter(r => r.status === 'DTO').length,
                     };
                     return (
                       <div key={s.id} onClick={() => handleSessionClick(s)} className={cn("relative p-[12px_14px] border-[1.5px] rounded-xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white max-w-[280px]", selectedSessionId === s.id ? "border-blue-500 ring-1 ring-blue-500" : "hover:border-blue-300")}>
@@ -723,7 +734,7 @@ export default function PODTool() {
                   className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] font-bold bg-slate-50 outline-none focus:border-blue-500 shadow-sm"
                 >
                   <option value="">Select Month</option>
-                  {Object.keys(monthlyRecords).sort().reverse().map(month => (
+                  {Object.keys(monthlyRecords || {}).sort().reverse().map(month => (
                     <option key={month} value={month}>{getMonthName(month)}</option>
                   ))}
                 </select>
@@ -756,10 +767,10 @@ export default function PODTool() {
                                 <p className="text-[14px] font-bold text-slate-900 leading-tight mb-0.5">{s.feName}</p>
                                 <p className="text-[10px] text-slate-400 font-bold mb-2 uppercase">{s.dspId} — {s.date}</p>
                                 <div className="flex flex-wrap gap-1">
-                                  <span className="text-[9px] font-bold bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{s.stats.total} Pkt</span>
-                                  <span className="text-[9px] font-bold bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-100">{s.stats.pending} P</span>
-                                  <span className="text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100">{s.stats.rto} R</span>
-                                  <span className="text-[9px] font-bold bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-100">{s.stats.dto} D</span>
+                                  <span className="text-[9px] font-bold bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{(s.stats?.total || 0)} Pkt</span>
+                                  <span className="text-[9px] font-bold bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-100">{(s.stats?.pending || 0)} P</span>
+                                  <span className="text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100">{(s.stats?.rto || 0)} R</span>
+                                  <span className="text-[9px] font-bold bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-100">{(s.stats?.dto || 0)} D</span>
                                 </div>
                               </div>
                             ))}
@@ -865,6 +876,14 @@ export default function PODTool() {
                   
                   <div className="flex-1" />
                   
+                  {selectedRowIds.size > 0 && (
+                    <button 
+                      onClick={deleteSelectedRows}
+                      className="h-9 px-4 bg-rose-50 border border-rose-200 text-rose-600 rounded-lg text-[12px] font-black flex items-center gap-2 hover:bg-rose-600 hover:text-white transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete Selected {selectedRowIds.size}
+                    </button>
+                  )}
                   <button onClick={() => downloadExcel(filteredRows)} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black">Download Excel</button>
                   <button onClick={() => handleCopyTable(filteredRows)} className="h-9 px-5 bg-blue-600 text-white rounded-lg text-[12px] font-black">Copy Table</button>
                 </div>
