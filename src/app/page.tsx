@@ -10,22 +10,41 @@ import {
   Package,
   RefreshCcw,
   ArrowRight,
-  Save
+  Save,
+  Search,
+  X,
+  Copy,
+  Download,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  TrendingUp
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 /**
- * @fileOverview Professional Historical Dashboard - Simplified Archive View
- * Reads from pod_monthly_records to provide a searchable archive.
+ * @fileOverview Professional Historical Dashboard
+ * Reads from pod_monthly_records and allows viewing details in a Modal.
  */
 
 interface PODRow {
   id: string;
   awb: string;
   client: string;
+  orderId: string;
   status: string;
   remark: string;
+  feName: string;
+  dspId: string;
+  date: string;
+  returnAddress?: string;
 }
 
 interface MonthlyRecord {
@@ -53,6 +72,10 @@ export default function Dashboard() {
   const [hasMounted, setHasMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [pendingSessionsCount, setPendingSessionsCount] = useState(0);
+  
+  // Modal State
+  const [viewingSession, setViewingSession] = useState<MonthlyRecord | null>(null);
+  const [modalSearch, setModalSearch] = useState("");
 
   useEffect(() => {
     setHasMounted(true);
@@ -62,16 +85,11 @@ export default function Dashboard() {
       setCurrentTime(new Date());
     }, 1000);
 
-    const refreshInterval = setInterval(loadData, 30000);
-    return () => {
-      clearInterval(interval);
-      clearInterval(refreshInterval);
-    };
+    return () => clearInterval(interval);
   }, []);
 
   const loadData = () => {
     try {
-      // Load Archive
       const saved = localStorage.getItem('pod_monthly_records');
       if (saved && saved.trim() !== "") {
         const parsed = JSON.parse(saved);
@@ -84,7 +102,6 @@ export default function Dashboard() {
         }
       }
 
-      // Load Pending Count
       const pending = localStorage.getItem('pod_sessions');
       if (pending && pending.trim() !== "") {
         const parsedPending = JSON.parse(pending);
@@ -100,7 +117,7 @@ export default function Dashboard() {
   const showToast = useCallback((msg: string) => {
     if (typeof document === 'undefined') return;
     const toast = document.createElement('div');
-    toast.className = `fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl text-[13px] font-bold z-[1000] shadow-2xl transition-all duration-300 border bg-slate-900 text-white border-white/10`;
+    toast.className = `fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl text-[13px] font-bold z-[2000] shadow-2xl transition-all duration-300 border bg-slate-900 text-white border-white/10`;
     toast.innerHTML = msg;
     document.body.appendChild(toast);
     setTimeout(() => {
@@ -126,25 +143,20 @@ export default function Dashboard() {
       const nextMonthly = { ...monthlyRecords };
       
       sessions.forEach((session: any) => {
-        if (!session.date || !/^\d{2}-\d{2}-\d{4}$/.test(session.date)) return;
+        if (!session.date) return;
         
-        const parts = session.date.split('-');
+        let dateObj = session.date;
+        let parts = dateObj.split('-');
+        if (parts.length !== 3) return;
+
         const yearMonth = `${parts[2]}-${parts[1]}`;
         const fullDateKey = `${parts[2]}-${parts[1]}-${parts[0]}`;
         
         if (!nextMonthly[yearMonth]) nextMonthly[yearMonth] = {};
         if (!nextMonthly[yearMonth][fullDateKey]) nextMonthly[yearMonth][fullDateKey] = [];
 
-        const sessionStats = session.stats || {
-          total: session.data?.length || 0,
-          pending: (session.data || []).filter((r: any) => r.status === 'Pending').length,
-          dispatched: (session.data || []).filter((r: any) => r.status === 'Dispatched').length,
-          rto: (session.data || []).filter((r: any) => r.status === 'RTO').length,
-          dto: (session.data || []).filter((r: any) => r.status === 'DTO').length,
-        };
-
-        const newRecord = { ...session, stats: sessionStats };
-        const filtered = nextMonthly[yearMonth][fullDateKey].filter((s: any) => s.dspId !== session.dspId);
+        const newRecord = { ...session };
+        const filtered = nextMonthly[yearMonth][fullDateKey].filter((s: any) => s.dspId !== session.dspId || s.feName !== session.feName);
         nextMonthly[yearMonth][fullDateKey] = [newRecord, ...filtered];
       });
 
@@ -163,16 +175,6 @@ export default function Dashboard() {
     }
   };
 
-  const monthOptions = useMemo(() => {
-    return Object.keys(monthlyRecords).sort().reverse();
-  }, [monthlyRecords]);
-
-  const getMonthName = (yearMonth: string) => {
-    const [y, m] = yearMonth.split('-');
-    const date = new Date(parseInt(y), parseInt(m) - 1, 1);
-    return date.toLocaleString('default', { month: 'long', year: 'numeric' });
-  };
-
   const toggleDate = (date: string) => {
     setExpandedDates(prev => {
       const next = new Set(prev);
@@ -181,15 +183,36 @@ export default function Dashboard() {
     });
   };
 
-  const formatTimeStr = (d: Date | null) => {
-    if (!d) return "--:--:--";
-    return d.toLocaleTimeString();
+  const getMonthName = (yearMonth: string) => {
+    if (!yearMonth) return "";
+    const [y, m] = yearMonth.split('-');
+    const date = new Date(parseInt(y), parseInt(m) - 1, 1);
+    return date.toLocaleString('default', { month: 'long', year: 'numeric' });
   };
 
-  const formatDateStr = (d: Date | null) => {
-    if (!d) return "--/--/----";
-    return d.toLocaleDateString();
-  };
+  const formatTimeStr = (d: Date | null) => d ? d.toLocaleTimeString() : "--:--:--";
+  const formatDateStr = (d: Date | null) => d ? d.toLocaleDateString() : "--/--/----";
+
+  const renderSessionBadges = (stats: any) => (
+    <div className="flex flex-wrap gap-1.5 mt-2">
+      <span className="px-2 py-0.5 rounded-md bg-slate-100 text-[9px] font-black text-slate-600 border border-slate-200 uppercase">{stats?.total || 0} PKT</span>
+      {stats?.pending > 0 && <span className="px-2 py-0.5 rounded-md bg-amber-50 text-[9px] font-black text-amber-600 border border-amber-200 uppercase">{stats.pending} PENDING</span>}
+      {stats?.rto > 0 && <span className="px-2 py-0.5 rounded-md bg-rose-50 text-[9px] font-black text-rose-600 border border-rose-200 uppercase">{stats.rto} RTO</span>}
+      {stats?.dto > 0 && <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-[9px] font-black text-emerald-600 border border-emerald-200 uppercase">{stats.dto} DTO</span>}
+      {stats?.dispatched > 0 && <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[9px] font-black text-blue-600 border border-blue-200 uppercase">{stats.dispatched} DISPATCHED</span>}
+    </div>
+  );
+
+  const filteredModalData = useMemo(() => {
+    if (!viewingSession) return [];
+    if (!modalSearch) return viewingSession.data;
+    const s = modalSearch.toLowerCase();
+    return viewingSession.data.filter(r => 
+      r.awb.toLowerCase().includes(s) || 
+      r.client.toLowerCase().includes(s) || 
+      r.remark.toLowerCase().includes(s)
+    );
+  }, [viewingSession, modalSearch]);
 
   if (!hasMounted) return null;
 
@@ -246,14 +269,14 @@ export default function Dashboard() {
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 h-14 text-[15px] font-black outline-none focus:border-blue-500 transition-all min-w-[250px] cursor-pointer"
             >
-              {monthOptions.length === 0 && <option value="">No history found</option>}
-              {monthOptions.map(m => (
+              {Object.keys(monthlyRecords).length === 0 && <option value="">No history found</option>}
+              {Object.keys(monthlyRecords).sort().reverse().map(m => (
                 <option key={m} value={m}>{getMonthName(m)}</option>
               ))}
             </select>
           </div>
 
-          {monthOptions.length === 0 ? (
+          {Object.keys(monthlyRecords).length === 0 ? (
             <div className="text-center py-24 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
               <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
               <p className="text-lg font-black text-slate-500">No sessions saved in history yet.</p>
@@ -281,25 +304,20 @@ export default function Dashboard() {
                     </button>
                     {isExpanded && (
                       <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 bg-white border-t border-slate-50">
-                        {sessionsOnDate.map((s: any) => (
-                          <Link 
+                        {sessionsOnDate.map((s: MonthlyRecord) => (
+                          <div 
                             key={s.id} 
-                            href={`/eod?sessionId=${s.id}`}
-                            className="p-5 border-[1.5px] border-slate-100 rounded-3xl hover:border-blue-500 hover:shadow-lg transition-all group relative overflow-hidden bg-white"
+                            onClick={() => setViewingSession(s)}
+                            className="p-5 border-[1.5px] border-slate-100 rounded-3xl hover:border-blue-500 hover:shadow-lg transition-all group relative cursor-pointer bg-white"
                           >
                             <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-slate-200 group-hover:bg-blue-600 transition-colors" />
                             <div className="flex items-center justify-between mb-2">
                               <p className="text-[17px] font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">{s.feName}</p>
                               <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
                             </div>
-                            <p className="text-[11px] text-slate-400 font-black mb-4 uppercase tracking-wider">{s.dspId} — {s.date}</p>
-                            <div className="flex flex-wrap gap-2">
-                              <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-[9px] font-black text-slate-600 border border-slate-200 uppercase">{s.stats?.total || 0} PKT</span>
-                              {s.stats?.pending > 0 && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-[9px] font-black text-amber-600 border border-amber-200 uppercase">{s.stats.pending} PENDING</span>}
-                              {s.stats?.rto > 0 && <span className="px-2 py-0.5 rounded-lg bg-rose-50 text-[9px] font-black text-rose-600 border border-rose-200 uppercase">{s.stats.rto} RTO</span>}
-                              {s.stats?.dto > 0 && <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-[9px] font-black text-emerald-600 border border-emerald-200 uppercase">{s.stats.dto} DTO</span>}
-                            </div>
-                          </Link>
+                            <p className="text-[11px] text-slate-400 font-black mb-1 uppercase tracking-wider">{s.dspId} — {s.date}</p>
+                            {renderSessionBadges(s.stats)}
+                          </div>
                         ))}
                       </div>
                     )}
@@ -310,6 +328,101 @@ export default function Dashboard() {
           )}
         </div>
       </main>
+
+      {/* Session Details Modal */}
+      <Dialog open={!!viewingSession} onOpenChange={(open) => !open && setViewingSession(null)}>
+        <DialogContent className="max-w-[95vw] w-[1400px] max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 border-none rounded-[2rem]">
+          {viewingSession && (
+            <>
+              <DialogHeader className="p-8 bg-[#0f172a] text-white space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl">
+                      <Truck className="w-7 h-7" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-2xl font-black tracking-tight">{viewingSession.feName}</DialogTitle>
+                      <p className="text-[11px] font-bold text-blue-400 uppercase tracking-widest">{viewingSession.dspId} • {viewingSession.date}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setViewingSession(null)} className="p-2 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all">
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  {[
+                    { label: 'Total', val: viewingSession.stats.total, icon: Package, color: 'text-slate-900', bg: 'bg-white' },
+                    { label: 'Dispatched', val: viewingSession.stats.dispatched, icon: Truck, color: 'text-blue-600', bg: 'bg-blue-50' },
+                    { label: 'Pending', val: viewingSession.stats.pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
+                    { label: 'RTO', val: viewingSession.stats.rto, icon: AlertCircle, color: 'text-rose-600', bg: 'bg-rose-50' },
+                    { label: 'DTO', val: viewingSession.stats.dto, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' }
+                  ].map((m, i) => (
+                    <div key={i} className={cn("p-3 rounded-2xl flex flex-col items-center justify-center border border-white/10", m.bg)}>
+                      <p className={cn("text-[18px] font-black leading-none mb-1", m.color)}>{m.val}</p>
+                      <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{m.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </DialogHeader>
+
+              <div className="bg-slate-50 p-4 border-b flex items-center gap-4">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input 
+                    type="text" 
+                    placeholder="Search AWB, Client or Remark..." 
+                    value={modalSearch}
+                    onChange={(e) => setModalSearch(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-4 h-10 text-sm font-bold focus:border-blue-500 outline-none transition-all shadow-sm"
+                  />
+                </div>
+                <div className="flex-1" />
+                <button className="h-10 px-4 bg-emerald-600 text-white rounded-xl text-[11px] font-black uppercase flex items-center gap-2 hover:bg-emerald-700 transition-all">
+                  <Download className="w-4 h-4" /> Download Excel
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-auto bg-white custom-scrollbar">
+                <table className="w-full text-center border-collapse">
+                  <thead className="sticky top-0 bg-[#f8fafc] text-slate-500 border-b z-10">
+                    <tr className="h-12">
+                      <th className="px-4 text-[10px] font-black uppercase tracking-widest">Waybill</th>
+                      <th className="px-4 text-[10px] font-black uppercase tracking-widest">Client</th>
+                      <th className="px-4 text-[10px] font-black uppercase tracking-widest">Order ID</th>
+                      <th className="px-4 text-[10px] font-black uppercase tracking-widest text-left">Remark</th>
+                      <th className="px-4 text-[10px] font-black uppercase tracking-widest text-left">Return Address</th>
+                      <th className="px-4 text-[10px] font-black uppercase tracking-widest">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredModalData.map((row) => (
+                      <tr key={row.id} className="border-b hover:bg-slate-50 transition-colors group">
+                        <td className="px-4 py-3 text-[13px] font-black font-mono text-blue-700">{row.awb}</td>
+                        <td className="px-4 py-3 text-[13px] font-bold text-slate-700">{row.client}</td>
+                        <td className="px-4 py-3 text-[12px] font-medium text-slate-400">{row.orderId}</td>
+                        <td className="px-4 py-3 text-[11px] font-black text-left uppercase text-slate-600">{row.remark}</td>
+                        <td className="px-4 py-3 text-[11px] text-left text-slate-500 leading-relaxed max-w-[300px]">{row.returnAddress}</td>
+                        <td className="px-4 py-3">
+                          <span className={cn(
+                            "px-2 py-0.5 rounded text-[9px] font-black uppercase border",
+                            row.status === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" :
+                            row.status === 'RTO' ? "bg-rose-50 text-rose-700 border-rose-200" :
+                            row.status === 'DTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                            "bg-slate-50 text-slate-700 border-slate-200"
+                          )}>
+                            {row.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <footer className="py-12 text-center text-slate-400 text-[11px] font-black uppercase tracking-widest">
         Enterprise Return Center Operations Tool • Built by Ashu v3.0

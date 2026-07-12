@@ -11,19 +11,16 @@ import {
   User,
   AlertCircle,
   X,
-  ChevronDown,
-  ChevronRight,
-  Calendar,
   ArrowLeft
 } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
  * Optimized for EOD Rejection management and OTP Dispatch verification.
+ * Deals only with current/temporary sessions.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -126,7 +123,6 @@ interface Session {
 }
 
 export default function PODTool() {
-  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<"eod" | "remark" | "otp">("eod");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -157,40 +153,8 @@ export default function PODTool() {
       if (saved && saved.trim() !== "") {
         setSessions(JSON.parse(saved));
       }
-    } catch (e) {
-      console.error("Error loading sessions:", e);
-    }
+    } catch (e) {}
   }, []);
-
-  useEffect(() => {
-    if (isMounted) {
-      const sessId = searchParams.get('sessionId');
-      if (sessId) {
-        // Try local sessions first
-        const active = sessions.find(s => s.id === sessId);
-        if (active) {
-          setSelectedSessionId(sessId);
-        } else {
-          // Try history sessions
-          try {
-            const savedMonthly = localStorage.getItem('pod_monthly_records');
-            if (savedMonthly) {
-              const monthlyRecords = JSON.parse(savedMonthly);
-              Object.values(monthlyRecords).forEach((days: any) => {
-                Object.values(days).forEach((sessionsList: any) => {
-                  const found = sessionsList.find((s: any) => s.id === sessId);
-                  if (found) {
-                    setSessions(prev => [found, ...prev.filter(x => x.id !== found.id)]);
-                    setSelectedSessionId(sessId);
-                  }
-                });
-              });
-            }
-          } catch (e) {}
-        }
-      }
-    }
-  }, [isMounted, searchParams, sessions]);
 
   useEffect(() => {
     if (isMounted) {
@@ -225,7 +189,7 @@ export default function PODTool() {
     }, 3000);
   }, []);
 
-  const renderSessionBadges = useCallback((statsObj: { total: number, pending: number, rto: number, dto: number, dispatched: number }) => {
+  const renderSessionBadges = useCallback((statsObj: any) => {
     return (
       <div className="flex flex-wrap gap-[5px]">
         <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100 uppercase">
@@ -353,7 +317,7 @@ export default function PODTool() {
         };
 
         setSessions(prev => {
-          const filtered = prev.filter(s => s.dspId !== setupData.dspId);
+          const filtered = prev.filter(s => s.dspId !== setupData.dspId || s.feName !== setupData.feName);
           return [newSession, ...filtered];
         });
         
@@ -910,16 +874,10 @@ export default function PODTool() {
 
         {activeTab === "otp" && (
           <div className="space-y-6">
-            {!selectedSessionId ? (
-              <div className="bg-white rounded-2xl border p-20 text-center">
-                <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-                <h3 className="text-lg font-black text-slate-900">Session Not Selected</h3>
-                <p className="text-sm font-bold text-slate-400">Please Select A Session In Daily EOD Rejection Tab First.</p>
-              </div>
-            ) : (
-              <>
-                <div className="bg-white border-[1.5px] border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between relative overflow-hidden">
-                  <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
+            <div className="bg-white border-[1.5px] border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
+              {currentSession ? (
+                <>
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg"><User className="w-6 h-6" /></div>
                     <div>
@@ -928,115 +886,119 @@ export default function PODTool() {
                     </div>
                   </div>
                   {renderSessionBadges(stats)}
-                </div>
+                </>
+              ) : (
+                <div className="py-2 text-slate-400 font-bold text-sm">Select a session to start OTP check</div>
+              )}
+            </div>
 
-                <div className="bg-white rounded-2xl border-[1.5px] border-dashed border-slate-300 p-12 text-center space-y-4 bg-slate-50/50">
-                  <div className="max-w-xl mx-auto space-y-4">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-blue-600 shadow-sm mx-auto border"><Download className="w-8 h-8" /></div>
-                    <div>
-                      <h2 className="text-xl font-black text-slate-900">Upload Delhivery OTP Report</h2>
-                      <p className="text-[12px] font-bold text-slate-400 uppercase tracking-widest">Upload The Default Delhivery Export File For This FE Session.</p>
-                    </div>
-                    <div className="relative cursor-pointer group">
-                      <input type="file" onChange={handleOTPFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-                      <div className="h-14 bg-white border-2 border-slate-200 rounded-2xl flex items-center justify-center font-black text-slate-600 group-hover:border-blue-500 transition-all uppercase tracking-widest">Select File</div>
-                    </div>
+            <div className="bg-white rounded-2xl border-[1.5px] border-dashed border-slate-300 p-12 text-center space-y-4 bg-slate-50/50">
+              <div className="max-w-xl mx-auto space-y-4">
+                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-blue-600 shadow-sm mx-auto border"><Download className="w-8 h-8" /></div>
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">Upload Delhivery OTP Report</h2>
+                  <p className="text-[12px] font-bold text-slate-400 uppercase tracking-widest">Upload The Default Delhivery Export File For This FE Session.</p>
+                </div>
+                <div className="relative cursor-pointer group">
+                  <input type="file" onChange={handleOTPFileUpload} disabled={!selectedSessionId} className="absolute inset-0 opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
+                  <div className={cn("h-14 bg-white border-2 border-slate-200 rounded-2xl flex items-center justify-center font-black transition-all uppercase tracking-widest", !selectedSessionId ? "opacity-50 text-slate-300" : "text-slate-600 group-hover:border-blue-500")}>
+                    {!selectedSessionId ? "Select Session First" : "Select File"}
                   </div>
                 </div>
+              </div>
+            </div>
 
-                {otpData.length > 0 && (
-                  <div className="space-y-6">
-                    <div className="bg-white rounded-xl border shadow-sm flex divide-x overflow-hidden">
-                      {[
-                        {id: 'All', label: 'All', val: otpStats.total, color: 'text-slate-900', bgColor: 'bg-[#EFF6FF]', borderColor: 'bg-blue-500'},
-                        {id: 'Dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-rose-600', bgColor: 'bg-[#FFF5F5]', borderColor: 'bg-rose-500'},
-                        {id: 'Pending', label: 'Pending', val: otpStats.pending, color: 'text-amber-600', bgColor: 'bg-[#FFFBEB]', borderColor: 'bg-amber-500'},
-                        {id: 'RTO', label: 'RTO', val: otpStats.rto, color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500'},
-                        {id: 'DTO', label: 'DTO', val: otpStats.dto, color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500'}
-                      ].map(t => (
-                        <button key={`otp-tab-${t.id}`} onClick={() => {
-                          setOtpStatusFilter(t.id);
-                          setOtpClientFilter("All Clients");
-                        }} className={cn("flex-1 py-6 flex flex-col items-center group h-[110px] transition-all relative", otpStatusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
-                          <span className={cn("text-[36px] font-black leading-none mb-1", t.color)}>{t.val}</span>
-                          <span className={cn("text-[13px] font-black tracking-widest uppercase", otpStatusFilter === t.id ? t.color : "text-slate-400")}>{t.label}</span>
-                          {otpStatusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[4px]", t.borderColor)} />}
-                        </button>
-                      ))}
-                    </div>
+            {otpData.length > 0 && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl border shadow-sm flex divide-x overflow-hidden">
+                  {[
+                    {id: 'All', label: 'All', val: otpStats.total, color: 'text-slate-900', bgColor: 'bg-[#EFF6FF]', borderColor: 'bg-blue-500'},
+                    {id: 'Dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-rose-600', bgColor: 'bg-[#FFF5F5]', borderColor: 'bg-rose-500'},
+                    {id: 'Pending', label: 'Pending', val: otpStats.pending, color: 'text-amber-600', bgColor: 'bg-[#FFFBEB]', borderColor: 'bg-amber-500'},
+                    {id: 'RTO', label: 'RTO', val: otpStats.rto, color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500'},
+                    {id: 'DTO', label: 'DTO', val: otpStats.dto, color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500'}
+                  ].map(t => (
+                    <button key={`otp-tab-${t.id}`} onClick={() => {
+                      setOtpStatusFilter(t.id);
+                      setOtpClientFilter("All Clients");
+                    }} className={cn("flex-1 py-6 flex flex-col items-center group h-[110px] transition-all relative", otpStatusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
+                      <span className={cn("text-[36px] font-black leading-none mb-1", t.color)}>{t.val}</span>
+                      <span className={cn("text-[13px] font-black tracking-widest uppercase", otpStatusFilter === t.id ? t.color : "text-slate-400")}>{t.label}</span>
+                      {otpStatusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[4px]", t.borderColor)} />}
+                    </button>
+                  ))}
+                </div>
 
-                    <div className="flex items-center gap-4 mb-2">
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Client Filter</label>
-                        <select
-                          value={otpClientFilter}
-                          onChange={(e) => setOtpClientFilter(e.target.value)}
-                          className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[200px] shadow-sm"
-                        >
-                          <option value="All Clients">All Clients</option>
-                          {Array.from(new Set(getOtpBaseFilteredRows(otpStatusFilter).map(r => r.client))).sort().map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </div>
-                      <div className="flex-1" />
-                      <button onClick={downloadOTPExcel} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black flex items-center gap-2 uppercase">
-                        <Download className="w-4 h-4" /> Download OTP Report
-                      </button>
-                    </div>
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Client Filter</label>
+                    <select
+                      value={otpClientFilter}
+                      onChange={(e) => setOtpClientFilter(e.target.value)}
+                      className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[200px] shadow-sm"
+                    >
+                      <option value="All Clients">All Clients</option>
+                      {Array.from(new Set(getOtpBaseFilteredRows(otpStatusFilter).map(r => r.client))).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex-1" />
+                  <button onClick={downloadOTPExcel} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black flex items-center gap-2 uppercase">
+                    <Download className="w-4 h-4" /> Download OTP Report
+                  </button>
+                </div>
 
-                    <div className="bg-white rounded-2xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-center border-collapse table-fixed">
-                          <thead className="bg-[#0f172a] text-white h-11">
-                            <tr key="otp-main-header">
-                              <th style={{width: '32px'}} className="px-2"><input type="checkbox" /></th>
-                              <th style={{width: '150px'}} className="text-[11px] font-bold tracking-widest uppercase">Waybill</th>
-                              <th style={{width: '200px'}} className="text-[11px] font-bold tracking-widest uppercase">Client Name</th>
-                              <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">OTP Status</th>
-                              <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">Session Status</th>
-                              <th style={{width: '350px'}} className="text-[11px] font-bold tracking-widest text-left px-4 uppercase">Return Address</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(otpFilteredRows.reduce((acc: any, row) => {
-                              if (!acc[row.client]) acc[row.client] = [];
-                              acc[row.client].push(row);
-                              return acc;
+                <div className="bg-white rounded-2xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-center border-collapse table-fixed">
+                      <thead className="bg-[#0f172a] text-white h-11">
+                        <tr key="otp-main-header">
+                          <th style={{width: '32px'}} className="px-2"><input type="checkbox" /></th>
+                          <th style={{width: '150px'}} className="text-[11px] font-bold tracking-widest uppercase">Waybill</th>
+                          <th style={{width: '200px'}} className="text-[11px] font-bold tracking-widest uppercase">Client Name</th>
+                          <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">OTP Status</th>
+                          <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">Session Status</th>
+                          <th style={{width: '350px'}} className="text-[11px] font-bold tracking-widest text-left px-4 uppercase">Return Address</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(otpFilteredRows.reduce((acc: any, row) => {
+                          if (!acc[row.client]) acc[row.client] = [];
+                          acc[row.client].push(row);
+                          return acc;
                         }, {})).sort((a: any, b: any) => b[1].length - a[1].length).map(([client, rows]: any) => (
-                              <React.Fragment key={`otp-frag-${client}`}>
-                                <tr className="bg-slate-800 text-white h-9">
-                                  <td colSpan={6} className="text-left px-4">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
-                                      <button onClick={() => handleCopyAWBOnly(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 font-bold uppercase">Copy AWBs</button>
-                                    </div>
-                                  </td>
-                                </tr>
-                                {rows.map((row: any) => (
-                                  <tr key={`otp-row-${row.id}`} className={cn("border-b", row.isNotClosed ? "bg-amber-50/30 border-l-[3px] border-l-amber-500" : "bg-white")}>
-                                    <td className="px-2 py-2"><input type="checkbox" /></td>
-                                    <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
-                                    <td className="px-4 py-2 text-[13px] font-black tracking-tight">{row.client}</td>
-                                    <td className="px-4 py-2">
-                                      <div className="flex flex-col items-center gap-1.5 py-1">
-                                        <span className={cn("px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm uppercase", row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : "bg-emerald-600 text-white border-emerald-500")}>{row.otpStatus}</span>
-                                        {row.isNotClosed && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black border border-amber-300 whitespace-normal leading-tight text-center uppercase">Not closed on device</span>}
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-2">
-                                      <span className={cn("px-2 py-0.5 rounded text-[10px] font-black border uppercase", row.sessionStatus === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" : row.sessionStatus === 'RTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-700 border-slate-200")}>{row.sessionStatus}</span>
-                                    </td>
-                                    <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[350px] font-medium leading-relaxed">{row.returnAddress}</td>
-                                  </tr>
-                                ))}
-                              </React.Fragment>
+                          <React.Fragment key={`otp-frag-${client}`}>
+                            <tr className="bg-slate-800 text-white h-9">
+                              <td colSpan={6} className="text-left px-4">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
+                                  <button onClick={() => handleCopyAWBOnly(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 font-bold uppercase">Copy AWBs</button>
+                                </div>
+                              </td>
+                            </tr>
+                            {rows.map((row: any) => (
+                              <tr key={`otp-row-${row.id}`} className={cn("border-b", row.isNotClosed ? "bg-amber-50/30 border-l-[3px] border-l-amber-500" : "bg-white")}>
+                                <td className="px-2 py-2"><input type="checkbox" /></td>
+                                <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
+                                <td className="px-4 py-2 text-[13px] font-black tracking-tight">{row.client}</td>
+                                <td className="px-4 py-2">
+                                  <div className="flex flex-col items-center gap-1.5 py-1">
+                                    <span className={cn("px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm uppercase", row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : "bg-emerald-600 text-white border-emerald-500")}>{row.otpStatus}</span>
+                                    {row.isNotClosed && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black border border-amber-300 whitespace-normal leading-tight text-center uppercase">Not closed on device</span>}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2">
+                                  <span className={cn("px-2 py-0.5 rounded text-[10px] font-black border uppercase", row.sessionStatus === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" : row.sessionStatus === 'RTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-700 border-slate-200")}>{row.sessionStatus}</span>
+                                </td>
+                                <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[350px] font-medium leading-relaxed">{row.returnAddress}</td>
+                              </tr>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
+                          </React.Fragment>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                )}
-              </>
+                </div>
+              </div>
             )}
           </div>
         )}
