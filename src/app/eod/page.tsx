@@ -11,10 +11,8 @@ import {
   User,
   AlertCircle,
   X,
-  Trash2,
   ChevronDown,
   ChevronRight,
-  Save,
   Calendar,
   ArrowLeft
 } from "lucide-react";
@@ -127,18 +125,6 @@ interface Session {
   };
 }
 
-interface MonthlyRecord extends Session {
-  stats: {
-    total: number;
-    pending: number;
-    dispatched: number;
-    rto: number;
-    dto: number;
-  };
-}
-
-type MonthlyStorage = Record<string, Record<string, MonthlyRecord[]>>;
-
 export default function PODTool() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<"eod" | "remark" | "otp">("eod");
@@ -146,10 +132,6 @@ export default function PODTool() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("All");
   
-  const [monthlyRecords, setMonthlyRecords] = useState<MonthlyStorage>({});
-  const [selectedMonth, setSelectedMonth] = useState<string>("");
-  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
-
   const [selectedRemarkChips, setSelectedRemarkChips] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string>("All Clients");
   const [otpClientFilter, setOtpClientFilter] = useState<string>("All Clients");
@@ -178,58 +160,43 @@ export default function PODTool() {
     } catch (e) {
       console.error("Error loading sessions:", e);
     }
-
-    try {
-      const savedMonthly = localStorage.getItem('pod_monthly_records');
-      if (savedMonthly && savedMonthly.trim() !== "") {
-        const parsed = JSON.parse(savedMonthly);
-        if (parsed && typeof parsed === 'object') {
-          setMonthlyRecords(parsed);
-          const months = Object.keys(parsed).sort().reverse();
-          if (months.length > 0) setSelectedMonth(months[0]);
-        }
-      }
-    } catch (e) {
-      console.error("Error loading monthly records:", e);
-      setMonthlyRecords({});
-    }
   }, []);
 
   useEffect(() => {
     if (isMounted) {
       const sessId = searchParams.get('sessionId');
       if (sessId) {
+        // Try local sessions first
         const active = sessions.find(s => s.id === sessId);
         if (active) {
           setSelectedSessionId(sessId);
         } else {
-          // Check historical data if not in recent sessions
-          Object.values(monthlyRecords).forEach(days => {
-            Object.values(days).forEach(sessionsList => {
-              const found = sessionsList.find(s => s.id === sessId);
-              if (found) {
-                // To display it, we add it back to temporary sessions view
-                setSessions(prev => [found, ...prev.filter(x => x.id !== found.id)]);
-                setSelectedSessionId(sessId);
-              }
-            });
-          });
+          // Try history sessions
+          try {
+            const savedMonthly = localStorage.getItem('pod_monthly_records');
+            if (savedMonthly) {
+              const monthlyRecords = JSON.parse(savedMonthly);
+              Object.values(monthlyRecords).forEach((days: any) => {
+                Object.values(days).forEach((sessionsList: any) => {
+                  const found = sessionsList.find((s: any) => s.id === sessId);
+                  if (found) {
+                    setSessions(prev => [found, ...prev.filter(x => x.id !== found.id)]);
+                    setSelectedSessionId(sessId);
+                  }
+                });
+              });
+            }
+          } catch (e) {}
         }
       }
     }
-  }, [isMounted, searchParams, sessions, monthlyRecords]);
+  }, [isMounted, searchParams, sessions]);
 
   useEffect(() => {
     if (isMounted) {
       localStorage.setItem('pod_sessions', JSON.stringify(sessions));
     }
   }, [sessions, isMounted]);
-
-  useEffect(() => {
-    if (isMounted) {
-      localStorage.setItem('pod_monthly_records', JSON.stringify(monthlyRecords));
-    }
-  }, [monthlyRecords, isMounted]);
 
   const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
 
@@ -287,59 +254,6 @@ export default function PODTool() {
       </div>
     );
   }, []);
-
-  const handleSaveAllSessions = () => {
-    if (sessions.length === 0) {
-      showToast("No sessions to save", "err");
-      return;
-    }
-
-    try {
-      setMonthlyRecords(prev => {
-        const next = { ...prev };
-        sessions.forEach(session => {
-          if (!session || !session.date) return;
-          const dateRegex = /^\d{2}-\d{2}-\d{4}$/;
-          if (!dateRegex.test(session.date)) return;
-          
-          const parts = session.date.split('-');
-          const yearMonth = `${parts[2]}-${parts[1]}`;
-          const fullDateKey = `${parts[2]}-${parts[1]}-${parts[0]}`;
-          
-          if (!next[yearMonth]) next[yearMonth] = {};
-          if (!next[yearMonth][fullDateKey]) next[yearMonth][fullDateKey] = [];
-
-          const sessionStats = {
-            total: session.data?.length || 0,
-            pending: (session.data || []).filter(r => r.status === 'Pending').length,
-            dispatched: (session.data || []).filter(r => r.status === 'Dispatched').length,
-            rto: (session.data || []).filter(r => r.status === 'RTO').length,
-            dto: (session.data || []).filter(r => r.status === 'DTO').length,
-          };
-
-          const newRecord: MonthlyRecord = {
-            ...session,
-            stats: sessionStats
-          };
-
-          // Overwrite if same DSP ID on same date
-          const filtered = next[yearMonth][fullDateKey].filter(s => s.dspId !== session.dspId);
-          next[yearMonth][fullDateKey] = [newRecord, ...filtered];
-        });
-        return next;
-      });
-
-      // Clear recent sessions list and storage
-      setSessions([]);
-      localStorage.removeItem('pod_sessions');
-      setSelectedSessionId(null);
-      
-      showToast("Data moved to history & cleared from recent", "ok");
-    } catch (error) {
-      console.error("Save error:", error);
-      showToast("Application error during save", "err");
-    }
-  };
 
   const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
@@ -663,20 +577,6 @@ export default function PODTool() {
     setSetupData({ feName: s.feName, dspId: s.dspId, date: isoDate || s.date });
   };
 
-  const toggleDateExpand = (date: string) => {
-    setExpandedDates(prev => {
-      const next = new Set(prev);
-      if (next.has(date)) next.delete(date); else next.add(date);
-      return next;
-    });
-  };
-
-  const getMonthName = (yearMonth: string) => {
-    const [y, m] = yearMonth.split('-');
-    const date = new Date(parseInt(y), parseInt(m) - 1, 1);
-    return date.toLocaleString('default', { month: 'long', year: 'numeric' });
-  };
-
   if (!isMounted) return null;
 
   return (
@@ -732,21 +632,12 @@ export default function PODTool() {
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-black text-slate-700 tracking-tight">Recent Sessions</h3>
-                  <div className="flex items-center gap-3">
-                    <button 
-                      onClick={handleSaveAllSessions}
-                      className="bg-[#0f172a] text-white px-3 py-1.5 rounded-[8px] text-[11px] font-bold hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2"
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                      SAVE DAILY REPORT
-                    </button>
-                    <button 
-                      onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); setSelectedSessionId(null); }} 
-                      className="text-[11px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest"
-                    >
-                      CLEAR ALL HISTORY
-                    </button>
-                  </div>
+                  <button 
+                    onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); setSelectedSessionId(null); }} 
+                    className="text-[11px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest"
+                  >
+                    CLEAR ALL SESSIONS
+                  </button>
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
                   {sessions.map(s => {
@@ -772,71 +663,6 @@ export default function PODTool() {
                 </div>
               </div>
             )}
-
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-sm font-black text-slate-700 tracking-tight uppercase tracking-widest">Monthly Records History</h3>
-                </div>
-                <select 
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] font-bold bg-slate-50 outline-none focus:border-blue-500 shadow-sm"
-                >
-                  <option value="">Select Month</option>
-                  {Object.keys(monthlyRecords).sort().reverse().map(month => (
-                    <option key={month} value={month}>{getMonthName(month)}</option>
-                  ))}
-                </select>
-              </div>
-
-              {selectedMonth && monthlyRecords[selectedMonth] && (
-                <div className="space-y-3">
-                  {Object.keys(monthlyRecords[selectedMonth]).sort().reverse().map(dateKey => {
-                    const isExpanded = expandedDates.has(dateKey);
-                    const sessionsOnDate = monthlyRecords[selectedMonth][dateKey];
-                    const dateDisplay = formatDate(dateKey);
-                    return (
-                      <div key={dateKey} className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-sm transition-all hover:shadow-md">
-                        <button 
-                          onClick={() => toggleDateExpand(dateKey)}
-                          className="w-full px-5 py-4 flex items-center justify-between bg-slate-50/50 hover:bg-slate-50 transition-colors"
-                        >
-                          <span className="text-[13px] font-bold text-slate-800">{dateDisplay} — {sessionsOnDate.length} Sessions</span>
-                          {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
-                        </button>
-                        {isExpanded && (
-                          <div className="p-5 grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 bg-white border-t border-slate-50">
-                            {sessionsOnDate.map(s => {
-                              const sStats = s.stats || {
-                                total: s.data?.length || 0,
-                                pending: (s.data || []).filter(r => r.status === 'Pending').length,
-                                rto: (s.data || []).filter(r => r.status === 'RTO').length,
-                                dto: (s.data || []).filter(r => r.status === 'DTO').length,
-                                dispatched: (s.data || []).filter(r => r.status === 'Dispatched').length,
-                              };
-                              return (
-                                <div 
-                                  key={`hist-${s.id}`} 
-                                  onClick={() => handleSessionClick(s as any)}
-                                  className="p-4 border-[1.5px] border-slate-100 rounded-2xl cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group relative overflow-hidden bg-white"
-                                >
-                                  <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-slate-200 group-hover:bg-blue-500 transition-colors" />
-                                  <p className="text-[15px] font-bold text-slate-900 leading-tight mb-0.5">{s.feName}</p>
-                                  <p className="text-[11px] text-slate-400 font-bold mb-3 uppercase tracking-wider">{s.dspId} — {s.date}</p>
-                                  {renderSessionBadges(sStats)}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
 
             {currentSession && (
               <div className="space-y-6">
@@ -1218,4 +1044,3 @@ export default function PODTool() {
     </div>
   );
 }
-
