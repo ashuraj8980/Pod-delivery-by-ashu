@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -23,7 +22,7 @@ import { useSearchParams } from "next/navigation";
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
  * Optimized for EOD Rejection management and OTP Dispatch verification.
- * Deals only with current/temporary sessions.
+ * Updated to include session creation time.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -114,6 +113,7 @@ interface Session {
   feName: string;
   dspId: string;
   date: string;
+  time: string;
   data: PODRow[];
   timestamp: number;
   stats?: {
@@ -142,7 +142,6 @@ export default function PODTool() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   
-  // Undo Logic (History Stack for reverting deletions)
   const [undoStack, setUndoStack] = useState<PODRow[] | null>(null);
   
   const [replacerData, setReplacerData] = useState<any[]>([]);
@@ -161,8 +160,6 @@ export default function PODTool() {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
           setSessions(parsed);
-          
-          // Auto-select session from URL if provided
           const sid = searchParams.get('sessionId');
           if (sid && parsed.some(s => s.id === sid)) {
             setSelectedSessionId(sid);
@@ -247,25 +244,18 @@ export default function PODTool() {
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
     const exportHeaders = headers.filter(h => !/return address|return_address/i.test(h));
-    
-    // Plain text for simple editors
     const plainText = rows.map(r => exportHeaders.map(h => String(r[h] || "").trim()).join("\t")).join("\n");
-    
-    // Rich HTML for Excel to force text formatting and prevent weird wrapping
     const rowsHtml = rows.map(r => {
       const cells = exportHeaders.map(h => {
         const val = String(r[h] || "").trim();
         const headerLower = h.toLowerCase();
-        // Force text format for long numbers (AWB, Order ID, etc.) to prevent scientific notation in Excel
         const isLongNumber = /awb|waybill|order|id|number|dsp/i.test(headerLower);
         const style = `white-space:nowrap; vertical-align:middle; ${isLongNumber ? 'mso-number-format:"\\@";' : ''}`;
         return `<td style='${style}'>${val}</td>`;
       }).join("");
       return `<tr>${cells}</tr>`;
     }).join("");
-    
     const htmlTable = `<html><head><meta charset="UTF-8"></head><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
-    
     try {
       const blobs: Record<string, Blob> = {
         'text/plain': new Blob([plainText], { type: 'text/plain' }),
@@ -300,7 +290,6 @@ export default function PODTool() {
           const rawAwb = findVal(/waybill|awb|awbnumber/);
           const awb = isValidAWB(rawAwb);
           if (!awb) return null;
-          
           const statusRaw = String(findVal(/status|currentstatus/)).toLowerCase().trim();
           const status = STATUS_MAP[statusRaw] || "Unknown";
           const remark = String(findVal(/remark|remarks|nsl/)).trim();
@@ -331,11 +320,14 @@ export default function PODTool() {
         };
 
         const newSessionId = crypto.randomUUID();
+        const creationTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+        
         const newSession: Session = { 
           id: newSessionId, 
           feName: setupData.feName, 
           dspId: setupData.dspId, 
           date: formatDate(setupData.date), 
+          time: creationTime,
           data: parsedRows, 
           timestamp: Date.now(),
           stats: sessionStats
@@ -358,10 +350,7 @@ export default function PODTool() {
     if (!selectedSessionId) return;
     const sessionToUpdate = sessions.find(s => s.id === selectedSessionId);
     if (!sessionToUpdate) return;
-    
-    // Save state for undo
     setUndoStack([...sessionToUpdate.data]);
-    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         const newData = s.data.filter(r => r.id !== rowId);
@@ -388,7 +377,6 @@ export default function PODTool() {
 
   const handleUndo = () => {
     if (!undoStack || !selectedSessionId) return;
-    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         return {
@@ -405,20 +393,15 @@ export default function PODTool() {
       }
       return s;
     }));
-    
     setUndoStack(null);
     showToast("Reverted last deletion(s)", "ok");
   };
 
   const handleDeleteSelected = () => {
     if (selectedRowIds.size === 0 || !selectedSessionId) return;
-    
     const sessionToUpdate = sessions.find(s => s.id === selectedSessionId);
     if (!sessionToUpdate) return;
-    
-    // Save state for undo BEFORE deletion
     setUndoStack([...sessionToUpdate.data]);
-    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         const newData = s.data.filter(r => !selectedRowIds.has(r.id));
@@ -436,7 +419,6 @@ export default function PODTool() {
       }
       return s;
     }));
-    
     showToast(`Deleted ${selectedRowIds.size} Selected Rows`, "ok");
     setSelectedRowIds(new Set());
   };
@@ -633,7 +615,7 @@ export default function PODTool() {
     setSelectedRemarkChips([]);
     setClientFilter("All Clients");
     setShowAllPending(false);
-    setUndoStack(null); // Clear undo stack on session change
+    setUndoStack(null);
     let isoDate = "";
     if (s.date && s.date.includes('-')) {
       const parts = s.date.split('-');
@@ -720,7 +702,7 @@ export default function PODTool() {
                           <X className="w-4 h-4" />
                         </button>
                         <p className="text-[15px] font-bold text-slate-900 mb-0.5 tracking-tight">{s.feName}</p>
-                        <p className="text-[11px] text-slate-400 font-bold mb-3 uppercase tracking-wider">{s.dspId} — {s.date}</p>
+                        <p className="text-[11px] text-slate-400 font-bold mb-3 uppercase tracking-wider">{s.dspId} — {s.date} — {s.time || ""}</p>
                         {renderSessionBadges(sStats)}
                       </div>
                     );
@@ -1001,7 +983,7 @@ export default function PODTool() {
                     <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg"><User className="w-6 h-6" /></div>
                     <div>
                       <p className="text-lg font-black text-slate-900 leading-tight">{currentSession.feName}</p>
-                      <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase">{currentSession.dspId} — {currentSession.date}</p>
+                      <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase">{currentSession.dspId} — {currentSession.date} — {currentSession.time || ""}</p>
                     </div>
                   </div>
                   {renderSessionBadges(stats)}

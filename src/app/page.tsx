@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -14,9 +13,6 @@ import {
   Search,
   X,
   Download,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
   Copy
 } from "lucide-react";
 import Link from "next/link";
@@ -32,7 +28,7 @@ import {
 /**
  * @fileOverview Professional Historical Dashboard
  * Reads from pod_monthly_records and allows viewing details in a Modal.
- * Includes Global Search and Interactive Modal Filtering.
+ * Displays session creation time for archived records.
  */
 
 interface PODRow {
@@ -53,6 +49,7 @@ interface MonthlyRecord {
   feName: string;
   dspId: string;
   date: string;
+  time: string;
   timestamp: number;
   data: PODRow[];
   stats: {
@@ -86,7 +83,6 @@ export default function Dashboard() {
   const [pendingSessionsCount, setPendingSessionsCount] = useState(0);
   const [globalSearch, setGlobalSearch] = useState("");
   
-  // Modal State
   const [viewingSession, setViewingSession] = useState<MonthlyRecord | null>(null);
   const [modalSearch, setModalSearch] = useState("");
   const [modalStatusFilter, setModalStatusFilter] = useState("All");
@@ -123,9 +119,7 @@ export default function Dashboard() {
       } else {
         setPendingSessionsCount(0);
       }
-    } catch (e) {
-      console.error("Failed to load records:", e);
-    }
+    } catch (e) {}
   };
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err' = 'ok') => {
@@ -161,8 +155,7 @@ export default function Dashboard() {
       sessions.forEach((session: any) => {
         if (!session.date) return;
         
-        let dateObj = session.date;
-        let parts = dateObj.split('-');
+        const parts = session.date.split('-');
         if (parts.length !== 3) return;
 
         const yearMonth = `${parts[2]}-${parts[1]}`;
@@ -186,7 +179,6 @@ export default function Dashboard() {
       const months = Object.keys(nextMonthly).sort().reverse();
       if (months.length > 0) setSelectedMonth(months[0]);
     } catch (error) {
-      console.error("Save error:", error);
       showToast("Error saving sessions", "err");
     }
   };
@@ -256,12 +248,10 @@ export default function Dashboard() {
     if (!viewingSession) return [];
     let rows = viewingSession.data;
 
-    // Filter by Status
     if (modalStatusFilter !== 'All') {
       rows = rows.filter(r => r.status === modalStatusFilter);
     }
 
-    // Filter by Search
     if (modalSearch) {
       const s = modalSearch.toLowerCase();
       rows = rows.filter(r => 
@@ -400,7 +390,7 @@ export default function Dashboard() {
                         <p className="text-[17px] font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">{s.feName}</p>
                         <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
                       </div>
-                      <p className="text-[11px] text-slate-400 font-black mb-1 uppercase tracking-wider">{s.dspId} — {s.date}</p>
+                      <p className="text-[11px] text-slate-400 font-black mb-1 uppercase tracking-wider">{s.dspId} — {s.date} — {s.time || ""}</p>
                       {renderSessionBadges(s.stats)}
                     </div>
                   ))}
@@ -441,7 +431,7 @@ export default function Dashboard() {
                               <p className="text-[17px] font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">{s.feName}</p>
                               <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
                             </div>
-                            <p className="text-[11px] text-slate-400 font-black mb-1 uppercase tracking-wider">{s.dspId} — {s.date}</p>
+                            <p className="text-[11px] text-slate-400 font-black mb-1 uppercase tracking-wider">{s.dspId} — {s.date} — {s.time || ""}</p>
                             {renderSessionBadges(s.stats)}
                           </div>
                         ))}
@@ -455,7 +445,6 @@ export default function Dashboard() {
         </div>
       </main>
 
-      {/* Session Details Modal (Interactive Version) */}
       <Dialog open={!!viewingSession} onOpenChange={(open) => !open && setViewingSession(null)}>
         <DialogContent className="max-w-[95vw] w-[1400px] max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 border-none rounded-[2rem]">
           {viewingSession && (
@@ -468,7 +457,7 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <DialogTitle className="text-2xl font-black tracking-tight">{viewingSession.feName}</DialogTitle>
-                      <p className="text-[11px] font-bold text-blue-400 uppercase tracking-widest">{viewingSession.dspId} • {viewingSession.date}</p>
+                      <p className="text-[11px] font-bold text-blue-400 uppercase tracking-widest">{viewingSession.dspId} • {viewingSession.date} • {viewingSession.time || ""}</p>
                     </div>
                   </div>
                   <button onClick={() => setViewingSession(null)} className="p-2 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all">
@@ -476,7 +465,6 @@ export default function Dashboard() {
                   </button>
                 </div>
 
-                {/* Interactive Filtering Badges in Modal */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   {[
                     { id: 'All', label: 'Total', val: viewingSession.stats.total, color: 'text-slate-900', bg: 'bg-white', border: 'border-white' },
@@ -502,7 +490,6 @@ export default function Dashboard() {
                 </div>
               </DialogHeader>
 
-              {/* Modal Controls Bar */}
               <div className="bg-slate-50 p-4 border-b flex items-center gap-4">
                 <div className="relative flex-1 max-w-md">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -529,7 +516,6 @@ export default function Dashboard() {
                 </button>
               </div>
 
-              {/* Grouped Table View in Modal */}
               <div className="flex-1 overflow-auto bg-white custom-scrollbar">
                 <table className="w-full text-center border-collapse table-fixed">
                   <thead className="sticky top-0 bg-[#f8fafc] text-slate-500 border-b z-10">
