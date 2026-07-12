@@ -118,6 +118,13 @@ interface Session {
   date: string;
   data: PODRow[];
   timestamp: number;
+  stats?: {
+    total: number;
+    pending: number;
+    dispatched: number;
+    rto: number;
+    dto: number;
+  };
 }
 
 interface MonthlyRecord extends Session {
@@ -130,7 +137,6 @@ interface MonthlyRecord extends Session {
   };
 }
 
-// Structure: { "2024-03": { "2024-03-25": [Session, Session] } }
 type MonthlyStorage = Record<string, Record<string, MonthlyRecord[]>>;
 
 export default function PODTool() {
@@ -140,12 +146,10 @@ export default function PODTool() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("All");
   
-  // Monthly Records State
   const [monthlyRecords, setMonthlyRecords] = useState<MonthlyStorage>({});
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
 
-  // Filtering states
   const [selectedRemarkChips, setSelectedRemarkChips] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string>("All Clients");
   const [otpClientFilter, setOtpClientFilter] = useState<string>("All Clients");
@@ -162,7 +166,6 @@ export default function PODTool() {
   const [otpData, setOtpData] = useState<OTPRow[]>([]);
   const [otpStatusFilter, setOtpStatusFilter] = useState<string>("All");
 
-  // Load from localStorage
   useEffect(() => {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
@@ -184,13 +187,11 @@ export default function PODTool() {
           if (months.length > 0) setSelectedMonth(months[0]);
         }
       } catch (e) {
-        console.error("Failed to parse monthly records", e);
         setMonthlyRecords({});
       }
     }
   }, []);
 
-  // Handle URL Session Selection
   useEffect(() => {
     if (isMounted && sessions.length > 0) {
       const sessId = searchParams.get('sessionId');
@@ -200,7 +201,6 @@ export default function PODTool() {
     }
   }, [isMounted, searchParams, sessions]);
 
-  // Save to localStorage
   useEffect(() => {
     if (isMounted) {
       localStorage.setItem('pod_sessions', JSON.stringify(sessions));
@@ -213,7 +213,6 @@ export default function PODTool() {
     }
   }, [monthlyRecords, isMounted]);
 
-  // Reset OTP data when session changes
   useEffect(() => {
     setOtpData([]);
     setOtpStatusFilter("All");
@@ -247,8 +246,7 @@ export default function PODTool() {
     }, 3000);
   }, []);
 
-  // Shared Helper for Badge Rendering to ensure consistency
-  const renderSessionBadges = useCallback((statsObj: { total: number, pending: number, rto: number, dto: number }) => {
+  const renderSessionBadges = useCallback((statsObj: { total: number, pending: number, rto: number, dto: number, dispatched: number }) => {
     return (
       <div className="flex flex-wrap gap-[5px]">
         <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100 uppercase">
@@ -269,6 +267,11 @@ export default function PODTool() {
             {statsObj.dto} DTO
           </span>
         )}
+        {statsObj.dispatched > 0 && (
+          <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-[4px] border border-blue-100 uppercase">
+            {statsObj.dispatched} DISPATCHED
+          </span>
+        )}
       </div>
     );
   }, []);
@@ -284,18 +287,12 @@ export default function PODTool() {
         const next = prev ? { ...prev } : {};
         sessions.forEach(session => {
           if (!session || !session.date) return;
-          
-          // Validate Date is DD-MM-YYYY using regex
           const dateRegex = /^\d{2}-\d{2}-\d{4}$/;
           if (!dateRegex.test(session.date)) return;
-
           const parts = session.date.split('-');
-          // Safe check for parts
           if (parts.length !== 3) return;
-          
           const yearMonth = `${parts[2]}-${parts[1]}`;
           const fullDateKey = `${parts[2]}-${parts[1]}-${parts[0]}`;
-
           if (!next[yearMonth]) next[yearMonth] = {};
           if (!next[yearMonth][fullDateKey]) next[yearMonth][fullDateKey] = [];
 
@@ -312,16 +309,13 @@ export default function PODTool() {
             stats: sessionStats
           };
 
-          // Replace if exists for the same FE/DSP on same day
           const filtered = (next[yearMonth][fullDateKey] || []).filter(s => s.dspId !== session.dspId);
           next[yearMonth][fullDateKey] = [newRecord, ...filtered];
         });
         return next;
       });
-
       showToast("All sessions saved to monthly records", "ok");
     } catch (error) {
-      console.error("Save Daily Report failed", error);
       showToast("Application error during save", "err");
     }
   };
@@ -403,6 +397,14 @@ export default function PODTool() {
         
         if (parsedRows.length === 0) throw new Error("No Valid Data Found In EOD Report.");
         
+        const sessionStats = {
+          total: parsedRows.length,
+          pending: parsedRows.filter(r => r.status === 'Pending').length,
+          dispatched: parsedRows.filter(r => r.status === 'Dispatched').length,
+          rto: parsedRows.filter(r => r.status === 'RTO').length,
+          dto: parsedRows.filter(r => r.status === 'DTO').length,
+        };
+
         const newSessionId = crypto.randomUUID();
         const newSession: Session = { 
           id: newSessionId, 
@@ -410,7 +412,8 @@ export default function PODTool() {
           dspId: setupData.dspId, 
           date: formatDate(setupData.date), 
           data: parsedRows, 
-          timestamp: Date.now() 
+          timestamp: Date.now(),
+          stats: sessionStats
         };
 
         setSessions(prev => {
@@ -420,7 +423,6 @@ export default function PODTool() {
         
         setSelectedSessionId(newSessionId);
         showToast(`Imported ${parsedRows.length} Rows Locally!`, "ok");
-        // TODO: Connect to Firestore later
       } catch (err: any) { showToast(err.message || "Failed To Import File", "err"); } finally { setIsProcessing(false); }
     };
     reader.readAsArrayBuffer(file);
@@ -440,19 +442,6 @@ export default function PODTool() {
       next.delete(rowId);
       return next;
     });
-  };
-
-  const deleteSelectedRows = () => {
-    if (!selectedSessionId || selectedRowIds.size === 0) return;
-    setSessions(prev => prev.map(s => {
-      if (s.id === selectedSessionId) {
-        return { ...s, data: s.data.filter(r => !selectedRowIds.has(r.id)) };
-      }
-      return s;
-    }));
-    const count = selectedRowIds.size;
-    setSelectedRowIds(new Set());
-    showToast(`Deleted ${count} Rows`, "ok");
   };
 
   const uniqueClients = useMemo(() => {
@@ -606,11 +595,6 @@ export default function PODTool() {
     return rows;
   }, [otpData]);
 
-  const uniqueOtpClients = useMemo(() => {
-    const rows = getOtpBaseFilteredRows(otpStatusFilter);
-    return Array.from(new Set(rows.map(r => r.client))).sort();
-  }, [getOtpBaseFilteredRows, otpStatusFilter]);
-
   const otpFilteredRows = useMemo(() => {
     let rows = getOtpBaseFilteredRows(otpStatusFilter);
     if (otpClientFilter !== 'All Clients') {
@@ -744,11 +728,12 @@ export default function PODTool() {
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
                   {sessions.map(s => {
-                    const sStats = {
+                    const sStats = s.stats || {
                       total: s.data.length,
                       pending: s.data.filter(r => r.status === 'Pending').length,
                       rto: s.data.filter(r => r.status === 'RTO').length,
                       dto: s.data.filter(r => r.status === 'DTO').length,
+                      dispatched: s.data.filter(r => r.status === 'Dispatched').length,
                     };
                     return (
                       <div key={s.id} onClick={() => handleSessionClick(s)} className={cn("relative p-4 border-[1.5px] rounded-2xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white", selectedSessionId === s.id ? "border-blue-500 ring-2 ring-blue-500/10" : "hover:border-blue-300 border-slate-100")}>
@@ -807,6 +792,7 @@ export default function PODTool() {
                                 pending: (s.data || []).filter(r => r.status === 'Pending').length,
                                 rto: (s.data || []).filter(r => r.status === 'RTO').length,
                                 dto: (s.data || []).filter(r => r.status === 'DTO').length,
+                                dispatched: (s.data || []).filter(r => r.status === 'Dispatched').length,
                               };
                               return (
                                 <div 
@@ -1140,7 +1126,7 @@ export default function PODTool() {
                           className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[200px] shadow-sm"
                         >
                           <option value="All Clients">All Clients</option>
-                          {uniqueOtpClients.map(c => <option key={c} value={c}>{c}</option>)}
+                          {Array.from(new Set(getOtpBaseFilteredRows(otpStatusFilter).map(r => r.client))).sort().map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
                       <div className="flex-1" />
@@ -1210,3 +1196,4 @@ export default function PODTool() {
     </div>
   );
 }
+
