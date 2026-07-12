@@ -67,18 +67,24 @@ export default function Dashboard() {
   }, []);
 
   const loadData = () => {
-    const saved = localStorage.getItem('pod_monthly_records');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
+    try {
+      const saved = localStorage.getItem('pod_monthly_records');
+      if (!saved || saved.trim() === "") {
+        setMonthlyRecords({});
+        return;
+      }
+      
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object') {
         setMonthlyRecords(parsed);
         const months = Object.keys(parsed).sort().reverse();
         if (months.length > 0 && !selectedMonth) {
           setSelectedMonth(months[0]);
         }
-      } catch (e) {
-        setMonthlyRecords({});
       }
+    } catch (e) {
+      console.error("Failed to load monthly records history:", e);
+      setMonthlyRecords({});
     }
   };
 
@@ -227,4 +233,3 @@ export default function Dashboard() {
     </div>
   );
 }
-

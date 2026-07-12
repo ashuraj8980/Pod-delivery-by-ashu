@@ -81,9 +81,9 @@ const normalizeAWB = (val: any): string => {
   return s.replace('.0', '');
 };
 
-const isValidAWB = (val: any): boolean => {
+const isValidAWB = (val: any): string => {
   const s = normalizeAWB(val);
-  return /^\d{8,}$/.test(s) && !isNaN(Number(s));
+  return (/^\d{8,}$/.test(s) && !isNaN(Number(s))) ? s : "";
 };
 
 interface PODRow {
@@ -170,25 +170,28 @@ export default function PODTool() {
     setIsMounted(true);
     setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
     
-    const saved = localStorage.getItem('pod_sessions');
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem('pod_sessions');
+      if (saved && saved.trim() !== "") {
         setSessions(JSON.parse(saved));
-      } catch (e) {}
+      }
+    } catch (e) {
+      console.error("Error loading sessions:", e);
     }
 
-    const savedMonthly = localStorage.getItem('pod_monthly_records');
-    if (savedMonthly) {
-      try {
+    try {
+      const savedMonthly = localStorage.getItem('pod_monthly_records');
+      if (savedMonthly && savedMonthly.trim() !== "") {
         const parsed = JSON.parse(savedMonthly);
         if (parsed && typeof parsed === 'object') {
           setMonthlyRecords(parsed);
           const months = Object.keys(parsed).sort().reverse();
           if (months.length > 0) setSelectedMonth(months[0]);
         }
-      } catch (e) {
-        setMonthlyRecords({});
       }
+    } catch (e) {
+      console.error("Error loading monthly records:", e);
+      setMonthlyRecords({});
     }
   }, []);
 
@@ -196,17 +199,16 @@ export default function PODTool() {
     if (isMounted) {
       const sessId = searchParams.get('sessionId');
       if (sessId) {
-        // Try finding in active sessions first
         const active = sessions.find(s => s.id === sessId);
         if (active) {
           setSelectedSessionId(sessId);
         } else {
-          // Search in monthly archive
+          // Check historical data if not in recent sessions
           Object.values(monthlyRecords).forEach(days => {
             Object.values(days).forEach(sessionsList => {
               const found = sessionsList.find(s => s.id === sessId);
               if (found) {
-                // If found in archive, we must add it to the viewable active sessions for this tool session
+                // To display it, we add it back to temporary sessions view
                 setSessions(prev => [found, ...prev.filter(x => x.id !== found.id)]);
                 setSelectedSessionId(sessId);
               }
@@ -228,12 +230,6 @@ export default function PODTool() {
       localStorage.setItem('pod_monthly_records', JSON.stringify(monthlyRecords));
     }
   }, [monthlyRecords, isMounted]);
-
-  useEffect(() => {
-    setOtpData([]);
-    setOtpStatusFilter("All");
-    setOtpClientFilter("All Clients");
-  }, [selectedSessionId]);
 
   const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
 
@@ -300,15 +296,16 @@ export default function PODTool() {
 
     try {
       setMonthlyRecords(prev => {
-        const next = prev ? { ...prev } : {};
+        const next = { ...prev };
         sessions.forEach(session => {
           if (!session || !session.date) return;
           const dateRegex = /^\d{2}-\d{2}-\d{4}$/;
           if (!dateRegex.test(session.date)) return;
+          
           const parts = session.date.split('-');
-          if (parts.length !== 3) return;
           const yearMonth = `${parts[2]}-${parts[1]}`;
           const fullDateKey = `${parts[2]}-${parts[1]}-${parts[0]}`;
+          
           if (!next[yearMonth]) next[yearMonth] = {};
           if (!next[yearMonth][fullDateKey]) next[yearMonth][fullDateKey] = [];
 
@@ -325,13 +322,21 @@ export default function PODTool() {
             stats: sessionStats
           };
 
-          const filtered = (next[yearMonth][fullDateKey] || []).filter(s => s.dspId !== session.dspId);
+          // Overwrite if same DSP ID on same date
+          const filtered = next[yearMonth][fullDateKey].filter(s => s.dspId !== session.dspId);
           next[yearMonth][fullDateKey] = [newRecord, ...filtered];
         });
         return next;
       });
-      showToast("All sessions saved to monthly records", "ok");
+
+      // Clear recent sessions list and storage
+      setSessions([]);
+      localStorage.removeItem('pod_sessions');
+      setSelectedSessionId(null);
+      
+      showToast("Data moved to history & cleared from recent", "ok");
     } catch (error) {
+      console.error("Save error:", error);
       showToast("Application error during save", "err");
     }
   };
@@ -390,8 +395,9 @@ export default function PODTool() {
             return key ? row[key] : "";
           };
           const rawAwb = findVal(/waybill|awb|awbnumber/);
-          if (!isValidAWB(rawAwb)) return null;
-          const awb = normalizeAWB(rawAwb);
+          const awb = isValidAWB(rawAwb);
+          if (!awb) return null;
+          
           const statusRaw = String(findVal(/status|currentstatus/)).toLowerCase().trim();
           const status = STATUS_MAP[statusRaw] || "Unknown";
           const remark = String(findVal(/remark|remarks|nsl/)).trim();
@@ -557,8 +563,8 @@ export default function PODTool() {
         let matchedCount = 0;
         rawData.forEach((row: any) => {
           const rawAwb = row['Waybill'] || row['AWB'] || row['waybill'] || row['awb'];
-          if (!isValidAWB(rawAwb)) return;
           const awb = normalizeAWB(rawAwb);
+          if (!awb || awb.length < 8) return;
           const sessionRow = sessionMap.get(awb);
           if (!sessionRow) return;
           matchedCount++;
@@ -735,7 +741,7 @@ export default function PODTool() {
                       SAVE DAILY REPORT
                     </button>
                     <button 
-                      onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); }} 
+                      onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); setSelectedSessionId(null); }} 
                       className="text-[11px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest"
                     >
                       CLEAR ALL HISTORY
@@ -1212,3 +1218,4 @@ export default function PODTool() {
     </div>
   );
 }
+
