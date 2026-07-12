@@ -142,7 +142,7 @@ export default function PODTool() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   
-  // Undo Logic
+  // Undo Logic (History Stack for reverting deletions)
   const [undoStack, setUndoStack] = useState<PODRow[] | null>(null);
   
   const [replacerData, setReplacerData] = useState<any[]>([]);
@@ -398,7 +398,7 @@ export default function PODTool() {
     }));
     
     setUndoStack(null);
-    showToast("Last action undone", "ok");
+    showToast("Reverted last deletion(s)", "ok");
   };
 
   const handleDeleteSelected = () => {
@@ -407,7 +407,7 @@ export default function PODTool() {
     const sessionToUpdate = sessions.find(s => s.id === selectedSessionId);
     if (!sessionToUpdate) return;
     
-    // Save state for undo
+    // Save state for undo BEFORE deletion
     setUndoStack([...sessionToUpdate.data]);
     
     setSessions(prev => prev.map(s => {
@@ -507,7 +507,10 @@ export default function PODTool() {
 
   const deleteSession = (sessionId: string) => {
     setSessions(prev => prev.filter(s => s.id !== sessionId));
-    if (selectedSessionId === sessionId) setSelectedSessionId(null);
+    if (selectedSessionId === sessionId) {
+      setSelectedSessionId(null);
+      setUndoStack(null);
+    }
     showToast("Session Deleted", "ok");
   };
 
@@ -621,6 +624,7 @@ export default function PODTool() {
     setSelectedRemarkChips([]);
     setClientFilter("All Clients");
     setShowAllPending(false);
+    setUndoStack(null); // Clear undo stack on session change
     let isoDate = "";
     if (s.date && s.date.includes('-')) {
       const parts = s.date.split('-');
@@ -685,7 +689,7 @@ export default function PODTool() {
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-black text-slate-700 tracking-tight">Recent Sessions</h3>
                   <button 
-                    onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); setSelectedSessionId(null); }} 
+                    onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); setSelectedSessionId(null); setUndoStack(null); }} 
                     className="text-[11px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest"
                   >
                     CLEAR ALL SESSIONS
