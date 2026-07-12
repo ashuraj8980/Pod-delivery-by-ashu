@@ -193,13 +193,29 @@ export default function PODTool() {
   }, []);
 
   useEffect(() => {
-    if (isMounted && sessions.length > 0) {
+    if (isMounted) {
       const sessId = searchParams.get('sessionId');
-      if (sessId && sessions.find(s => s.id === sessId)) {
-        setSelectedSessionId(sessId);
+      if (sessId) {
+        // Try finding in active sessions first
+        const active = sessions.find(s => s.id === sessId);
+        if (active) {
+          setSelectedSessionId(sessId);
+        } else {
+          // Search in monthly archive
+          Object.values(monthlyRecords).forEach(days => {
+            Object.values(days).forEach(sessionsList => {
+              const found = sessionsList.find(s => s.id === sessId);
+              if (found) {
+                // If found in archive, we must add it to the viewable active sessions for this tool session
+                setSessions(prev => [found, ...prev.filter(x => x.id !== found.id)]);
+                setSelectedSessionId(sessId);
+              }
+            });
+          });
+        }
       }
     }
-  }, [isMounted, searchParams, sessions]);
+  }, [isMounted, searchParams, sessions, monthlyRecords]);
 
   useEffect(() => {
     if (isMounted) {
@@ -1196,4 +1212,3 @@ export default function PODTool() {
     </div>
   );
 }
-
