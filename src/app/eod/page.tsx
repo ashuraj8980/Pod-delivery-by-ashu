@@ -12,7 +12,8 @@ import {
   AlertCircle,
   X,
   ArrowLeft,
-  Trash2
+  Trash2,
+  RotateCcw
 } from "lucide-react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
@@ -140,6 +141,9 @@ export default function PODTool() {
   const [isMounted, setIsMounted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  
+  // Undo Logic
+  const [undoStack, setUndoStack] = useState<PODRow[] | null>(null);
   
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
@@ -343,6 +347,12 @@ export default function PODTool() {
 
   const deleteRow = (rowId: string) => {
     if (!selectedSessionId) return;
+    const sessionToUpdate = sessions.find(s => s.id === selectedSessionId);
+    if (!sessionToUpdate) return;
+    
+    // Save state for undo
+    setUndoStack([...sessionToUpdate.data]);
+    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         const newData = s.data.filter(r => r.id !== rowId);
@@ -367,8 +377,38 @@ export default function PODTool() {
     });
   };
 
+  const handleUndo = () => {
+    if (!undoStack || !selectedSessionId) return;
+    
+    setSessions(prev => prev.map(s => {
+      if (s.id === selectedSessionId) {
+        return {
+          ...s,
+          data: undoStack,
+          stats: {
+            total: undoStack.length,
+            pending: undoStack.filter(r => r.status === 'Pending').length,
+            dispatched: undoStack.filter(r => r.status === 'Dispatched').length,
+            rto: undoStack.filter(r => r.status === 'RTO').length,
+            dto: undoStack.filter(r => r.status === 'DTO').length,
+          }
+        };
+      }
+      return s;
+    }));
+    
+    setUndoStack(null);
+    showToast("Last action undone", "ok");
+  };
+
   const handleDeleteSelected = () => {
     if (selectedRowIds.size === 0 || !selectedSessionId) return;
+    
+    const sessionToUpdate = sessions.find(s => s.id === selectedSessionId);
+    if (!sessionToUpdate) return;
+    
+    // Save state for undo
+    setUndoStack([...sessionToUpdate.data]);
     
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
@@ -773,6 +813,15 @@ export default function PODTool() {
                       className="h-9 px-4 bg-rose-600 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2 uppercase animate-in fade-in zoom-in duration-200"
                     >
                       <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedRowIds.size})
+                    </button>
+                  )}
+
+                  {undoStack && (
+                    <button 
+                      onClick={handleUndo}
+                      className="h-9 px-4 bg-blue-600 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2 uppercase animate-in slide-in-from-left-4 duration-300"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Undo Delete
                     </button>
                   )}
                   
