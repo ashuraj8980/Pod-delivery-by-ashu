@@ -247,16 +247,25 @@ export default function PODTool() {
   const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
     if (!rows.length) return;
     const exportHeaders = headers.filter(h => !/return address|return_address/i.test(h));
+    
+    // Plain text for simple editors
     const plainText = rows.map(r => exportHeaders.map(h => String(r[h] || "").trim()).join("\t")).join("\n");
+    
+    // Rich HTML for Excel to force text formatting and prevent weird wrapping
     const rowsHtml = rows.map(r => {
       const cells = exportHeaders.map(h => {
         const val = String(r[h] || "").trim();
-        const style = h.toLowerCase().includes('awb') || h.toLowerCase().includes('waybill') ? 'style=\'mso-number-format:"\\@"\'' : '';
-        return `<td ${style}>${val}</td>`;
+        const headerLower = h.toLowerCase();
+        // Force text format for long numbers (AWB, Order ID, etc.) to prevent scientific notation in Excel
+        const isLongNumber = /awb|waybill|order|id|number|dsp/i.test(headerLower);
+        const style = `white-space:nowrap; vertical-align:middle; ${isLongNumber ? 'mso-number-format:"\\@";' : ''}`;
+        return `<td style='${style}'>${val}</td>`;
       }).join("");
       return `<tr>${cells}</tr>`;
     }).join("");
-    const htmlTable = `<html><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
+    
+    const htmlTable = `<html><head><meta charset="UTF-8"></head><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
+    
     try {
       const blobs: Record<string, Blob> = {
         'text/plain': new Blob([plainText], { type: 'text/plain' }),
