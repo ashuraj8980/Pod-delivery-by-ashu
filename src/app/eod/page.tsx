@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { 
   Truck, 
   Copy, 
@@ -22,7 +22,7 @@ import { useSearchParams } from "next/navigation";
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
  * Optimized for EOD Rejection management and OTP Dispatch verification.
- * Updated to include session creation time.
+ * Updated to include session creation time and Suspense boundary for useSearchParams.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -125,7 +125,7 @@ interface Session {
   };
 }
 
-export default function PODTool() {
+function PODToolContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<"eod" | "remark" | "otp">("eod");
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -1105,5 +1105,20 @@ export default function PODTool() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function PODTool() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Truck className="w-12 h-12 text-blue-600 animate-bounce" />
+          <p className="text-sm font-bold text-slate-500">Loading Tool...</p>
+        </div>
+      </div>
+    }>
+      <PODToolContent />
+    </Suspense>
   );
 }
