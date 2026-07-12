@@ -13,7 +13,6 @@ import {
   Save,
   Search,
   X,
-  Copy,
   Download,
   CheckCircle2,
   Clock,
@@ -32,6 +31,7 @@ import {
 /**
  * @fileOverview Professional Historical Dashboard
  * Reads from pod_monthly_records and allows viewing details in a Modal.
+ * Includes Global Search for AWB, DSP, or FE Name.
  */
 
 interface PODRow {
@@ -72,6 +72,7 @@ export default function Dashboard() {
   const [hasMounted, setHasMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [pendingSessionsCount, setPendingSessionsCount] = useState(0);
+  const [globalSearch, setGlobalSearch] = useState("");
   
   // Modal State
   const [viewingSession, setViewingSession] = useState<MonthlyRecord | null>(null);
@@ -203,6 +204,28 @@ export default function Dashboard() {
     </div>
   );
 
+  const searchResults = useMemo(() => {
+    if (!globalSearch.trim()) return [];
+    const query = globalSearch.toLowerCase().trim();
+    const found: MonthlyRecord[] = [];
+    
+    Object.values(monthlyRecords).forEach(dates => {
+      Object.values(dates).forEach(sessions => {
+        sessions.forEach(session => {
+          const hasMatch = 
+            session.feName.toLowerCase().includes(query) || 
+            session.dspId.toLowerCase().includes(query) || 
+            session.data.some(r => r.awb.toLowerCase().includes(query));
+          
+          if (hasMatch) {
+            found.push(session);
+          }
+        });
+      });
+    });
+    return found.sort((a, b) => b.timestamp - a.timestamp);
+  }, [monthlyRecords, globalSearch]);
+
   const filteredModalData = useMemo(() => {
     if (!viewingSession) return [];
     if (!modalSearch) return viewingSession.data;
@@ -264,16 +287,29 @@ export default function Dashboard() {
               <Calendar className="w-6 h-6 text-blue-600" />
               <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Monthly Records Archive</h2>
             </div>
-            <select 
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 h-14 text-[15px] font-black outline-none focus:border-blue-500 transition-all min-w-[250px] cursor-pointer"
-            >
-              {Object.keys(monthlyRecords).length === 0 && <option value="">No history found</option>}
-              {Object.keys(monthlyRecords).sort().reverse().map(m => (
-                <option key={m} value={m}>{getMonthName(m)}</option>
-              ))}
-            </select>
+            
+            <div className="flex items-center gap-4">
+              <div className="relative w-[300px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input 
+                  type="text" 
+                  placeholder="Search AWB, DSP, FE Name..." 
+                  value={globalSearch}
+                  onChange={(e) => setGlobalSearch(e.target.value)}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pl-10 pr-4 h-12 text-[14px] font-bold outline-none focus:border-blue-500 transition-all"
+                />
+              </div>
+              <select 
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 h-12 text-[14px] font-black outline-none focus:border-blue-500 transition-all min-w-[200px] cursor-pointer"
+              >
+                {Object.keys(monthlyRecords).length === 0 && <option value="">No history found</option>}
+                {Object.keys(monthlyRecords).sort().reverse().map(m => (
+                  <option key={m} value={m}>{getMonthName(m)}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {Object.keys(monthlyRecords).length === 0 ? (
@@ -284,6 +320,34 @@ export default function Dashboard() {
               <Link href="/eod" className="bg-[#1C2333] text-white px-8 py-3 rounded-2xl font-black text-[14px] inline-flex items-center gap-2 hover:bg-slate-800 transition-all">
                 Go to EOD Tool <ArrowRight className="w-4 h-4" />
               </Link>
+            </div>
+          ) : globalSearch.trim() ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-black text-slate-500 uppercase tracking-widest">Search Results — {searchResults.length} Found</p>
+                <button onClick={() => setGlobalSearch("")} className="text-blue-600 font-bold text-sm">Clear Search</button>
+              </div>
+              {searchResults.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 font-bold">No results found for "{globalSearch}"</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {searchResults.map((s: MonthlyRecord) => (
+                    <div 
+                      key={s.id} 
+                      onClick={() => setViewingSession(s)}
+                      className="p-5 border-[1.5px] border-slate-100 rounded-3xl hover:border-blue-500 hover:shadow-lg transition-all group relative cursor-pointer bg-white"
+                    >
+                      <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[17px] font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">{s.feName}</p>
+                        <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-black mb-1 uppercase tracking-wider">{s.dspId} — {s.date}</p>
+                      {renderSessionBadges(s.stats)}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -398,7 +462,7 @@ export default function Dashboard() {
                   <tbody>
                     {filteredModalData.map((row) => (
                       <tr key={row.id} className="border-b hover:bg-slate-50 transition-colors group">
-                        <td className="px-4 py-3 text-[13px] font-black font-mono text-blue-700">{row.awb}</td>
+                        <td className="px-4 py-3 text-[13px] font-black font-mono text-blue-700 cursor-pointer" onClick={() => { navigator.clipboard.writeText(row.awb); showToast("Waybill Copied"); }}>{row.awb}</td>
                         <td className="px-4 py-3 text-[13px] font-bold text-slate-700">{row.client}</td>
                         <td className="px-4 py-3 text-[12px] font-medium text-slate-400">{row.orderId}</td>
                         <td className="px-4 py-3 text-[11px] font-black text-left uppercase text-slate-600">{row.remark}</td>
