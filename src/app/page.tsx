@@ -19,7 +19,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 /**
- * @fileOverview Professional Historical Dashboard
+ * @fileOverview Professional Historical Dashboard - Simplified Archive View
  * Reads from pod_monthly_records to provide a searchable archive.
  */
 
@@ -62,8 +62,7 @@ export default function Dashboard() {
     loadData();
     const interval = setInterval(() => {
       setCurrentTime(new Date());
-      loadData();
-    }, 30000);
+    }, 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -93,36 +92,22 @@ export default function Dashboard() {
     return date.toLocaleString('default', { month: 'long', year: 'numeric' });
   };
 
-  const metrics = useMemo(() => {
-    let totalFe = 0;
-    let totalPkt = 0;
-    let totalPending = 0;
-    let totalReturned = 0;
-    let totalDispatched = 0;
-
-    const dataSet = selectedMonth ? { [selectedMonth]: monthlyRecords[selectedMonth] } : monthlyRecords;
-
-    Object.values(dataSet).forEach(days => {
-      Object.values(days).forEach(sessions => {
-        sessions.forEach(s => {
-          totalFe++;
-          totalPkt += s.stats.total;
-          totalPending += s.stats.pending;
-          totalReturned += (s.stats.rto + s.stats.dto);
-          totalDispatched += s.stats.dispatched;
-        });
-      });
-    });
-
-    return { totalFe, totalPkt, totalPending, totalReturned, totalDispatched };
-  }, [monthlyRecords, selectedMonth]);
-
   const toggleDate = (date: string) => {
     setExpandedDates(prev => {
       const next = new Set(prev);
       if (next.has(date)) next.delete(date); else next.add(date);
       return next;
     });
+  };
+
+  const formatTimeStr = (d: Date | null) => {
+    if (!d) return "--:--:--";
+    return d.toLocaleTimeString();
+  };
+
+  const formatDateStr = (d: Date | null) => {
+    if (!d) return "--/--/----";
+    return d.toLocaleDateString();
   };
 
   if (!hasMounted) return null;
@@ -138,14 +123,14 @@ export default function Dashboard() {
               <Truck className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-lg font-black tracking-tight">POD Management Tool — Archive</h1>
+              <h1 className="text-lg font-black tracking-tight text-white">POD Management Tool — Archive</h1>
               <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Delhivery · Palam Vihar RPC · By Ashu</p>
             </div>
           </div>
           <div className="flex items-center gap-6">
             <div className="text-right hidden md:block">
-              <p className="text-[13px] font-black">{currentTime?.toLocaleDateString()}</p>
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{currentTime?.toLocaleTimeString()}</p>
+              <p className="text-[13px] font-black text-white">{formatDateStr(currentTime)}</p>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{formatTimeStr(currentTime)}</p>
             </div>
             <button onClick={loadData} className="p-2 hover:bg-white/10 rounded-full transition-all active:rotate-180">
               <RefreshCcw className="w-5 h-5" />
@@ -159,31 +144,12 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-[1400px] mx-auto p-6 space-y-8">
-        {/* Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          {[
-            { label: 'Total FE Saved', val: metrics.totalFe, color: 'text-blue-600', icon: Users, bg: 'bg-white' },
-            { label: 'Total Shipments', val: metrics.totalPkt, color: 'text-slate-900', icon: Package, bg: 'bg-white' },
-            { label: 'Total Pending', val: metrics.totalPending, color: 'text-amber-600', icon: Clock, bg: 'bg-white' },
-            { label: 'Total RTO/DTO', val: metrics.totalReturned, color: 'text-emerald-600', icon: CheckCircle2, bg: 'bg-white' },
-            { label: 'Total Dispatched', val: metrics.totalDispatched, color: 'text-rose-600', icon: Truck, bg: 'bg-white' }
-          ].map((m, i) => (
-            <div key={i} className={cn("p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col items-center text-center", m.bg)}>
-              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center mb-3 bg-slate-50", m.color)}>
-                <m.icon className="w-5 h-5" />
-              </div>
-              <p className="text-[32px] font-black leading-none mb-1 tracking-tighter">{m.val}</p>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{m.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Month Selector */}
+        {/* Monthly Archive Section */}
         <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-100">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
             <div className="flex items-center gap-3">
               <Calendar className="w-6 h-6 text-blue-600" />
-              <h2 className="text-xl font-black text-slate-800 tracking-tight">Saved Monthly Archive</h2>
+              <h2 className="text-xl font-black text-slate-800 tracking-tight text-sharp">Saved Monthly Archive</h2>
             </div>
             <select 
               value={selectedMonth}
@@ -219,7 +185,7 @@ export default function Dashboard() {
                     >
                       <div className="flex items-center gap-4">
                         <span className="text-lg font-black text-slate-800">{dateKey}</span>
-                        <span className="px-3 py-1 bg-blue-600 text-white rounded-full text-[10px] font-black uppercase">{sessions.length} Sessions</span>
+                        <span className="px-3 py-1 bg-blue-600 text-white rounded-full text-[10px] font-black uppercase tracking-tight">{sessions.length} Sessions</span>
                       </div>
                       {isExpanded ? <ChevronDown className="w-6 h-6 text-slate-400" /> : <ChevronRight className="w-6 h-6 text-slate-400" />}
                     </button>
@@ -261,3 +227,4 @@ export default function Dashboard() {
     </div>
   );
 }
+
