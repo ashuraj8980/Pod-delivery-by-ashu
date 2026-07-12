@@ -17,10 +17,11 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
-  TrendingUp
+  Copy
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import * as XLSX from "xlsx";
 import {
   Dialog,
   DialogContent,
@@ -31,7 +32,7 @@ import {
 /**
  * @fileOverview Professional Historical Dashboard
  * Reads from pod_monthly_records and allows viewing details in a Modal.
- * Includes Global Search for AWB, DSP, or FE Name.
+ * Includes Global Search and Interactive Modal Filtering.
  */
 
 interface PODRow {
@@ -65,6 +66,17 @@ interface MonthlyRecord {
 
 type MonthlyStorage = Record<string, Record<string, MonthlyRecord[]>>;
 
+const normalizeAWB = (val: any): string => {
+  if (val === null || val === undefined) return "";
+  let s = String(val).trim();
+  if (s.startsWith("'")) s = s.substring(1);
+  if (s.toLowerCase().includes('e+') || s.includes('.')) {
+    const num = Number(s);
+    if (!isNaN(num)) s = String(Math.round(num));
+  }
+  return s.replace('.0', '');
+};
+
 export default function Dashboard() {
   const [monthlyRecords, setMonthlyRecords] = useState<MonthlyStorage>({});
   const [selectedMonth, setSelectedMonth] = useState<string>("");
@@ -77,6 +89,7 @@ export default function Dashboard() {
   // Modal State
   const [viewingSession, setViewingSession] = useState<MonthlyRecord | null>(null);
   const [modalSearch, setModalSearch] = useState("");
+  const [modalStatusFilter, setModalStatusFilter] = useState("All");
 
   useEffect(() => {
     setHasMounted(true);
@@ -115,10 +128,12 @@ export default function Dashboard() {
     }
   };
 
-  const showToast = useCallback((msg: string) => {
+  const showToast = useCallback((msg: string, type: 'ok' | 'err' = 'ok') => {
     if (typeof document === 'undefined') return;
     const toast = document.createElement('div');
-    toast.className = `fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl text-[13px] font-bold z-[2000] shadow-2xl transition-all duration-300 border bg-slate-900 text-white border-white/10`;
+    toast.className = `fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl text-[13px] font-bold z-[2000] shadow-2xl transition-all duration-300 border ${
+      type === 'ok' ? 'bg-slate-900 text-white border-white/10' : 'bg-rose-900 text-white border-rose-500/20'
+    }`;
     toast.innerHTML = msg;
     document.body.appendChild(toast);
     setTimeout(() => {
@@ -131,13 +146,13 @@ export default function Dashboard() {
     try {
       const saved = localStorage.getItem('pod_sessions');
       if (!saved || saved.trim() === "") {
-        showToast("No pending sessions to save");
+        showToast("No pending sessions to save", "err");
         return;
       }
       
       const sessions = JSON.parse(saved);
       if (!Array.isArray(sessions) || sessions.length === 0) {
-        showToast("No pending sessions to save");
+        showToast("No pending sessions to save", "err");
         return;
       }
 
@@ -172,7 +187,18 @@ export default function Dashboard() {
       if (months.length > 0) setSelectedMonth(months[0]);
     } catch (error) {
       console.error("Save error:", error);
-      showToast("Error saving sessions");
+      showToast("Error saving sessions", "err");
+    }
+  };
+
+  const handleCopyAWBs = async (rows: PODRow[]) => {
+    if (!rows.length) return;
+    const text = rows.map(r => normalizeAWB(r.awb)).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(`Copied ${rows.length} AWBs`, "ok");
+    } catch (err) {
+      showToast("Failed to copy", "err");
     }
   };
 
@@ -215,7 +241,7 @@ export default function Dashboard() {
           const hasMatch = 
             session.feName.toLowerCase().includes(query) || 
             session.dspId.toLowerCase().includes(query) || 
-            session.data.some(r => r.awb.toLowerCase().includes(query));
+            session.data.some(r => normalizeAWB(r.awb).toLowerCase().includes(query));
           
           if (hasMatch) {
             found.push(session);
@@ -228,14 +254,42 @@ export default function Dashboard() {
 
   const filteredModalData = useMemo(() => {
     if (!viewingSession) return [];
-    if (!modalSearch) return viewingSession.data;
-    const s = modalSearch.toLowerCase();
-    return viewingSession.data.filter(r => 
-      r.awb.toLowerCase().includes(s) || 
-      r.client.toLowerCase().includes(s) || 
-      r.remark.toLowerCase().includes(s)
-    );
-  }, [viewingSession, modalSearch]);
+    let rows = viewingSession.data;
+
+    // Filter by Status
+    if (modalStatusFilter !== 'All') {
+      rows = rows.filter(r => r.status === modalStatusFilter);
+    }
+
+    // Filter by Search
+    if (modalSearch) {
+      const s = modalSearch.toLowerCase();
+      rows = rows.filter(r => 
+        normalizeAWB(r.awb).toLowerCase().includes(s) || 
+        r.client.toLowerCase().includes(s) || 
+        r.remark.toLowerCase().includes(s)
+      );
+    }
+
+    return rows;
+  }, [viewingSession, modalSearch, modalStatusFilter]);
+
+  const downloadModalExcel = () => {
+    if (!viewingSession) return;
+    const header = ['Waybill', 'Client', 'Order ID', 'Remark', 'Status', 'Address'];
+    const excelData = filteredModalData.map(r => [
+      { v: normalizeAWB(r.awb), t: 's' },
+      r.client,
+      { v: r.orderId, t: 's' },
+      r.remark,
+      r.status,
+      r.returnAddress || ""
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Archive_Report");
+    XLSX.writeFile(wb, `Archive_${viewingSession.feName}_${viewingSession.date}.xlsx`);
+  };
 
   if (!hasMounted) return null;
 
@@ -249,7 +303,7 @@ export default function Dashboard() {
               <Truck className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-lg font-black tracking-tight text-white uppercase">POD Management Tool — Archive</h1>
+              <h1 className="text-lg font-black tracking-tight text-white uppercase">POD Management Tool — Dashboard</h1>
               <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Delhivery · Palam Vihar RPC · By Ashu</p>
             </div>
           </div>
@@ -334,7 +388,11 @@ export default function Dashboard() {
                   {searchResults.map((s: MonthlyRecord) => (
                     <div 
                       key={s.id} 
-                      onClick={() => setViewingSession(s)}
+                      onClick={() => {
+                        setViewingSession(s);
+                        setModalStatusFilter("All");
+                        setModalSearch("");
+                      }}
                       className="p-5 border-[1.5px] border-slate-100 rounded-3xl hover:border-blue-500 hover:shadow-lg transition-all group relative cursor-pointer bg-white"
                     >
                       <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
@@ -371,7 +429,11 @@ export default function Dashboard() {
                         {sessionsOnDate.map((s: MonthlyRecord) => (
                           <div 
                             key={s.id} 
-                            onClick={() => setViewingSession(s)}
+                            onClick={() => {
+                              setViewingSession(s);
+                              setModalStatusFilter("All");
+                              setModalSearch("");
+                            }}
                             className="p-5 border-[1.5px] border-slate-100 rounded-3xl hover:border-blue-500 hover:shadow-lg transition-all group relative cursor-pointer bg-white"
                           >
                             <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-slate-200 group-hover:bg-blue-600 transition-colors" />
@@ -393,7 +455,7 @@ export default function Dashboard() {
         </div>
       </main>
 
-      {/* Session Details Modal */}
+      {/* Session Details Modal (Interactive Version) */}
       <Dialog open={!!viewingSession} onOpenChange={(open) => !open && setViewingSession(null)}>
         <DialogContent className="max-w-[95vw] w-[1400px] max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 border-none rounded-[2rem]">
           {viewingSession && (
@@ -414,22 +476,33 @@ export default function Dashboard() {
                   </button>
                 </div>
 
+                {/* Interactive Filtering Badges in Modal */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   {[
-                    { label: 'Total', val: viewingSession.stats.total, icon: Package, color: 'text-slate-900', bg: 'bg-white' },
-                    { label: 'Dispatched', val: viewingSession.stats.dispatched, icon: Truck, color: 'text-blue-600', bg: 'bg-blue-50' },
-                    { label: 'Pending', val: viewingSession.stats.pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
-                    { label: 'RTO', val: viewingSession.stats.rto, icon: AlertCircle, color: 'text-rose-600', bg: 'bg-rose-50' },
-                    { label: 'DTO', val: viewingSession.stats.dto, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' }
-                  ].map((m, i) => (
-                    <div key={i} className={cn("p-3 rounded-2xl flex flex-col items-center justify-center border border-white/10", m.bg)}>
-                      <p className={cn("text-[18px] font-black leading-none mb-1", m.color)}>{m.val}</p>
+                    { id: 'All', label: 'Total', val: viewingSession.stats.total, color: 'text-slate-900', bg: 'bg-white', border: 'border-white' },
+                    { id: 'Dispatched', label: 'Dispatched', val: viewingSession.stats.dispatched, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
+                    { id: 'Pending', label: 'Pending', val: viewingSession.stats.pending, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
+                    { id: 'RTO', label: 'RTO', val: viewingSession.stats.rto, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200' },
+                    { id: 'DTO', label: 'DTO', val: viewingSession.stats.dto, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' }
+                  ].map((m) => (
+                    <button 
+                      key={m.id} 
+                      onClick={() => setModalStatusFilter(m.id)}
+                      className={cn(
+                        "p-4 rounded-3xl flex flex-col items-center justify-center border transition-all duration-200 active:scale-95 shadow-sm",
+                        m.bg,
+                        modalStatusFilter === m.id ? "ring-4 ring-blue-500/30 scale-105 z-10" : m.border
+                      )}
+                    >
+                      <p className={cn("text-[20px] font-black leading-none mb-1", m.color)}>{m.val}</p>
                       <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{m.label}</p>
-                    </div>
+                      {modalStatusFilter === m.id && <div className="mt-1 w-1 h-1 bg-blue-600 rounded-full" />}
+                    </button>
                   ))}
                 </div>
               </DialogHeader>
 
+              {/* Modal Controls Bar */}
               <div className="bg-slate-50 p-4 border-b flex items-center gap-4">
                 <div className="relative flex-1 max-w-md">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -438,47 +511,74 @@ export default function Dashboard() {
                     placeholder="Search AWB, Client or Remark..." 
                     value={modalSearch}
                     onChange={(e) => setModalSearch(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-4 h-10 text-sm font-bold focus:border-blue-500 outline-none transition-all shadow-sm"
+                    className="w-full bg-white border border-slate-200 rounded-2xl pl-10 pr-4 h-11 text-sm font-bold focus:border-blue-500 outline-none transition-all shadow-sm"
                   />
                 </div>
                 <div className="flex-1" />
-                <button className="h-10 px-4 bg-emerald-600 text-white rounded-xl text-[11px] font-black uppercase flex items-center gap-2 hover:bg-emerald-700 transition-all">
+                <button 
+                  onClick={() => handleCopyAWBs(filteredModalData)}
+                  className="h-10 px-4 bg-slate-900 text-white rounded-xl text-[11px] font-black uppercase flex items-center gap-2 hover:bg-slate-800 transition-all shadow-sm"
+                >
+                  <Copy className="w-4 h-4" /> Copy Filtered AWBs
+                </button>
+                <button 
+                  onClick={downloadModalExcel}
+                  className="h-10 px-4 bg-emerald-600 text-white rounded-xl text-[11px] font-black uppercase flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-sm"
+                >
                   <Download className="w-4 h-4" /> Download Excel
                 </button>
               </div>
 
+              {/* Grouped Table View in Modal */}
               <div className="flex-1 overflow-auto bg-white custom-scrollbar">
-                <table className="w-full text-center border-collapse">
+                <table className="w-full text-center border-collapse table-fixed">
                   <thead className="sticky top-0 bg-[#f8fafc] text-slate-500 border-b z-10">
                     <tr className="h-12">
-                      <th className="px-4 text-[10px] font-black uppercase tracking-widest">Waybill</th>
-                      <th className="px-4 text-[10px] font-black uppercase tracking-widest">Client</th>
-                      <th className="px-4 text-[10px] font-black uppercase tracking-widest">Order ID</th>
-                      <th className="px-4 text-[10px] font-black uppercase tracking-widest text-left">Remark</th>
-                      <th className="px-4 text-[10px] font-black uppercase tracking-widest text-left">Return Address</th>
-                      <th className="px-4 text-[10px] font-black uppercase tracking-widest">Status</th>
+                      <th style={{width: '180px'}} className="px-4 text-[10px] font-black uppercase tracking-widest">Waybill</th>
+                      <th style={{width: '200px'}} className="px-4 text-[10px] font-black uppercase tracking-widest">Client</th>
+                      <th style={{width: '160px'}} className="px-4 text-[10px] font-black uppercase tracking-widest">Order ID</th>
+                      <th style={{width: '200px'}} className="px-4 text-[10px] font-black uppercase tracking-widest text-left">Remark</th>
+                      <th style={{width: '400px'}} className="px-4 text-[10px] font-black uppercase tracking-widest text-left">Return Address</th>
+                      <th style={{width: '120px'}} className="px-4 text-[10px] font-black uppercase tracking-widest">Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredModalData.map((row) => (
-                      <tr key={row.id} className="border-b hover:bg-slate-50 transition-colors group">
-                        <td className="px-4 py-3 text-[13px] font-black font-mono text-blue-700 cursor-pointer" onClick={() => { navigator.clipboard.writeText(row.awb); showToast("Waybill Copied"); }}>{row.awb}</td>
-                        <td className="px-4 py-3 text-[13px] font-bold text-slate-700">{row.client}</td>
-                        <td className="px-4 py-3 text-[12px] font-medium text-slate-400">{row.orderId}</td>
-                        <td className="px-4 py-3 text-[11px] font-black text-left uppercase text-slate-600">{row.remark}</td>
-                        <td className="px-4 py-3 text-[11px] text-left text-slate-500 leading-relaxed max-w-[300px]">{row.returnAddress}</td>
-                        <td className="px-4 py-3">
-                          <span className={cn(
-                            "px-2 py-0.5 rounded text-[9px] font-black uppercase border",
-                            row.status === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" :
-                            row.status === 'RTO' ? "bg-rose-50 text-rose-700 border-rose-200" :
-                            row.status === 'DTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                            "bg-slate-50 text-slate-700 border-slate-200"
-                          )}>
-                            {row.status}
-                          </span>
-                        </td>
-                      </tr>
+                    {Object.entries(filteredModalData.reduce((acc: any, row) => {
+                      if (!acc[row.client]) acc[row.client] = [];
+                      acc[row.client].push(row);
+                      return acc;
+                    }, {})).sort((a: any, b: any) => b[1].length - a[1].length).map(([client, rows]: any) => (
+                      <React.Fragment key={`modal-group-${client}`}>
+                        <tr className="bg-slate-800 text-white h-9">
+                          <td colSpan={6} className="text-left px-6">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
+                              <button onClick={() => handleCopyAWBs(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 font-bold uppercase transition-colors">Copy Group AWBs</button>
+                            </div>
+                          </td>
+                        </tr>
+                        {rows.map((row: any) => (
+                          <tr key={row.id} className="border-b hover:bg-slate-50 transition-colors group">
+                            <td className="px-4 py-3 text-[13px] font-black font-mono text-blue-700 cursor-pointer" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied"); }}>{normalizeAWB(row.awb)}</td>
+                            <td className="px-4 py-3 text-[13px] font-bold text-slate-700">{row.client}</td>
+                            <td className="px-4 py-3 text-[12px] font-medium text-slate-400">{row.orderId}</td>
+                            <td className="px-4 py-3 text-[11px] font-black text-left uppercase text-slate-600">{row.remark}</td>
+                            <td className="px-4 py-3 text-[11px] text-left text-slate-500 leading-relaxed whitespace-normal break-words">{row.returnAddress}</td>
+                            <td className="px-4 py-3">
+                              <span className={cn(
+                                "px-2 py-0.5 rounded text-[9px] font-black uppercase border shadow-sm",
+                                row.status === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                row.status === 'RTO' ? "bg-rose-50 text-rose-700 border-rose-200" :
+                                row.status === 'DTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                row.status === 'Dispatched' ? "bg-blue-50 text-blue-700 border-blue-200" :
+                                "bg-slate-50 text-slate-700 border-slate-200"
+                              )}>
+                                {row.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
