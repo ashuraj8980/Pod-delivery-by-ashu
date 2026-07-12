@@ -11,11 +11,13 @@ import {
   User,
   AlertCircle,
   X,
-  ArrowLeft
+  ArrowLeft,
+  Trash2
 } from "lucide-react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
+import { useSearchParams } from "next/navigation";
 
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
@@ -123,6 +125,7 @@ interface Session {
 }
 
 export default function PODTool() {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<"eod" | "remark" | "otp">("eod");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -151,10 +154,19 @@ export default function PODTool() {
     try {
       const saved = localStorage.getItem('pod_sessions');
       if (saved && saved.trim() !== "") {
-        setSessions(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setSessions(parsed);
+          
+          // Auto-select session from URL if provided
+          const sid = searchParams.get('sessionId');
+          if (sid && parsed.some(s => s.id === sid)) {
+            setSelectedSessionId(sid);
+          }
+        }
       }
     } catch (e) {}
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     if (isMounted) {
@@ -333,7 +345,18 @@ export default function PODTool() {
     if (!selectedSessionId) return;
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
-        return { ...s, data: s.data.filter(r => r.id !== rowId) };
+        const newData = s.data.filter(r => r.id !== rowId);
+        return { 
+          ...s, 
+          data: newData,
+          stats: {
+            total: newData.length,
+            pending: newData.filter(r => r.status === 'Pending').length,
+            dispatched: newData.filter(r => r.status === 'Dispatched').length,
+            rto: newData.filter(r => r.status === 'RTO').length,
+            dto: newData.filter(r => r.status === 'DTO').length,
+          }
+        };
       }
       return s;
     }));
@@ -342,6 +365,31 @@ export default function PODTool() {
       next.delete(rowId);
       return next;
     });
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedRowIds.size === 0 || !selectedSessionId) return;
+    
+    setSessions(prev => prev.map(s => {
+      if (s.id === selectedSessionId) {
+        const newData = s.data.filter(r => !selectedRowIds.has(r.id));
+        return { 
+          ...s, 
+          data: newData,
+          stats: {
+            total: newData.length,
+            pending: newData.filter(r => r.status === 'Pending').length,
+            dispatched: newData.filter(r => r.status === 'Dispatched').length,
+            rto: newData.filter(r => r.status === 'RTO').length,
+            dto: newData.filter(r => r.status === 'DTO').length,
+          }
+        };
+      }
+      return s;
+    }));
+    
+    showToast(`Deleted ${selectedRowIds.size} Selected Rows`, "ok");
+    setSelectedRowIds(new Set());
   };
 
   const uniqueClients = useMemo(() => {
@@ -718,6 +766,15 @@ export default function PODTool() {
                   }} className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2 uppercase">
                     <Copy className="w-3.5 h-3.5" /> Copy Selected AWBs
                   </button>
+                  
+                  {selectedRowIds.size > 0 && (
+                    <button 
+                      onClick={handleDeleteSelected}
+                      className="h-9 px-4 bg-rose-600 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2 uppercase animate-in fade-in zoom-in duration-200"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedRowIds.size})
+                    </button>
+                  )}
                   
                   <div className="flex-1" />
                   
