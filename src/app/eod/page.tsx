@@ -142,7 +142,7 @@ function PODToolContent() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   
-  const [undoStack, setUndoStack] = useState<PODRow[] | null>(null);
+  const [undoStack, setUndoStack] = useState<PODRow[][]>([]);
   
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
@@ -274,6 +274,7 @@ function PODToolContent() {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessing(true);
+    setUndoStack([]); // Reset undo stack on new file
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -350,7 +351,10 @@ function PODToolContent() {
     if (!selectedSessionId) return;
     const sessionToUpdate = sessions.find(s => s.id === selectedSessionId);
     if (!sessionToUpdate) return;
-    setUndoStack([...sessionToUpdate.data]);
+    
+    // Save current data state to stack before modifying
+    setUndoStack(prev => [...prev, [...sessionToUpdate.data]]);
+    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         const newData = s.data.filter(r => r.id !== rowId);
@@ -376,24 +380,29 @@ function PODToolContent() {
   };
 
   const handleUndo = () => {
-    if (!undoStack || !selectedSessionId) return;
+    if (undoStack.length === 0 || !selectedSessionId) return;
+    
+    // Pop the last state from the stack
+    const previousData = undoStack[undoStack.length - 1];
+    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         return {
           ...s,
-          data: undoStack,
+          data: previousData,
           stats: {
-            total: undoStack.length,
-            pending: undoStack.filter(r => r.status === 'Pending').length,
-            dispatched: undoStack.filter(r => r.status === 'Dispatched').length,
-            rto: undoStack.filter(r => r.status === 'RTO').length,
-            dto: undoStack.filter(r => r.status === 'DTO').length,
+            total: previousData.length,
+            pending: previousData.filter(r => r.status === 'Pending').length,
+            dispatched: previousData.filter(r => r.status === 'Dispatched').length,
+            rto: previousData.filter(r => r.status === 'RTO').length,
+            dto: previousData.filter(r => r.status === 'DTO').length,
           }
         };
       }
       return s;
     }));
-    setUndoStack(null);
+    
+    setUndoStack(prev => prev.slice(0, -1));
     showToast("Reverted last deletion(s)", "ok");
   };
 
@@ -401,7 +410,10 @@ function PODToolContent() {
     if (selectedRowIds.size === 0 || !selectedSessionId) return;
     const sessionToUpdate = sessions.find(s => s.id === selectedSessionId);
     if (!sessionToUpdate) return;
-    setUndoStack([...sessionToUpdate.data]);
+    
+    // Save current state to stack before modifying
+    setUndoStack(prev => [...prev, [...sessionToUpdate.data]]);
+    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         const newData = s.data.filter(r => !selectedRowIds.has(r.id));
@@ -500,7 +512,7 @@ function PODToolContent() {
     setSessions(prev => prev.filter(s => s.id !== sessionId));
     if (selectedSessionId === sessionId) {
       setSelectedSessionId(null);
-      setUndoStack(null);
+      setUndoStack([]);
     }
     showToast("Session Deleted", "ok");
   };
@@ -615,7 +627,7 @@ function PODToolContent() {
     setSelectedRemarkChips([]);
     setClientFilter("All Clients");
     setShowAllPending(false);
-    setUndoStack(null);
+    setUndoStack([]); // Reset undo history when switching sessions
     let isoDate = "";
     if (s.date && s.date.includes('-')) {
       const parts = s.date.split('-');
@@ -680,7 +692,7 @@ function PODToolContent() {
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-black text-slate-700 tracking-tight">Recent Sessions</h3>
                   <button 
-                    onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); setSelectedSessionId(null); setUndoStack(null); }} 
+                    onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); setSelectedSessionId(null); setUndoStack([]); }} 
                     className="text-[11px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest"
                   >
                     CLEAR ALL SESSIONS
@@ -811,12 +823,12 @@ function PODToolContent() {
                     </button>
                   )}
 
-                  {undoStack && (
+                  {undoStack.length > 0 && (
                     <button 
                       onClick={handleUndo}
                       className="h-9 px-4 bg-blue-600 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2 uppercase animate-in slide-in-from-left-4 duration-300"
                     >
-                      <RotateCcw className="w-3.5 h-3.5" /> Undo Delete
+                      <RotateCcw className="w-3.5 h-3.5" /> Undo Delete {undoStack.length > 1 ? `(${undoStack.length})` : ''}
                     </button>
                   )}
                   
