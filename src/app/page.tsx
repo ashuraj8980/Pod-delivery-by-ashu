@@ -151,20 +151,35 @@ export default function Dashboard() {
       }
 
       const nextMonthly = { ...monthlyRecords };
+      const now = new Date();
+      const fallbackTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
       
       sessions.forEach((session: any) => {
         if (!session.date) return;
         
-        const parts = session.date.split('-');
+        const dateStr = String(session.date);
+        const parts = dateStr.includes('-') ? dateStr.split('-') : [];
         if (parts.length !== 3) return;
 
-        const yearMonth = `${parts[2]}-${parts[1]}`;
-        const fullDateKey = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        // Ensure parts are [DD, MM, YYYY] or [YYYY, MM, DD]
+        let year, month, day;
+        if (parts[0].length === 4) {
+          [year, month, day] = parts;
+        } else {
+          [day, month, year] = parts;
+        }
+
+        const yearMonth = `${year}-${month}`;
+        const fullDateKey = `${year}-${month}-${day}`;
         
         if (!nextMonthly[yearMonth]) nextMonthly[yearMonth] = {};
         if (!nextMonthly[yearMonth][fullDateKey]) nextMonthly[yearMonth][fullDateKey] = [];
 
-        const newRecord = { ...session };
+        const newRecord: MonthlyRecord = { 
+          ...session,
+          time: session.time || fallbackTime 
+        };
+        
         const filtered = nextMonthly[yearMonth][fullDateKey].filter((s: any) => s.dspId !== session.dspId || s.feName !== session.feName);
         nextMonthly[yearMonth][fullDateKey] = [newRecord, ...filtered];
       });
@@ -217,7 +232,7 @@ export default function Dashboard() {
       <span className="px-2 py-0.5 rounded-md bg-slate-100 text-[9px] font-black text-slate-600 border border-slate-200 uppercase">{stats?.total || 0} PKT</span>
       {stats?.pending > 0 && <span className="px-2 py-0.5 rounded-md bg-amber-50 text-[9px] font-black text-amber-600 border border-amber-200 uppercase">{stats.pending} PENDING</span>}
       {stats?.rto > 0 && <span className="px-2 py-0.5 rounded-md bg-rose-50 text-[9px] font-black text-rose-600 border border-rose-200 uppercase">{stats.rto} RTO</span>}
-      {stats?.dto > 0 && <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-[9px] font-black text-emerald-600 border border-emerald-200 uppercase">{stats.dto} DTO</span>}
+      {stats?.dto > 0 && <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-[9px] font-black text-emerald-600 border border-amber-200 uppercase text-emerald-700 bg-emerald-50 border-emerald-100">{stats.dto} DTO</span>}
       {stats?.dispatched > 0 && <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[9px] font-black text-blue-600 border border-blue-200 uppercase">{stats.dispatched} DISPATCHED</span>}
     </div>
   );
@@ -390,7 +405,9 @@ export default function Dashboard() {
                         <p className="text-[17px] font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">{s.feName}</p>
                         <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
                       </div>
-                      <p className="text-[11px] text-slate-400 font-black mb-1 uppercase tracking-wider">{s.dspId} — {s.date} — {s.time || ""}</p>
+                      <p className="text-[11px] text-slate-400 font-black mb-1 uppercase tracking-wider">
+                        {s.dspId} — {s.date}{s.time ? ` — ${s.time}` : ""}
+                      </p>
                       {renderSessionBadges(s.stats)}
                     </div>
                   ))}
@@ -431,7 +448,9 @@ export default function Dashboard() {
                               <p className="text-[17px] font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">{s.feName}</p>
                               <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
                             </div>
-                            <p className="text-[11px] text-slate-400 font-black mb-1 uppercase tracking-wider">{s.dspId} — {s.date} — {s.time || ""}</p>
+                            <p className="text-[11px] text-slate-400 font-black mb-1 uppercase tracking-wider">
+                              {s.dspId} — {s.date}{s.time ? ` — ${s.time}` : ""}
+                            </p>
                             {renderSessionBadges(s.stats)}
                           </div>
                         ))}
@@ -457,7 +476,9 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <DialogTitle className="text-2xl font-black tracking-tight">{viewingSession.feName}</DialogTitle>
-                      <p className="text-[11px] font-bold text-blue-400 uppercase tracking-widest">{viewingSession.dspId} • {viewingSession.date} • {viewingSession.time || ""}</p>
+                      <p className="text-[11px] font-bold text-blue-400 uppercase tracking-widest">
+                        {viewingSession.dspId} • {viewingSession.date}{viewingSession.time ? ` • ${viewingSession.time}` : ""}
+                      </p>
                     </div>
                   </div>
                   <button onClick={() => setViewingSession(null)} className="p-2 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all">
