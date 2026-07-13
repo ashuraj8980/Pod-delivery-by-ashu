@@ -12,7 +12,8 @@ import {
   X,
   ArrowLeft,
   Trash2,
-  RotateCcw
+  RotateCcw,
+  Search
 } from "lucide-react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
@@ -21,8 +22,7 @@ import { useSearchParams } from "next/navigation";
 
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
- * Optimized for EOD Rejection management and OTP Dispatch verification.
- * Updated to include session creation time and Suspense boundary for useSearchParams.
+ * Optimized for EOD Rejection management with Search and Multi-level Undo.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -131,6 +131,7 @@ function PODToolContent() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [searchTerm, setSearchTerm] = useState("");
   
   const [selectedRemarkChips, setSelectedRemarkChips] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string>("All Clients");
@@ -274,7 +275,7 @@ function PODToolContent() {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessing(true);
-    setUndoStack([]); // Reset undo stack on new file
+    setUndoStack([]); 
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -351,8 +352,6 @@ function PODToolContent() {
     if (!selectedSessionId) return;
     const sessionToUpdate = sessions.find(s => s.id === selectedSessionId);
     if (!sessionToUpdate) return;
-    
-    // Save current data state to stack before modifying
     setUndoStack(prev => [...prev, [...sessionToUpdate.data]]);
     
     setSessions(prev => prev.map(s => {
@@ -381,10 +380,7 @@ function PODToolContent() {
 
   const handleUndo = () => {
     if (undoStack.length === 0 || !selectedSessionId) return;
-    
-    // Pop the last state from the stack
     const previousData = undoStack[undoStack.length - 1];
-    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         return {
@@ -401,7 +397,6 @@ function PODToolContent() {
       }
       return s;
     }));
-    
     setUndoStack(prev => prev.slice(0, -1));
     showToast("Reverted last deletion(s)", "ok");
   };
@@ -410,10 +405,7 @@ function PODToolContent() {
     if (selectedRowIds.size === 0 || !selectedSessionId) return;
     const sessionToUpdate = sessions.find(s => s.id === selectedSessionId);
     if (!sessionToUpdate) return;
-    
-    // Save current state to stack before modifying
     setUndoStack(prev => [...prev, [...sessionToUpdate.data]]);
-    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         const newData = s.data.filter(r => !selectedRowIds.has(r.id));
@@ -456,8 +448,16 @@ function PODToolContent() {
     if (clientFilter !== 'All Clients') {
       rows = rows.filter(r => r.client === clientFilter);
     }
+    if (searchTerm.trim() !== "") {
+      const s = searchTerm.toLowerCase().trim();
+      rows = rows.filter(r => 
+        normalizeAWB(r.awb).toLowerCase().includes(s) || 
+        r.orderId.toLowerCase().includes(s) || 
+        r.client.toLowerCase().includes(s)
+      );
+    }
     return rows;
-  }, [currentSession, statusFilter, selectedRemarkChips, clientFilter, showAllPending]);
+  }, [currentSession, statusFilter, selectedRemarkChips, clientFilter, showAllPending, searchTerm]);
 
   const isAllSelected = filteredRows.length > 0 && filteredRows.every(r => selectedRowIds.has(r.id));
   const isSomeSelected = filteredRows.some(r => selectedRowIds.has(r.id)) && !isAllSelected;
@@ -624,10 +624,11 @@ function PODToolContent() {
   const handleSessionClick = (s: Session) => {
     setSelectedSessionId(s.id);
     setStatusFilter("All");
+    setSearchTerm("");
     setSelectedRemarkChips([]);
     setClientFilter("All Clients");
     setShowAllPending(false);
-    setUndoStack([]); // Reset undo history when switching sessions
+    setUndoStack([]); 
     let isoDate = "";
     if (s.date && s.date.includes('-')) {
       const parts = s.date.split('-');
@@ -789,7 +790,7 @@ function PODToolContent() {
                   </div>
                 )}
 
-                <div className="flex items-center gap-4 mb-2">
+                <div className="flex flex-wrap items-center gap-4 mb-2">
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Client Filter</label>
                     <select
@@ -801,9 +802,28 @@ function PODToolContent() {
                       {uniqueClients.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
+                  
+                  <div className="flex flex-col gap-1.5 flex-1 min-w-[300px]">
+                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Search Session</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input 
+                        type="text" 
+                        placeholder="Search AWB, Order ID or Client..." 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-4 h-[38px] text-[13px] font-bold outline-none focus:border-blue-500 shadow-sm transition-all"
+                      />
+                      {searchTerm && (
+                        <button onClick={() => setSearchTerm("")} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-slate-100 rounded-full transition-colors">
+                          <X className="w-3.5 h-3.5 text-slate-400" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex gap-2 bg-white border rounded-xl p-1 shadow-sm items-center">
+                <div className="flex flex-wrap gap-2 bg-white border rounded-xl p-1 shadow-sm items-center">
                   <button onClick={() => handleCopyAWBOnly(filteredRows)} className="h-9 px-4 bg-slate-800 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2 uppercase">
                     <Copy className="w-3.5 h-3.5" /> Copy All AWB
                   </button>
@@ -828,7 +848,7 @@ function PODToolContent() {
                       onClick={handleUndo}
                       className="h-9 px-4 bg-blue-600 text-white rounded-lg text-[11px] font-black tracking-wider flex items-center gap-2 uppercase animate-in slide-in-from-left-4 duration-300"
                     >
-                      <RotateCcw className="w-3.5 h-3.5" /> Undo Delete {undoStack.length > 1 ? `(${undoStack.length})` : ''}
+                      <RotateCcw className="w-3.5 h-3.5" /> Undo Delete {undoStack.length > 0 ? `(${undoStack.length})` : ''}
                     </button>
                   )}
                   
