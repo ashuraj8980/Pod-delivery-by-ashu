@@ -27,8 +27,7 @@ import {
 
 /**
  * @fileOverview Professional Historical Dashboard
- * Reads from pod_monthly_records and allows viewing details in a Modal.
- * Displays session creation time for archived records.
+ * Optimized for large-scale storage handling and batch saving.
  */
 
 interface PODRow {
@@ -38,9 +37,6 @@ interface PODRow {
   orderId: string;
   status: string;
   remark: string;
-  feName: string;
-  dspId: string;
-  date: string;
   returnAddress?: string;
 }
 
@@ -150,7 +146,9 @@ export default function Dashboard() {
         return;
       }
 
-      const nextMonthly = { ...monthlyRecords };
+      // OPTIMIZATION: Deep clone can be memory intensive for huge archives. 
+      // We'll update the records object carefully.
+      const updatedMonthly = { ...monthlyRecords };
       const now = new Date();
       const fallbackTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
       
@@ -161,7 +159,6 @@ export default function Dashboard() {
         const parts = dateStr.includes('-') ? dateStr.split('-') : [];
         if (parts.length !== 3) return;
 
-        // Ensure parts are [DD, MM, YYYY] or [YYYY, MM, DD]
         let year, month, day;
         if (parts[0].length === 4) {
           [year, month, day] = parts;
@@ -172,29 +169,55 @@ export default function Dashboard() {
         const yearMonth = `${year}-${month}`;
         const fullDateKey = `${year}-${month}-${day}`;
         
-        if (!nextMonthly[yearMonth]) nextMonthly[yearMonth] = {};
-        if (!nextMonthly[yearMonth][fullDateKey]) nextMonthly[yearMonth][fullDateKey] = [];
+        if (!updatedMonthly[yearMonth]) updatedMonthly[yearMonth] = {};
+        if (!updatedMonthly[yearMonth][fullDateKey]) updatedMonthly[yearMonth][fullDateKey] = [];
+
+        // Prune data to save space in localStorage (avoiding redundant feName/dspId per row)
+        const prunedData = session.data.map((r: any) => ({
+          id: r.id,
+          awb: r.awb,
+          client: r.client,
+          orderId: r.orderId,
+          status: r.status,
+          remark: r.remark,
+          returnAddress: r.returnAddress
+        }));
 
         const newRecord: MonthlyRecord = { 
-          ...session,
-          time: session.time || fallbackTime 
+          id: session.id || crypto.randomUUID(),
+          feName: session.feName,
+          dspId: session.dspId,
+          date: session.date,
+          time: session.time || fallbackTime,
+          timestamp: session.timestamp || Date.now(),
+          data: prunedData,
+          stats: session.stats
         };
         
-        const filtered = nextMonthly[yearMonth][fullDateKey].filter((s: any) => s.dspId !== session.dspId || s.feName !== session.feName);
-        nextMonthly[yearMonth][fullDateKey] = [newRecord, ...filtered];
+        const filtered = updatedMonthly[yearMonth][fullDateKey].filter((s: any) => s.dspId !== session.dspId || s.feName !== session.feName);
+        updatedMonthly[yearMonth][fullDateKey] = [newRecord, ...filtered];
       });
 
-      localStorage.setItem('pod_monthly_records', JSON.stringify(nextMonthly));
-      localStorage.removeItem('pod_sessions');
-      
-      setMonthlyRecords(nextMonthly);
-      setPendingSessionsCount(0);
-      showToast("All sessions saved to archive & cleared from tool");
-      
-      const months = Object.keys(nextMonthly).sort().reverse();
-      if (months.length > 0) setSelectedMonth(months[0]);
+      // Attempt to save to localStorage
+      try {
+        localStorage.setItem('pod_monthly_records', JSON.stringify(updatedMonthly));
+        localStorage.removeItem('pod_sessions');
+        
+        setMonthlyRecords(updatedMonthly);
+        setPendingSessionsCount(0);
+        showToast("All sessions saved to archive!");
+        
+        const months = Object.keys(updatedMonthly).sort().reverse();
+        if (months.length > 0 && !selectedMonth) setSelectedMonth(months[0]);
+      } catch (e: any) {
+        if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+          showToast("Storage Full! Please delete old months first.", "err");
+        } else {
+          throw e;
+        }
+      }
     } catch (error) {
-      showToast("Error saving sessions", "err");
+      showToast("Error processing save operation.", "err");
     }
   };
 
@@ -232,7 +255,7 @@ export default function Dashboard() {
       <span className="px-2 py-0.5 rounded-md bg-slate-100 text-[9px] font-black text-slate-600 border border-slate-200 uppercase">{stats?.total || 0} PKT</span>
       {stats?.pending > 0 && <span className="px-2 py-0.5 rounded-md bg-amber-50 text-[9px] font-black text-amber-600 border border-amber-200 uppercase">{stats.pending} PENDING</span>}
       {stats?.rto > 0 && <span className="px-2 py-0.5 rounded-md bg-rose-50 text-[9px] font-black text-rose-600 border border-rose-200 uppercase">{stats.rto} RTO</span>}
-      {stats?.dto > 0 && <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-[9px] font-black text-emerald-600 border border-amber-200 uppercase text-emerald-700 bg-emerald-50 border-emerald-100">{stats.dto} DTO</span>}
+      {stats?.dto > 0 && <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-[9px] font-black text-emerald-700 border border-emerald-100 uppercase">{stats.dto} DTO</span>}
       {stats?.dispatched > 0 && <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[9px] font-black text-blue-600 border border-blue-200 uppercase">{stats.dispatched} DISPATCHED</span>}
     </div>
   );

@@ -22,8 +22,7 @@ import { useSearchParams } from "next/navigation";
 
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
- * Optimized for EOD Rejection management with Search and Multi-level Undo.
- * Fixed multi-level undo logic for high-performance devices.
+ * Optimized for heavy Excel files (2000+ rows, 80+ columns) and memory efficiency.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -91,9 +90,6 @@ interface PODRow {
   orderId: string;
   status: string;
   remark: string;
-  feName: string;
-  dspId: string;
-  date: string;
   returnAddress?: string;
   isIntact?: boolean;
 }
@@ -131,7 +127,6 @@ function PODToolContent() {
   const [activeTab, setActiveTab] = useState<"eod" | "remark" | "otp">("eod");
   const [sessions, setSessions] = useState<Session[]>([]);
   
-  // Use a REF to htrack the absolute latest sessions state to avoid stale closure issues during rapid deletions
   const sessionsRef = useRef(sessions);
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -290,34 +285,47 @@ function PODToolContent() {
         const data = new Uint8Array(evt.target?.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: 'array', raw: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
-        const parsedRows: PODRow[] = rawData.map((row: any) => {
-          const keys = Object.keys(row);
-          const findVal = (regex: RegExp) => {
-            const key = keys.find(k => regex.test(k.toLowerCase().replace(/[\s_-]/g, "")));
-            return key ? row[key] : "";
-          };
-          const rawAwb = findVal(/waybill|awb|awbnumber/);
+        
+        // OPTIMIZATION: Use header: 1 for memory efficiency with large 80+ column files
+        const rawRows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        if (rawRows.length < 2) throw new Error("File is empty or missing data.");
+
+        const headerRow = rawRows[0].map(h => String(h).toLowerCase().replace(/[\s_-]/g, ""));
+        const findIdx = (regex: RegExp) => headerRow.findIndex(h => regex.test(h));
+
+        const awbIdx = findIdx(/waybill|awb|awbnumber/);
+        const statusIdx = findIdx(/status|currentstatus/);
+        const remarkIdx = findIdx(/remark|remarks|nsl/);
+        const clientIdx = findIdx(/client|clientname/);
+        const orderIdx = findIdx(/order|orderid/);
+        const addressIdx = findIdx(/return_address|returnaddress/);
+
+        if (awbIdx === -1) throw new Error("Could not find AWB/Waybill column.");
+
+        const parsedRows: PODRow[] = [];
+        for (let i = 1; i < rawRows.length; i++) {
+          const row = rawRows[i];
+          const rawAwb = row[awbIdx];
           const awb = isValidAWB(rawAwb);
-          if (!awb) return null;
-          const statusRaw = String(findVal(/status|currentstatus/)).toLowerCase().trim();
+          if (!awb) continue;
+
+          const statusRaw = statusIdx !== -1 ? String(row[statusIdx]).toLowerCase().trim() : "";
           const status = STATUS_MAP[statusRaw] || "Unknown";
-          const remark = String(findVal(/remark|remarks|nsl/)).trim();
-          const returnAddress = String(findVal(/return_address|returnaddress/)).trim();
-          return {
+          if (status === "Unknown") continue;
+
+          const remark = remarkIdx !== -1 ? String(row[remarkIdx]).trim() : "No Remark";
+          
+          parsedRows.push({
             id: crypto.randomUUID(),
             awb,
-            client: String(findVal(/client|clientname/)),
-            orderId: normalizeAWB(findVal(/order|orderid/)),
+            client: clientIdx !== -1 ? String(row[clientIdx]) : "Unknown",
+            orderId: orderIdx !== -1 ? normalizeAWB(row[orderIdx]) : "",
             status,
             remark: remark || "No Remark",
-            feName: setupData.feName,
-            dspId: setupData.dspId,
-            date: formatDate(setupData.date),
-            returnAddress,
+            returnAddress: addressIdx !== -1 ? String(row[addressIdx]).trim() : "",
             isIntact: /reject|intact|barcode|content/i.test(remark)
-          };
-        }).filter((row): row is PODRow => row !== null && row.awb.length >= 8 && row.status !== "Unknown");
+          });
+        }
         
         if (parsedRows.length === 0) throw new Error("No Valid Data Found In EOD Report.");
         
@@ -358,15 +366,10 @@ function PODToolContent() {
 
   const deleteRow = (rowId: string) => {
     if (!selectedSessionId) return;
-    
-    // Always use the ref to get the absolute latest sessions data for the stack
     const currentSessions = sessionsRef.current;
     const sessionToUpdate = currentSessions.find(s => s.id === selectedSessionId);
     if (!sessionToUpdate) return;
-    
-    // Push the current state to the undo stack before modifying
     setUndoStack(prev => [...prev, [...sessionToUpdate.data]]);
-    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         const newData = s.data.filter(r => r.id !== rowId);
@@ -384,7 +387,6 @@ function PODToolContent() {
       }
       return s;
     }));
-    
     setSelectedRowIds(prev => {
       const next = new Set(prev);
       next.delete(rowId);
@@ -394,9 +396,7 @@ function PODToolContent() {
 
   const handleUndo = () => {
     if (undoStack.length === 0 || !selectedSessionId) return;
-    
     const previousData = undoStack[undoStack.length - 1];
-    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         return {
@@ -413,20 +413,16 @@ function PODToolContent() {
       }
       return s;
     }));
-    
     setUndoStack(prev => prev.slice(0, -1));
     showToast("Reverted last deletion(s)", "ok");
   };
 
   const handleDeleteSelected = () => {
     if (selectedRowIds.size === 0 || !selectedSessionId) return;
-    
     const currentSessions = sessionsRef.current;
     const sessionToUpdate = currentSessions.find(s => s.id === selectedSessionId);
     if (!sessionToUpdate) return;
-    
     setUndoStack(prev => [...prev, [...sessionToUpdate.data]]);
-    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         const newData = s.data.filter(r => !selectedRowIds.has(r.id));
@@ -444,7 +440,6 @@ function PODToolContent() {
       }
       return s;
     }));
-    
     showToast(`Deleted ${selectedRowIds.size} Selected Rows`, "ok");
     setSelectedRowIds(new Set());
   };
@@ -500,29 +495,29 @@ function PODToolContent() {
     if (!rowsToCopy.length) return;
     const headers = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
     const exportRows = rowsToCopy.map((r, i) => ({
-      'Date': formatDate(r.date),
-      'DSP ID': i === 0 ? r.dspId : "",
+      'Date': formatDate(currentSession?.date),
+      'DSP ID': i === 0 ? currentSession?.dspId : "",
       'Waybill Number': normalizeAWB(r.awb),
       'Client': r.client,
       'Order ID': r.orderId,
       'Remark': r.remark,
-      'FE Name': r.feName
+      'FE Name': currentSession?.feName
     }));
     const success = await copyDataToClipboard(exportRows, headers);
     if (success) showToast(`Copied ${rowsToCopy.length} Rows To Clipboard`, "ok");
-  }, [copyDataToClipboard, showToast]);
+  }, [copyDataToClipboard, showToast, currentSession]);
 
   const downloadExcel = (rowsToDownload: any[]) => {
     if (!rowsToDownload.length) return;
     const header = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
     const excelData = rowsToDownload.map((r, i) => [
-      formatDate(r.date), 
-      { v: i === 0 ? String(r.dspId) : "", t: 's' }, 
+      formatDate(currentSession?.date), 
+      { v: i === 0 ? String(currentSession?.dspId) : "", t: 's' }, 
       { v: String(normalizeAWB(r.awb)), t: 's' }, 
       r.client, 
       { v: String(r.orderId), t: 's' }, 
       r.remark, 
-      r.feName
+      currentSession?.feName
     ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
     const wb = XLSX.utils.book_new();
@@ -550,28 +545,41 @@ function PODToolContent() {
         const data = new Uint8Array(evt.target?.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: 'array', raw: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const rawData = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
+        const rawRows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        
         const sessionMap = new Map<string, PODRow>();
         currentSession.data.forEach(r => sessionMap.set(normalizeAWB(r.awb), r));
+        
+        const headerRow = rawRows[0].map(h => String(h).toLowerCase().replace(/[\s_-]/g, ""));
+        const awbIdx = headerRow.findIndex(h => /waybill|awb|awbnumber/.test(h));
+        const statusIdx = headerRow.findIndex(h => /status|currentstatus/.test(h));
+
+        if (awbIdx === -1) throw new Error("Could not find Waybill column in OTP report.");
+
         const tempOtpData: OTPRow[] = [];
         let matchedCount = 0;
-        rawData.forEach((row: any) => {
-          const rawAwb = row['Waybill'] || row['AWB'] || row['waybill'] || row['awb'];
-          const awb = normalizeAWB(rawAwb);
-          if (!awb || awb.length < 8) return;
+        
+        for (let i = 1; i < rawRows.length; i++) {
+          const row = rawRows[i];
+          const awb = normalizeAWB(row[awbIdx]);
+          if (!awb || awb.length < 8) continue;
+          
           const sessionRow = sessionMap.get(awb);
-          if (!sessionRow) return;
+          if (!sessionRow) continue;
           matchedCount++;
-          const otpStatusRaw = String(row['Status'] || row['Current Status'] || "").toLowerCase().trim();
+
+          const otpStatusRaw = statusIdx !== -1 ? String(row[statusIdx]).toLowerCase().trim() : "";
           let otpStatus = 'Unknown';
           if (otpStatusRaw.includes('dispatched') || otpStatusRaw.includes('dispatch')) otpStatus = 'Dispatched';
           else if (otpStatusRaw.includes('rto')) otpStatus = 'RTO';
           else if (otpStatusRaw.includes('dto')) otpStatus = 'DTO';
           else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
+
           const csvStatus = sessionRow.status;
           const isRTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'RTO';
           const isDTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'DTO';
           const isPendingNotClosed = otpStatus === 'Dispatched' && csvStatus === 'Pending';
+
           tempOtpData.push({
             id: crypto.randomUUID(),
             awb, 
@@ -582,14 +590,15 @@ function PODToolContent() {
             isNotClosed: isRTONotClosed || isDTONotClosed || isPendingNotClosed,
             notClosedType: isRTONotClosed ? 'RTO' : isDTONotClosed ? 'DTO' : isPendingNotClosed ? 'Pending' : null
           });
-        });
+        }
+
         if (matchedCount === 0) {
           showToast("Wrong file — no AWBs match current session.", "err");
           return;
         }
         setOtpData(tempOtpData);
-        showToast(`Imported ${tempOtpData.length} Matched Records Locally.`, "ok");
-      } catch (err) { showToast("Failed To Process OTP Report", "err"); } finally { setIsProcessing(false); }
+        showToast(`Imported ${tempOtpData.length} Matched Records!`, "ok");
+      } catch (err: any) { showToast(err.message || "Failed To Process OTP Report", "err"); } finally { setIsProcessing(false); }
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
@@ -701,11 +710,13 @@ function PODToolContent() {
                 <input type="text" value={setupData.feName} onChange={e => setSetupData({...setupData, feName: e.target.value})} className="bg-[#f9fafb] border-[1.5px] border-[#d1d5db] rounded-lg px-3.5 h-[42px] text-[14px] font-bold outline-none focus:border-blue-500" placeholder="FE Name" />
                 <input type="date" value={setupData.date} onChange={e => setSetupData({...setupData, date: e.target.value})} className="bg-[#f9fafb] border-[1.5px] border-[#d1d5db] rounded-lg px-3.5 h-[42px] text-[14px] font-bold outline-none focus:border-blue-500" />
               </div>
-              <div className={cn("border-2 border-dashed rounded-xl p-8 text-center transition-all relative", (!setupData.feName || !setupData.dspId) ? "bg-slate-100 border-slate-200 cursor-not-allowed opacity-60" : "bg-slate-50 hover:bg-white hover:border-blue-500 cursor-pointer")}>
-                {setupData.feName && setupData.dspId && <input type="file" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />}
+              <div className={cn("border-2 border-dashed rounded-xl p-8 text-center transition-all relative", (!setupData.feName || !setupData.dspId || isProcessing) ? "bg-slate-100 border-slate-200 cursor-not-allowed opacity-60" : "bg-slate-50 hover:bg-white hover:border-blue-500 cursor-pointer")}>
+                {setupData.feName && setupData.dspId && !isProcessing && <input type="file" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />}
                 <div className="space-y-3">
-                  <FileSpreadsheet className="w-6 h-6 text-slate-400 mx-auto" />
-                  <p className="text-sm font-black text-slate-600 tracking-tight">{(!setupData.feName || !setupData.dspId) ? "Enter DSP ID And FE Name To Upload" : "Import Daily EOD Report"}</p>
+                  <FileSpreadsheet className={cn("w-6 h-6 mx-auto", isProcessing ? "text-blue-600 animate-spin" : "text-slate-400")} />
+                  <p className="text-sm font-black text-slate-600 tracking-tight">
+                    {isProcessing ? "Processing File..." : (!setupData.feName || !setupData.dspId) ? "Enter DSP ID And FE Name To Upload" : "Import Daily EOD Report"}
+                  </p>
                 </div>
               </div>
             </div>
@@ -937,7 +948,7 @@ function PODToolContent() {
                                     <X className="w-4 h-4" />
                                   </button>
                                 </td>
-                                <td className="px-2 py-2 text-[13px] font-bold text-slate-600">{row.dspId}</td>
+                                <td className="px-2 py-2 text-[13px] font-bold text-slate-600">{currentSession?.dspId}</td>
                                 <td className="px-2 py-2 text-[13px] font-bold font-mono text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
                                 <td className="px-2 py-2 text-[13px] font-semibold text-slate-800">{row.client}</td>
                                 <td className="px-2 py-2 text-[13px] font-medium text-slate-500 whitespace-normal break-words">{row.orderId}</td>
@@ -945,7 +956,7 @@ function PODToolContent() {
                                   <span className={cn("inline-block px-2 py-1 rounded text-[10px] font-black border whitespace-normal leading-normal max-w-full uppercase", row.isIntact ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200")}>{row.remark}</span>
                                 </td>
                                 <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[300px] font-medium leading-relaxed">{row.returnAddress}</td>
-                                <td className="px-2 py-2 text-[13px] font-bold text-slate-700">{row.feName}</td>
+                                <td className="px-2 py-2 text-[13px] font-bold text-slate-700">{currentSession?.feName}</td>
                               </tr>
                             ))}
                           </React.Fragment>
@@ -1055,9 +1066,9 @@ function PODToolContent() {
                   <p className="text-[12px] font-bold text-slate-400 uppercase tracking-widest">Upload The Default Delhivery Export File For This FE Session.</p>
                 </div>
                 <div className="relative cursor-pointer group">
-                  <input type="file" onChange={handleOTPFileUpload} disabled={!selectedSessionId} className="absolute inset-0 opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
-                  <div className={cn("h-14 bg-white border-2 border-slate-200 rounded-2xl flex items-center justify-center font-black transition-all uppercase tracking-widest", !selectedSessionId ? "opacity-50 text-slate-300" : "text-slate-600 group-hover:border-blue-500")}>
-                    {!selectedSessionId ? "Select Session First" : "Select File"}
+                  <input type="file" onChange={handleOTPFileUpload} disabled={!selectedSessionId || isProcessing} className="absolute inset-0 opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
+                  <div className={cn("h-14 bg-white border-2 border-slate-200 rounded-2xl flex items-center justify-center font-black transition-all uppercase tracking-widest", (!selectedSessionId || isProcessing) ? "opacity-50 text-slate-300" : "text-slate-600 group-hover:border-blue-500")}>
+                    {isProcessing ? "Processing..." : !selectedSessionId ? "Select Session First" : "Select File"}
                   </div>
                 </div>
               </div>
