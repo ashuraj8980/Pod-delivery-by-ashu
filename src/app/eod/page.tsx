@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react";
+import React, { useState, useEffect, useMemo, useCallback, Suspense, useRef } from "react";
 import { 
   Truck, 
   Copy, 
@@ -23,6 +23,7 @@ import { useSearchParams } from "next/navigation";
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
  * Optimized for EOD Rejection management with Search and Multi-level Undo.
+ * Fixed multi-level undo logic for high-performance devices.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -129,6 +130,13 @@ function PODToolContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<"eod" | "remark" | "otp">("eod");
   const [sessions, setSessions] = useState<Session[]>([]);
+  
+  // Use a REF to htrack the absolute latest sessions state to avoid stale closure issues during rapid deletions
+  const sessionsRef = useRef(sessions);
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [searchTerm, setSearchTerm] = useState("");
@@ -220,7 +228,7 @@ function PODToolContent() {
           </span>
         )}
         {statsObj.dto > 0 && (
-          <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">
+          <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-rose-100 uppercase">
             {statsObj.dto} DTO
           </span>
         )}
@@ -350,8 +358,13 @@ function PODToolContent() {
 
   const deleteRow = (rowId: string) => {
     if (!selectedSessionId) return;
-    const sessionToUpdate = sessions.find(s => s.id === selectedSessionId);
+    
+    // Always use the ref to get the absolute latest sessions data for the stack
+    const currentSessions = sessionsRef.current;
+    const sessionToUpdate = currentSessions.find(s => s.id === selectedSessionId);
     if (!sessionToUpdate) return;
+    
+    // Push the current state to the undo stack before modifying
     setUndoStack(prev => [...prev, [...sessionToUpdate.data]]);
     
     setSessions(prev => prev.map(s => {
@@ -371,6 +384,7 @@ function PODToolContent() {
       }
       return s;
     }));
+    
     setSelectedRowIds(prev => {
       const next = new Set(prev);
       next.delete(rowId);
@@ -380,7 +394,9 @@ function PODToolContent() {
 
   const handleUndo = () => {
     if (undoStack.length === 0 || !selectedSessionId) return;
+    
     const previousData = undoStack[undoStack.length - 1];
+    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         return {
@@ -397,15 +413,20 @@ function PODToolContent() {
       }
       return s;
     }));
+    
     setUndoStack(prev => prev.slice(0, -1));
     showToast("Reverted last deletion(s)", "ok");
   };
 
   const handleDeleteSelected = () => {
     if (selectedRowIds.size === 0 || !selectedSessionId) return;
-    const sessionToUpdate = sessions.find(s => s.id === selectedSessionId);
+    
+    const currentSessions = sessionsRef.current;
+    const sessionToUpdate = currentSessions.find(s => s.id === selectedSessionId);
     if (!sessionToUpdate) return;
+    
     setUndoStack(prev => [...prev, [...sessionToUpdate.data]]);
+    
     setSessions(prev => prev.map(s => {
       if (s.id === selectedSessionId) {
         const newData = s.data.filter(r => !selectedRowIds.has(r.id));
@@ -423,6 +444,7 @@ function PODToolContent() {
       }
       return s;
     }));
+    
     showToast(`Deleted ${selectedRowIds.size} Selected Rows`, "ok");
     setSelectedRowIds(new Set());
   };
