@@ -607,8 +607,11 @@ function PODToolContent() {
                       <p className="text-[15px] font-bold text-slate-900 mb-0.5 tracking-tight">{s.feName}</p>
                       <p className="text-[11px] text-slate-400 font-bold mb-3 uppercase tracking-wider">{s.dspId} — {s.date} — {s.time || ""}</p>
                       <div className="flex flex-wrap gap-[5px]">
-                        <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100 uppercase">{s.stats?.total} PKT</span>
-                        {s.stats?.pending && s.stats.pending > 0 && <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-[4px] border border-amber-100 uppercase">{s.stats.pending} PENDING</span>}
+                        <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100 uppercase">{s.stats?.total || 0} PKT</span>
+                        {s.stats?.pending !== undefined && s.stats.pending > 0 && <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-[4px] border border-amber-100 uppercase">{s.stats.pending} PENDING</span>}
+                        {s.stats?.dispatched !== undefined && s.stats.dispatched > 0 && <span className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-[4px] border border-rose-100 uppercase">{s.stats.dispatched} DISPATCHED</span>}
+                        {s.stats?.rto !== undefined && s.stats.rto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{s.stats.rto} RTO</span>}
+                        {s.stats?.dto !== undefined && s.stats.dto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{s.stats.dto} DTO</span>}
                       </div>
                     </div>
                   ))}
