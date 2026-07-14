@@ -13,7 +13,8 @@ import {
   ArrowLeft,
   Trash2,
   RotateCcw,
-  Search
+  Search,
+  IndianRupee
 } from "lucide-react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
@@ -23,7 +24,7 @@ import { getData, saveData } from "@/lib/storage";
 
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
- * Optimized for heavy Excel files (3000+ rows) using chunked processing and IndexedDB.
+ * Optimized for heavy Excel files with High Value (4000+) shipment tracking.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -91,6 +92,7 @@ interface PODRow {
   orderId: string;
   status: string;
   remark: string;
+  amount: number;
   returnAddress?: string;
   isIntact?: boolean;
 }
@@ -120,6 +122,7 @@ interface Session {
     dispatched: number;
     rto: number;
     dto: number;
+    highValue: number;
   };
 }
 
@@ -182,13 +185,14 @@ function PODToolContent() {
   const currentSession = useMemo(() => sessions.find(s => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
 
   const stats = useMemo(() => {
-    if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0 };
+    if (!currentSession) return { total: 0, pending: 0, dispatched: 0, rto: 0, dto: 0, highValue: 0 };
     return {
       total: currentSession.data.length,
       pending: currentSession.data.filter(r => r.status === 'Pending').length,
       dispatched: currentSession.data.filter(r => r.status === 'Dispatched').length,
       rto: currentSession.data.filter(r => r.status === 'RTO').length,
       dto: currentSession.data.filter(r => r.status === 'DTO').length,
+      highValue: currentSession.data.filter(r => r.amount >= 4000).length,
     };
   }, [currentSession]);
 
@@ -236,6 +240,7 @@ function PODToolContent() {
         const clientIdx = findIdx(/client|clientname/);
         const orderIdx = findIdx(/order|orderid/);
         const addressIdx = findIdx(/return_address|returnaddress/);
+        const amountIdx = findIdx(/amount|value|price|collectible/);
 
         if (awbIdx === -1) throw new Error("Could not find AWB/Waybill column.");
 
@@ -258,6 +263,7 @@ function PODToolContent() {
               if (status === "Unknown") continue;
 
               const remark = remarkIdx !== -1 ? String(row[remarkIdx]).trim() : "No Remark";
+              const amountVal = amountIdx !== -1 ? parseFloat(String(row[amountIdx]).replace(/[^\d.]/g, '')) || 0 : 0;
               
               parsedRows.push({
                 id: crypto.randomUUID(),
@@ -266,6 +272,7 @@ function PODToolContent() {
                 orderId: orderIdx !== -1 ? normalizeAWB(row[orderIdx]) : "",
                 status,
                 remark: remark || "No Remark",
+                amount: amountVal,
                 returnAddress: addressIdx !== -1 ? String(row[addressIdx]).trim() : "",
                 isIntact: /reject|intact|barcode|content/i.test(remark)
               });
@@ -284,6 +291,7 @@ function PODToolContent() {
                 dispatched: parsedRows.filter(r => r.status === 'Dispatched').length,
                 rto: parsedRows.filter(r => r.status === 'RTO').length,
                 dto: parsedRows.filter(r => r.status === 'DTO').length,
+                highValue: parsedRows.filter(r => r.amount >= 4000).length,
               };
 
               const newSessionId = crypto.randomUUID();
@@ -352,6 +360,7 @@ function PODToolContent() {
             dispatched: newData.filter(r => r.status === 'Dispatched').length,
             rto: newData.filter(r => r.status === 'RTO').length,
             dto: newData.filter(r => r.status === 'DTO').length,
+            highValue: newData.filter(r => r.amount >= 4000).length,
           }
         };
       }
@@ -378,6 +387,7 @@ function PODToolContent() {
             dispatched: previousData.filter(r => r.status === 'Dispatched').length,
             rto: previousData.filter(r => r.status === 'RTO').length,
             dto: previousData.filter(r => r.status === 'DTO').length,
+            highValue: previousData.filter(r => r.amount >= 4000).length,
           }
         };
       }
@@ -405,6 +415,7 @@ function PODToolContent() {
             dispatched: newData.filter(r => r.status === 'Dispatched').length,
             rto: newData.filter(r => r.status === 'RTO').length,
             dto: newData.filter(r => r.status === 'DTO').length,
+            highValue: newData.filter(r => r.amount >= 4000).length,
           }
         };
       }
@@ -417,7 +428,9 @@ function PODToolContent() {
   const uniqueClients = useMemo(() => {
     if (!currentSession) return [];
     let rows = currentSession.data;
-    if (statusFilter !== 'All') {
+    if (statusFilter === 'HighValue') {
+      rows = rows.filter(r => r.amount >= 4000);
+    } else if (statusFilter !== 'All') {
       rows = rows.filter(r => r.status === statusFilter);
     }
     return Array.from(new Set(rows.map(r => r.client))).sort();
@@ -426,7 +439,9 @@ function PODToolContent() {
   const filteredRows = useMemo(() => {
     if (!currentSession) return [];
     let rows = currentSession.data;
-    if (statusFilter !== 'All') {
+    if (statusFilter === 'HighValue') {
+      rows = rows.filter(r => r.amount >= 4000);
+    } else if (statusFilter !== 'All') {
       rows = rows.filter(r => r.status === statusFilter);
     }
     if (statusFilter === 'Pending' && !showAllPending && selectedRemarkChips.length > 0) {
@@ -463,7 +478,7 @@ function PODToolContent() {
 
   const handleCopyTable = useCallback(async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
-    const headers = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
+    const headers = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'Amount', 'FE Name'];
     const exportRows = rowsToCopy.map((r, i) => ({
       'Date': formatDate(currentSession?.date),
       'DSP ID': i === 0 ? currentSession?.dspId : "",
@@ -471,6 +486,7 @@ function PODToolContent() {
       'Client': r.client,
       'Order ID': r.orderId,
       'Remark': r.remark,
+      'Amount': r.amount,
       'FE Name': currentSession?.feName
     }));
     
@@ -492,7 +508,7 @@ function PODToolContent() {
 
   const downloadExcel = (rowsToDownload: any[]) => {
     if (!rowsToDownload.length) return;
-    const header = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
+    const header = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'Amount', 'FE Name'];
     const excelData = rowsToDownload.map((r, i) => [
       formatDate(currentSession?.date), 
       i === 0 ? String(currentSession?.dspId) : "", 
@@ -500,6 +516,7 @@ function PODToolContent() {
       r.client, 
       String(r.orderId), 
       r.remark, 
+      r.amount,
       currentSession?.feName
     ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
@@ -609,6 +626,7 @@ function PODToolContent() {
                       <div className="flex flex-wrap gap-[5px]">
                         <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100 uppercase">{s.stats?.total || 0} PKT</span>
                         {s.stats?.pending !== undefined && s.stats.pending > 0 && <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-[4px] border border-amber-100 uppercase">{s.stats.pending} PENDING</span>}
+                        {s.stats?.highValue !== undefined && s.stats.highValue > 0 && <span className="text-[10px] font-bold bg-rose-600 text-white px-2 py-0.5 rounded-[4px] border border-rose-700 uppercase">{s.stats.highValue} HIGH VALUE</span>}
                         {s.stats?.dispatched !== undefined && s.stats.dispatched > 0 && <span className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-[4px] border border-rose-100 uppercase">{s.stats.dispatched} DISPATCHED</span>}
                         {s.stats?.rto !== undefined && s.stats.rto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{s.stats.rto} RTO</span>}
                         {s.stats?.dto !== undefined && s.stats.dto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{s.stats.dto} DTO</span>}
@@ -624,6 +642,7 @@ function PODToolContent() {
                 <div className="bg-white rounded-xl border shadow-sm flex divide-x overflow-hidden mt-6">
                   {[
                     {id: 'All', label: 'All', color: 'text-slate-900', bgColor: 'bg-[#EFF6FF]', borderColor: 'bg-blue-500', val: stats.total},
+                    {id: 'HighValue', label: 'High Value', color: 'text-rose-600', bgColor: 'bg-rose-50', borderColor: 'bg-rose-600', val: stats.highValue},
                     {id: 'Pending', label: 'Pending', color: 'text-amber-600', bgColor: 'bg-[#FFFBEB]', borderColor: 'bg-amber-500', val: stats.pending},
                     {id: 'Dispatched', label: 'Dispatched', color: 'text-rose-600', bgColor: 'bg-[#FFF5F5]', borderColor: 'bg-rose-500', val: stats.dispatched},
                     {id: 'RTO', label: 'RTO', color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500', val: stats.rto},
@@ -771,7 +790,8 @@ function PODToolContent() {
                           <th style={{width: '140px'}} className="text-[11px] font-bold tracking-widest uppercase">Waybill</th>
                           <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">Client</th>
                           <th style={{width: '150px'}} className="text-[11px] font-bold tracking-widest uppercase">Order ID</th>
-                          <th style={{width: '200px'}} className="text-[11px] font-bold tracking-widest uppercase">Remark</th>
+                          <th style={{width: '120px'}} className="text-[11px] font-bold tracking-widest uppercase">Amount</th>
+                          <th style={{width: '160px'}} className="text-[11px] font-bold tracking-widest uppercase">Remark</th>
                           <th style={{width: '350px'}} className="text-[11px] font-bold tracking-widest text-left px-4 uppercase">Return Address</th>
                           <th style={{width: '100px'}} className="text-[11px] font-bold tracking-widest uppercase">FE Name</th>
                         </tr>
@@ -784,15 +804,22 @@ function PODToolContent() {
                         }, {})).map(([client, rows]: any) => (
                           <React.Fragment key={`group-frag-${client}`}>
                             <tr className="bg-slate-800 text-white h-9">
-                              <td colSpan={9} className="text-left px-4">
+                              <td colSpan={10} className="text-left px-4">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
+                                    {rows.some((r: any) => r.amount >= 4000) && (
+                                      <span className="text-[9px] bg-rose-600 text-white px-2 py-0.5 rounded font-black uppercase flex items-center gap-1">
+                                        <AlertCircle className="w-3 h-3" /> {rows.filter((r: any) => r.amount >= 4000).length} High Value
+                                      </span>
+                                    )}
+                                  </div>
                                   <button onClick={() => handleCopyAWBOnly(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 font-bold uppercase">Copy AWBs</button>
                                 </div>
                               </td>
                             </tr>
                             {rows.map((row: any) => (
-                              <tr key={`row-${row.id}`} className={cn("border-b hover:bg-blue-50/40", selectedRowIds.has(row.id) && "bg-blue-50/50")}>
+                              <tr key={`row-${row.id}`} className={cn("border-b hover:bg-blue-50/40", selectedRowIds.has(row.id) && "bg-blue-50/50", row.amount >= 4000 && "bg-rose-50/30")}>
                                 <td className="px-2 py-2">
                                   <input type="checkbox" checked={selectedRowIds.has(row.id)} onChange={() => {
                                     setSelectedRowIds(prev => {
@@ -814,6 +841,11 @@ function PODToolContent() {
                                 <td className="px-2 py-2 text-[13px] font-bold font-mono text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
                                 <td className="px-2 py-2 text-[13px] font-semibold text-slate-800">{row.client}</td>
                                 <td className="px-2 py-2 text-[13px] font-medium text-slate-500 whitespace-normal break-words">{row.orderId}</td>
+                                <td className={cn("px-2 py-2 text-[13px] font-black", row.amount >= 4000 ? "text-rose-600" : "text-slate-700")}>
+                                  <span className="flex items-center justify-center gap-0.5">
+                                    <IndianRupee className="w-3 h-3" /> {row.amount.toLocaleString()}
+                                  </span>
+                                </td>
                                 <td className="px-2 py-2">
                                   <span className={cn("inline-block px-2 py-1 rounded text-[10px] font-black border whitespace-normal leading-normal max-w-full uppercase", row.isIntact ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200")}>{row.remark}</span>
                                 </td>
@@ -914,6 +946,7 @@ function PODToolContent() {
                       <div className="flex flex-wrap gap-[5px]">
                         <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100 uppercase">{currentSession.stats?.total || 0} PKT</span>
                         {currentSession.stats?.pending !== undefined && currentSession.stats.pending > 0 && <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-[4px] border border-amber-100 uppercase">{currentSession.stats.pending} PENDING</span>}
+                        {currentSession.stats?.highValue !== undefined && currentSession.stats.highValue > 0 && <span className="text-[10px] font-bold bg-rose-600 text-white px-2 py-0.5 rounded-[4px] border border-rose-700 uppercase">{currentSession.stats.highValue} HIGH VALUE</span>}
                         {currentSession.stats?.dispatched !== undefined && currentSession.stats.dispatched > 0 && <span className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-[4px] border border-rose-100 uppercase">{currentSession.stats.dispatched} DISPATCHED</span>}
                         {currentSession.stats?.rto !== undefined && currentSession.stats.rto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{currentSession.stats.rto} RTO</span>}
                         {currentSession.stats?.dto !== undefined && currentSession.stats.dto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{currentSession.stats.dto} DTO</span>}
