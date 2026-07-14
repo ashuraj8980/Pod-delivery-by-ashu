@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, Suspense, useRef } from "react";
@@ -365,6 +364,7 @@ function PODToolContent() {
               });
               
               setSelectedSessionId(newSessionId);
+              setOtpData([]); // Clear old OTP data on new session creation
               showToast(`Imported ${parsedRows.length} Rows Successfully!`, "ok");
               setIsProcessing(false);
               setUploadProgress(null);
@@ -581,12 +581,14 @@ function PODToolContent() {
     if (selectedSessionId === sessionId) {
       setSelectedSessionId(null);
       setUndoStack([]);
+      setOtpData([]);
     }
     showToast("Session Deleted", "ok");
   };
 
   const handleSessionClick = (s: Session) => {
     setSelectedSessionId(s.id);
+    setOtpData([]); // Clear old OTP data when switching sessions
     setStatusFilter("All");
     setSearchTerm("");
     setSelectedRemarkChips([]);
@@ -659,7 +661,7 @@ function PODToolContent() {
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-black text-slate-700 tracking-tight">Recent Sessions</h3>
                   <button 
-                    onClick={() => { setSessions([]); setSelectedSessionId(null); setUndoStack([]); }} 
+                    onClick={() => { setSessions([]); setSelectedSessionId(null); setUndoStack([]); setOtpData([]); }} 
                     className="text-[11px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest"
                   >
                     CLEAR ALL SESSIONS
