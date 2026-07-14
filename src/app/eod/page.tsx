@@ -199,29 +199,42 @@ function PODToolContent() {
   }, [currentSession]);
 
   const otpStats = useMemo(() => {
-    return {
-      total: otpData.length,
-      dispatched: otpData.filter(r => r.otpStatus === 'Dispatched' && r.sessionStatus === 'Dispatched').length,
-      pending: otpData.filter(r => r.otpStatus === 'Pending' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending')).length,
-      rto: otpData.filter(r => r.otpStatus === 'RTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'RTO')).length,
-      dto: otpData.filter(r => r.otpStatus === 'DTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO')).length,
-    };
+    // Dispatched count = OTP Dispatched where CSV is Dispatched + OTP Dispatched where CSV is RTO + OTP Dispatched where CSV is DTO.
+    const dispatched = otpData.filter(r => 
+      (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Dispatched') || 
+      (r.otpStatus === 'Dispatched' && r.sessionStatus === 'RTO') || 
+      (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO')
+    ).length;
+
+    // Pending count = OTP Pending + OTP Dispatched where CSV is Pending.
+    const pending = otpData.filter(r => 
+      r.otpStatus === 'Pending' || 
+      (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending')
+    ).length;
+
+    const rto = otpData.filter(r => r.otpStatus === 'RTO').length;
+    const dto = otpData.filter(r => r.otpStatus === 'DTO').length;
+
+    return { total: otpData.length, dispatched, pending, rto, dto };
   }, [otpData]);
 
   const filteredOtpRows = useMemo(() => {
     let rows = otpData;
     if (otpStatusFilter === 'Dispatched') {
-      // Show only truly closed dispatched shipments
-      rows = rows.filter(r => r.otpStatus === 'Dispatched' && r.sessionStatus === 'Dispatched');
+      rows = rows.filter(r => 
+        (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Dispatched') || 
+        (r.otpStatus === 'Dispatched' && r.sessionStatus === 'RTO') || 
+        (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO')
+      );
     } else if (otpStatusFilter === 'Pending') {
-      // Show pending in OTP OR "Not Closed" pending from session
-      rows = rows.filter(r => r.otpStatus === 'Pending' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending'));
+      rows = rows.filter(r => 
+        r.otpStatus === 'Pending' || 
+        (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending')
+      );
     } else if (otpStatusFilter === 'RTO') {
-      // Show RTO in OTP OR "Not Closed" RTO from session
-      rows = rows.filter(r => r.otpStatus === 'RTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'RTO'));
+      rows = rows.filter(r => r.otpStatus === 'RTO');
     } else if (otpStatusFilter === 'DTO') {
-      // Show DTO in OTP OR "Not Closed" DTO from session
-      rows = rows.filter(r => r.otpStatus === 'DTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO'));
+      rows = rows.filter(r => r.otpStatus === 'DTO');
     }
     
     if (otpClientFilter !== 'All Clients') {
@@ -1130,7 +1143,6 @@ function PODToolContent() {
                           return acc;
                         }, {})).map(([client, rows]: any) => {
                           const isDispatchedTab = otpStatusFilter === 'Dispatched';
-                          const isFTPL = client.toUpperCase().includes('FTPL');
 
                           return (
                             <React.Fragment key={`otp-group-${client}`}>
@@ -1146,40 +1158,56 @@ function PODToolContent() {
                                   </td>
                                 </tr>
                               )}
-                              {rows.map((row: any) => (
-                                <tr key={`otp-row-${row.id}`} className={cn(
-                                  "border-b transition-colors", 
-                                  row.isNotClosed ? "border-l-[4px] border-l-amber-500 bg-amber-50/20" : "bg-white",
-                                  isDispatchedTab && isFTPL ? "bg-rose-50/40" : ""
-                                )}>
-                                  <td className="px-4 py-3 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
-                                  <td className={cn("px-4 py-3 text-[13px] font-black tracking-tight", isDispatchedTab && isFTPL ? "text-rose-600" : "text-slate-800")}>{row.client}</td>
-                                  <td className="px-4 py-3">
-                                    <div className="flex flex-col items-center gap-1">
-                                      <span className={cn(
-                                        "px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm uppercase", 
-                                        row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : "bg-emerald-600 text-white border-emerald-500"
-                                      )}>
-                                        {row.otpStatus}
-                                      </span>
-                                      {row.isNotClosed && (
-                                        <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase">
-                                          <AlertCircle className="w-3 h-3" /> Not Closed On Device ({row.notClosedType})
+                              {rows.map((row: any) => {
+                                const isFTPL = row.client.toUpperCase().includes('FTPL');
+                                const isRTOorDTONotClosed = row.otpStatus === 'Dispatched' && (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO');
+                                const isPendingNotClosed = row.otpStatus === 'Dispatched' && row.sessionStatus === 'Pending';
+
+                                return (
+                                  <tr key={`otp-row-${row.id}`} className={cn(
+                                    "border-b transition-colors", 
+                                    otpStatusFilter === 'Dispatched' && isRTOorDTONotClosed ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
+                                    otpStatusFilter === 'Dispatched' && isFTPL ? "bg-[#FFF5F5] border-l-[2px] border-l-red-500" :
+                                    otpStatusFilter === 'Dispatched' ? "bg-white border-l-[2px] border-l-red-500" :
+                                    otpStatusFilter === 'Pending' && isPendingNotClosed ? "bg-[#FFFDE7] border-l-[3px] border-l-amber-500" :
+                                    otpStatusFilter === 'Pending' ? "bg-white border-l-[2px] border-l-amber-500" :
+                                    (otpStatusFilter === 'RTO' || otpStatusFilter === 'DTO') && isFTPL ? "bg-emerald-50/50 border-l-[2px] border-l-emerald-500" :
+                                    (otpStatusFilter === 'RTO' || otpStatusFilter === 'DTO') ? "bg-white border-l-[2px] border-l-emerald-500" :
+                                    "bg-white"
+                                  )}>
+                                    <td className="px-4 py-3 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
+                                    <td className={cn("px-4 py-3 text-[13px] font-black tracking-tight", (otpStatusFilter === 'Dispatched' && isFTPL) ? "text-rose-600" : "text-slate-800")}>{row.client}</td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span className={cn(
+                                          "px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm uppercase", 
+                                          row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : 
+                                          row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : 
+                                          "bg-emerald-600 text-white border-emerald-500"
+                                        )}>
+                                          {row.otpStatus}
                                         </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <span className={cn(
-                                      "px-2 py-0.5 rounded text-[10px] font-black border uppercase", 
-                                      row.sessionStatus === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" : row.sessionStatus === 'RTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-700 border-slate-200"
-                                    )}>
-                                      {row.sessionStatus}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 text-[12px] whitespace-normal break-words text-left min-w-[350px] font-medium leading-relaxed">{row.returnAddress}</td>
-                                </tr>
-                              ))}
+                                        {((otpStatusFilter === 'Dispatched' && isRTOorDTONotClosed) || (otpStatusFilter === 'Pending' && isPendingNotClosed)) && (
+                                          <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase">
+                                            <AlertCircle className="w-3 h-3" /> {row.sessionStatus} — Not Closed on Device
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <span className={cn(
+                                        "px-2 py-0.5 rounded text-[10px] font-black border uppercase", 
+                                        row.sessionStatus === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" : 
+                                        row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : 
+                                        "bg-slate-50 text-slate-700 border-slate-200"
+                                      )}>
+                                        {row.sessionStatus}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-[12px] whitespace-normal break-words text-left min-w-[350px] font-medium leading-relaxed">{row.returnAddress}</td>
+                                  </tr>
+                                );
+                              })}
                             </React.Fragment>
                           );
                         })}
