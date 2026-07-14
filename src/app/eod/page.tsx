@@ -14,7 +14,8 @@ import {
   Trash2,
   RotateCcw,
   Search,
-  IndianRupee
+  IndianRupee,
+  CheckCircle2
 } from "lucide-react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
@@ -149,6 +150,8 @@ function PODToolContent() {
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
 
   const [otpData, setOtpData] = useState<OTPRow[]>([]);
+  const [otpStatusFilter, setOtpStatusFilter] = useState<string>("All");
+  const [otpClientFilter, setOtpClientFilter] = useState<string>("All Clients");
 
   const sessionsRef = useRef(sessions);
   useEffect(() => {
@@ -193,6 +196,16 @@ function PODToolContent() {
       highValue: currentSession.data.filter(r => (r.amount ?? 0) >= 4000).length,
     };
   }, [currentSession]);
+
+  const otpStats = useMemo(() => {
+    return {
+      total: otpData.length,
+      dispatched: otpData.filter(r => r.otpStatus === 'Dispatched' && r.sessionStatus === 'Dispatched').length,
+      pending: otpData.filter(r => r.otpStatus === 'Pending' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending')).length,
+      rto: otpData.filter(r => r.otpStatus === 'RTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'RTO')).length,
+      dto: otpData.filter(r => r.otpStatus === 'DTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO')).length,
+    };
+  }, [otpData]);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err') => {
     if (typeof document === 'undefined') return;
@@ -458,6 +471,28 @@ function PODToolContent() {
     }
     return rows;
   }, [currentSession, statusFilter, selectedRemarkChips, clientFilter, showAllPending, searchTerm]);
+
+  const filteredOtpRows = useMemo(() => {
+    let rows = otpData;
+    if (otpStatusFilter === 'Dispatched') {
+      rows = rows.filter(r => r.otpStatus === 'Dispatched' && r.sessionStatus === 'Dispatched');
+    } else if (otpStatusFilter === 'Pending') {
+      rows = rows.filter(r => r.otpStatus === 'Pending' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending'));
+    } else if (otpStatusFilter === 'RTO') {
+      rows = rows.filter(r => r.otpStatus === 'RTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'RTO'));
+    } else if (otpStatusFilter === 'DTO') {
+      rows = rows.filter(r => r.otpStatus === 'DTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO'));
+    }
+    
+    if (otpClientFilter !== 'All Clients') {
+      rows = rows.filter(r => r.client === otpClientFilter);
+    }
+    return rows;
+  }, [otpData, otpStatusFilter, otpClientFilter]);
+
+  const uniqueOtpClients = useMemo(() => {
+    return Array.from(new Set(filteredOtpRows.map(r => r.client))).sort();
+  }, [filteredOtpRows]);
 
   const isAllSelected = filteredRows.length > 0 && filteredRows.every(r => selectedRowIds.has(r.id));
   const isSomeSelected = filteredRows.some(r => selectedRowIds.has(r.id)) && !isAllSelected;
@@ -932,37 +967,35 @@ function PODToolContent() {
 
         {activeTab === "otp" && (
           <div className="space-y-6">
+            {/* SESSION INFO CARD */}
             <div className="bg-white border-[1.5px] border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between relative overflow-hidden">
               <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
               {currentSession ? (
-                <>
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg"><User className="w-6 h-6" /></div>
-                    <div>
-                      <p className="text-lg font-black text-slate-900 leading-tight">{currentSession.feName}</p>
-                      <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-1">{currentSession.dspId} — {currentSession.date} — {currentSession.time || ""}</p>
-                      <div className="flex flex-wrap gap-[5px]">
-                        <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100 uppercase">{currentSession.stats?.total || 0} PKT</span>
-                        {currentSession.stats?.pending !== undefined && currentSession.stats.pending > 0 && <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-[4px] border border-amber-100 uppercase">{currentSession.stats.pending} PENDING</span>}
-                        {currentSession.stats?.highValue !== undefined && currentSession.stats.highValue > 0 && <span className="text-[10px] font-bold bg-rose-600 text-white px-2 py-0.5 rounded-[4px] border border-rose-700 uppercase">{currentSession.stats.highValue} HIGH VALUE</span>}
-                        {currentSession.stats?.dispatched !== undefined && currentSession.stats.dispatched > 0 && <span className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-[4px] border border-rose-100 uppercase">{currentSession.stats.dispatched} DISPATCHED</span>}
-                        {currentSession.stats?.rto !== undefined && currentSession.stats.rto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{currentSession.stats.rto} RTO</span>}
-                        {currentSession.stats?.dto !== undefined && currentSession.stats.dto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{currentSession.stats.dto} DTO</span>}
-                      </div>
+                <div className="flex items-center gap-4 w-full">
+                  <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg"><User className="w-6 h-6" /></div>
+                  <div className="flex-1">
+                    <p className="text-lg font-black text-slate-900 leading-tight">{currentSession.feName}</p>
+                    <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-1">{currentSession.dspId} — {currentSession.date} — {currentSession.time || ""}</p>
+                    <div className="flex flex-wrap gap-[5px]">
+                      <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100 uppercase">{currentSession.stats?.total || 0} PKT</span>
+                      {currentSession.stats?.pending !== undefined && currentSession.stats.pending > 0 && <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-[4px] border border-amber-100 uppercase">{currentSession.stats.pending} PENDING</span>}
+                      {currentSession.stats?.highValue !== undefined && currentSession.stats.highValue > 0 && <span className="text-[10px] font-bold bg-rose-600 text-white px-2 py-0.5 rounded-[4px] border border-rose-700 uppercase">{currentSession.stats.highValue} HIGH VALUE</span>}
+                      {currentSession.stats?.dispatched !== undefined && currentSession.stats.dispatched > 0 && <span className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-[4px] border border-rose-100 uppercase">{currentSession.stats.dispatched} DISPATCHED</span>}
+                      {currentSession.stats?.rto !== undefined && currentSession.stats.rto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{currentSession.stats.rto} RTO</span>}
+                      {currentSession.stats?.dto !== undefined && currentSession.stats.dto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{currentSession.stats.dto} DTO</span>}
                     </div>
                   </div>
-                </>
+                </div>
               ) : (
                 <div className="py-2 text-slate-400 font-bold text-sm">Select a session to start OTP check</div>
               )}
             </div>
 
-            <div className="bg-white rounded-2xl border-[1.5px] border-dashed border-slate-300 p-12 text-center space-y-4 bg-slate-50/50">
+            {/* UPLOAD ZONE */}
+            <div className="bg-white rounded-2xl border-[1.5px] border-dashed border-slate-300 p-8 text-center space-y-4 bg-slate-50/50">
               <div className="max-w-xl mx-auto space-y-4">
-                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-blue-600 shadow-sm mx-auto border"><Download className="w-8 h-8" /></div>
-                <div>
-                  <h2 className="text-xl font-black text-slate-900">Upload Delhivery OTP Report</h2>
-                </div>
+                <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-blue-600 shadow-sm mx-auto border"><Download className="w-7 h-7" /></div>
+                <h2 className="text-lg font-black text-slate-900">Upload Delhivery OTP Report</h2>
                 <div className="relative cursor-pointer group">
                   <input type="file" onChange={(e) => {
                     const file = e.target.files?.[0];
@@ -994,7 +1027,7 @@ function PODToolContent() {
                           const sessionRow = sessionMap.get(awb);
                           if (!sessionRow) continue;
 
-                          const otpStatusRaw = statusIdx !== -1 ? String(row[statusIdx]).toLowerCase().trim() : "";
+                          const otpStatusRaw = String(row[statusIdx]).toLowerCase().trim();
                           let otpStatus = 'Unknown';
                           if (otpStatusRaw.includes('dispatched') || otpStatusRaw.includes('dispatch')) otpStatus = 'Dispatched';
                           else if (otpStatusRaw.includes('rto')) otpStatus = 'RTO';
@@ -1024,44 +1057,132 @@ function PODToolContent() {
                     reader.readAsArrayBuffer(file);
                     e.target.value = "";
                   }} disabled={!selectedSessionId || isProcessing} className="absolute inset-0 opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
-                  <div className={cn("h-14 bg-white border-2 border-slate-200 rounded-2xl flex items-center justify-center font-black transition-all uppercase tracking-widest", (!selectedSessionId || isProcessing) ? "opacity-50 text-slate-300" : "text-slate-600 group-hover:border-blue-500")}>
-                    {isProcessing ? "Processing..." : !selectedSessionId ? "Select Session First" : "Select File"}
+                  <div className={cn("h-12 bg-white border-2 border-slate-200 rounded-2xl flex items-center justify-center font-black transition-all uppercase tracking-widest text-[12px]", (!selectedSessionId || isProcessing) ? "opacity-50 text-slate-300" : "text-slate-600 group-hover:border-blue-500")}>
+                    {isProcessing ? "Processing..." : !selectedSessionId ? "Select Session First" : "Select OTP File"}
                   </div>
                 </div>
               </div>
             </div>
 
             {otpData.length > 0 && (
-              <div className="bg-white rounded-2xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-center border-collapse table-fixed">
-                    <thead className="bg-[#0f172a] text-white h-11">
-                      <tr key="otp-main-header">
-                        <th style={{width: '150px'}} className="text-[11px] font-bold tracking-widest uppercase">Waybill</th>
-                        <th style={{width: '200px'}} className="text-[11px] font-bold tracking-widest uppercase">Client Name</th>
-                        <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">OTP Status</th>
-                        <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">Session Status</th>
-                        <th style={{width: '350px'}} className="text-[11px] font-bold tracking-widest text-left px-4 uppercase">Return Address</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {otpData.map((row: any) => (
-                        <tr key={`otp-row-${row.id}`} className={cn("border-b", row.isNotClosed ? "bg-amber-50/30 border-l-[3px] border-l-amber-500" : "bg-white")}>
-                          <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
-                          <td className="px-4 py-2 text-[13px] font-black tracking-tight">{row.client}</td>
-                          <td className="px-4 py-2">
-                            <span className={cn("px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm uppercase", row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : "bg-emerald-600 text-white border-emerald-500")}>{row.otpStatus}</span>
-                          </td>
-                          <td className="px-4 py-2">
-                            <span className={cn("px-2 py-0.5 rounded text-[10px] font-black border uppercase", row.sessionStatus === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" : row.sessionStatus === 'RTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-700 border-slate-200")}>{row.sessionStatus}</span>
-                          </td>
-                          <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[350px] font-medium leading-relaxed">{row.returnAddress}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <>
+                {/* STATUS TABS */}
+                <div className="bg-white rounded-xl border shadow-sm flex divide-x overflow-hidden mt-6">
+                  {[
+                    {id: 'All', label: 'All', color: 'text-slate-900', bgColor: 'bg-[#EFF6FF]', borderColor: 'bg-blue-500', val: otpStats.total},
+                    {id: 'Dispatched', label: 'Dispatched', color: 'text-rose-600', bgColor: 'bg-[#FFF5F5]', borderColor: 'bg-rose-500', val: otpStats.dispatched},
+                    {id: 'Pending', label: 'Pending', color: 'text-amber-600', bgColor: 'bg-[#FFFBEB]', borderColor: 'bg-amber-500', val: otpStats.pending},
+                    {id: 'RTO', label: 'RTO', color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500', val: otpStats.rto},
+                    {id: 'DTO', label: 'DTO', color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500', val: otpStats.dto}
+                  ].map(t => (
+                    <button key={t.id} onClick={() => { 
+                      setOtpStatusFilter(t.id); 
+                      setOtpClientFilter("All Clients");
+                    }} className={cn("flex-1 py-5 flex flex-col items-center group h-[90px] transition-all relative", otpStatusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
+                      <span className={cn("text-[28px] font-extrabold leading-none mb-1", t.color)}>{t.val}</span>
+                      <span className="text-[12px] font-black uppercase tracking-widest">{t.label}</span>
+                      {otpStatusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[3px]", t.borderColor)} />}
+                    </button>
+                  ))}
                 </div>
-              </div>
+
+                <div className="flex flex-wrap items-center gap-4 mb-2">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Client Filter</label>
+                    <select
+                      value={otpClientFilter}
+                      onChange={(e) => setOtpClientFilter(e.target.value)}
+                      className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[200px] shadow-sm"
+                    >
+                      <option value="All Clients">All Clients</option>
+                      {uniqueOtpClients.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex-1" />
+                  <div className="flex gap-2">
+                    <button onClick={() => downloadExcel(filteredOtpRows)} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black uppercase">Download Excel</button>
+                    <button onClick={() => handleCopyTable(filteredOtpRows)} className="h-9 px-5 bg-blue-600 text-white rounded-lg text-[12px] font-black uppercase">Copy Table</button>
+                  </div>
+                </div>
+
+                {/* TABLE WITH GROUPING */}
+                <div className="bg-white rounded-2xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-center border-collapse table-fixed">
+                      <thead className="bg-[#0f172a] text-white h-11">
+                        <tr key="otp-main-header">
+                          <th style={{width: '160px'}} className="text-[11px] font-bold tracking-widest uppercase">Waybill</th>
+                          <th style={{width: '200px'}} className="text-[11px] font-bold tracking-widest uppercase">Client Name</th>
+                          <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">OTP Status</th>
+                          <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">Session Status</th>
+                          <th style={{width: '350px'}} className="text-[11px] font-bold tracking-widest text-left px-4 uppercase">Return Address</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(filteredOtpRows.reduce((acc: any, row) => {
+                          if (!acc[row.client]) acc[row.client] = [];
+                          acc[row.client].push(row);
+                          return acc;
+                        }, {})).map(([client, rows]: any) => {
+                          const isDispatchedTab = otpStatusFilter === 'Dispatched';
+                          const isFTPL = client.toUpperCase().includes('FTPL');
+
+                          return (
+                            <React.Fragment key={`otp-group-${client}`}>
+                              {isDispatchedTab && (
+                                <tr className="bg-slate-800 text-white h-9">
+                                  <td colSpan={5} className="text-left px-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
+                                      </div>
+                                      <button onClick={() => handleCopyAWBOnly(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 font-bold uppercase">Copy AWBs</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                              {rows.map((row: any) => (
+                                <tr key={`otp-row-${row.id}`} className={cn(
+                                  "border-b transition-colors", 
+                                  row.isNotClosed ? "border-l-[4px] border-l-amber-500 bg-amber-50/20" : "bg-white",
+                                  isDispatchedTab && isFTPL ? "bg-rose-50/40" : ""
+                                )}>
+                                  <td className="px-4 py-3 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
+                                  <td className={cn("px-4 py-3 text-[13px] font-black tracking-tight", isDispatchedTab && isFTPL ? "text-rose-600" : "text-slate-800")}>{row.client}</td>
+                                  <td className="px-4 py-3">
+                                    <div className="flex flex-col items-center gap-1">
+                                      <span className={cn(
+                                        "px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm uppercase", 
+                                        row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : "bg-emerald-600 text-white border-emerald-500"
+                                      )}>
+                                        {row.otpStatus}
+                                      </span>
+                                      {row.isNotClosed && (
+                                        <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase">
+                                          <AlertCircle className="w-3 h-3" /> Not Closed ({row.notClosedType})
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={cn(
+                                      "px-2 py-0.5 rounded text-[10px] font-black border uppercase", 
+                                      row.sessionStatus === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" : row.sessionStatus === 'RTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-700 border-slate-200"
+                                    )}>
+                                      {row.sessionStatus}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-[12px] whitespace-normal break-words text-left min-w-[350px] font-medium leading-relaxed">{row.returnAddress}</td>
+                                </tr>
+                              ))}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         )}
