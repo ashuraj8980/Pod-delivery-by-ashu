@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, Suspense, useRef } from "react";
@@ -206,6 +207,28 @@ function PODToolContent() {
       dto: otpData.filter(r => r.otpStatus === 'DTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO')).length,
     };
   }, [otpData]);
+
+  const filteredOtpRows = useMemo(() => {
+    let rows = otpData;
+    if (otpStatusFilter === 'Dispatched') {
+      rows = rows.filter(r => r.otpStatus === 'Dispatched');
+    } else if (otpStatusFilter === 'Pending') {
+      rows = rows.filter(r => r.otpStatus === 'Pending' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending'));
+    } else if (otpStatusFilter === 'RTO') {
+      rows = rows.filter(r => r.otpStatus === 'RTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'RTO'));
+    } else if (otpStatusFilter === 'DTO') {
+      rows = rows.filter(r => r.otpStatus === 'DTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO'));
+    }
+    
+    if (otpClientFilter !== 'All Clients') {
+      rows = rows.filter(r => r.client === otpClientFilter);
+    }
+    return rows;
+  }, [otpData, otpStatusFilter, otpClientFilter]);
+
+  const uniqueOtpClients = useMemo(() => {
+    return Array.from(new Set(filteredOtpRows.map(r => r.client))).sort();
+  }, [filteredOtpRows]);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err') => {
     if (typeof document === 'undefined') return;
@@ -471,28 +494,6 @@ function PODToolContent() {
     }
     return rows;
   }, [currentSession, statusFilter, selectedRemarkChips, clientFilter, showAllPending, searchTerm]);
-
-  const filteredOtpRows = useMemo(() => {
-    let rows = otpData;
-    if (otpStatusFilter === 'Dispatched') {
-      rows = rows.filter(r => r.otpStatus === 'Dispatched' && r.sessionStatus === 'Dispatched');
-    } else if (otpStatusFilter === 'Pending') {
-      rows = rows.filter(r => r.otpStatus === 'Pending' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending'));
-    } else if (otpStatusFilter === 'RTO') {
-      rows = rows.filter(r => r.otpStatus === 'RTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'RTO'));
-    } else if (otpStatusFilter === 'DTO') {
-      rows = rows.filter(r => r.otpStatus === 'DTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO'));
-    }
-    
-    if (otpClientFilter !== 'All Clients') {
-      rows = rows.filter(r => r.client === otpClientFilter);
-    }
-    return rows;
-  }, [otpData, otpStatusFilter, otpClientFilter]);
-
-  const uniqueOtpClients = useMemo(() => {
-    return Array.from(new Set(filteredOtpRows.map(r => r.client))).sort();
-  }, [filteredOtpRows]);
 
   const isAllSelected = filteredRows.length > 0 && filteredRows.every(r => selectedRowIds.has(r.id));
   const isSomeSelected = filteredRows.some(r => selectedRowIds.has(r.id)) && !isAllSelected;
@@ -1159,7 +1160,7 @@ function PODToolContent() {
                                       </span>
                                       {row.isNotClosed && (
                                         <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase">
-                                          <AlertCircle className="w-3 h-3" /> Not Closed ({row.notClosedType})
+                                          <AlertCircle className="w-3 h-3" /> Not Closed On Device ({row.notClosedType})
                                         </span>
                                       )}
                                     </div>
