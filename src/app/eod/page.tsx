@@ -211,12 +211,16 @@ function PODToolContent() {
   const filteredOtpRows = useMemo(() => {
     let rows = otpData;
     if (otpStatusFilter === 'Dispatched') {
-      rows = rows.filter(r => r.otpStatus === 'Dispatched');
+      // Show only truly closed dispatched shipments
+      rows = rows.filter(r => r.otpStatus === 'Dispatched' && r.sessionStatus === 'Dispatched');
     } else if (otpStatusFilter === 'Pending') {
+      // Show pending in OTP OR "Not Closed" pending from session
       rows = rows.filter(r => r.otpStatus === 'Pending' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending'));
     } else if (otpStatusFilter === 'RTO') {
+      // Show RTO in OTP OR "Not Closed" RTO from session
       rows = rows.filter(r => r.otpStatus === 'RTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'RTO'));
     } else if (otpStatusFilter === 'DTO') {
+      // Show DTO in OTP OR "Not Closed" DTO from session
       rows = rows.filter(r => r.otpStatus === 'DTO' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO'));
     }
     
