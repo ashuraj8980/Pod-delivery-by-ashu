@@ -19,10 +19,11 @@ import Link from "next/link";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 import { useSearchParams } from "next/navigation";
+import { getData, saveData } from "@/lib/storage";
 
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
- * Optimized for heavy Excel files (2000+ rows, 80+ columns) and memory efficiency.
+ * Optimized for heavy Excel files (3000+ rows) using chunked processing and IndexedDB.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -126,12 +127,6 @@ function PODToolContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<"eod" | "remark" | "otp">("eod");
   const [sessions, setSessions] = useState<Session[]>([]);
-  
-  const sessionsRef = useRef(sessions);
-  useEffect(() => {
-    sessionsRef.current = sessions;
-  }, [sessions]);
-
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [searchTerm, setSearchTerm] = useState("");
@@ -144,38 +139,43 @@ function PODToolContent() {
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
   const [isMounted, setIsMounted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{current: number, total: number} | null>(null);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   
   const [undoStack, setUndoStack] = useState<PODRow[][]>([]);
-  
   const [replacerData, setReplacerData] = useState<any[]>([]);
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
 
   const [otpData, setOtpData] = useState<OTPRow[]>([]);
   const [otpStatusFilter, setOtpStatusFilter] = useState<string>("All");
 
+  const sessionsRef = useRef(sessions);
   useEffect(() => {
-    setIsMounted(true);
-    setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
-    
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  const loadSessionsFromDB = useCallback(async () => {
     try {
-      const saved = localStorage.getItem('pod_sessions');
-      if (saved && saved.trim() !== "") {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setSessions(parsed);
-          const sid = searchParams.get('sessionId');
-          if (sid && parsed.some(s => s.id === sid)) {
-            setSelectedSessionId(sid);
-          }
+      const saved = await getData('pod_sessions');
+      if (Array.isArray(saved)) {
+        setSessions(saved);
+        const sid = searchParams.get('sessionId');
+        if (sid && saved.some(s => s.id === sid)) {
+          setSelectedSessionId(sid);
         }
       }
     } catch (e) {}
   }, [searchParams]);
 
   useEffect(() => {
+    setIsMounted(true);
+    setSetupData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
+    loadSessionsFromDB();
+  }, [loadSessionsFromDB]);
+
+  useEffect(() => {
     if (isMounted) {
-      localStorage.setItem('pod_sessions', JSON.stringify(sessions));
+      saveData('pod_sessions', sessions);
     }
   }, [sessions, isMounted]);
 
@@ -206,70 +206,6 @@ function PODToolContent() {
     }, 3000);
   }, []);
 
-  const renderSessionBadges = useCallback((statsObj: any) => {
-    return (
-      <div className="flex flex-wrap gap-[5px]">
-        <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100 uppercase">
-          {statsObj.total} PKT
-        </span>
-        {statsObj.pending > 0 && (
-          <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-[4px] border border-amber-100 uppercase">
-            {statsObj.pending} PENDING
-          </span>
-        )}
-        {statsObj.rto > 0 && (
-          <span className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-[4px] border border-rose-100 uppercase">
-            {statsObj.rto} RTO
-          </span>
-        )}
-        {statsObj.dto > 0 && (
-          <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-rose-100 uppercase">
-            {statsObj.dto} DTO
-          </span>
-        )}
-        {statsObj.dispatched > 0 && (
-          <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-[4px] border border-blue-100 uppercase">
-            {statsObj.dispatched} DISPATCHED
-          </span>
-        )}
-      </div>
-    );
-  }, []);
-
-  const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
-    if (!rowsToCopy.length) return;
-    const text = rowsToCopy.map(r => normalizeAWB(r.awb)).join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast(`Copied ${rowsToCopy.length} AWB Numbers`, "ok");
-    } catch (err) { showToast("Failed To Copy AWBs", "err"); }
-  };
-
-  const copyDataToClipboard = useCallback(async (rows: any[], headers: string[]) => {
-    if (!rows.length) return;
-    const exportHeaders = headers.filter(h => !/return address|return_address/i.test(h));
-    const plainText = rows.map(r => exportHeaders.map(h => String(r[h] || "").trim()).join("\t")).join("\n");
-    const rowsHtml = rows.map(r => {
-      const cells = exportHeaders.map(h => {
-        const val = String(r[h] || "").trim();
-        const headerLower = h.toLowerCase();
-        const isLongNumber = /awb|waybill|order|id|number|dsp/i.test(headerLower);
-        const style = `white-space:nowrap; vertical-align:middle; ${isLongNumber ? 'mso-number-format:"\\@";' : ''}`;
-        return `<td style='${style}'>${val}</td>`;
-      }).join("");
-      return `<tr>${cells}</tr>`;
-    }).join("");
-    const htmlTable = `<html><head><meta charset="UTF-8"></head><body><table border="1"><tbody>${rowsHtml}</tbody></table></body></html>`;
-    try {
-      const blobs: Record<string, Blob> = {
-        'text/plain': new Blob([plainText], { type: 'text/plain' }),
-        'text/html': new Blob([htmlTable], { type: 'text/html' })
-      };
-      await navigator.clipboard.write([new ClipboardItem(blobs)]);
-      return true;
-    } catch (err) { return false; }
-  }, []);
-
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!setupData.feName || !setupData.dspId) {
       showToast("Please Enter FE Name and DSP ID First", "err");
@@ -278,16 +214,17 @@ function PODToolContent() {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessing(true);
+    setUploadProgress(null);
     setUndoStack([]); 
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
         const data = new Uint8Array(evt.target?.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: 'array', raw: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        
-        // OPTIMIZATION: Use header: 1 for memory efficiency with large 80+ column files
         const rawRows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        
         if (rawRows.length < 2) throw new Error("File is empty or missing data.");
 
         const headerRow = rawRows[0].map(h => String(h).toLowerCase().replace(/[\s_-]/g, ""));
@@ -302,63 +239,96 @@ function PODToolContent() {
 
         if (awbIdx === -1) throw new Error("Could not find AWB/Waybill column.");
 
+        const CHUNK_SIZE = 300;
+        let currentIndex = 1; 
+        const totalRows = rawRows.length;
         const parsedRows: PODRow[] = [];
-        for (let i = 1; i < rawRows.length; i++) {
-          const row = rawRows[i];
-          const rawAwb = row[awbIdx];
-          const awb = isValidAWB(rawAwb);
-          if (!awb) continue;
 
-          const statusRaw = statusIdx !== -1 ? String(row[statusIdx]).toLowerCase().trim() : "";
-          const status = STATUS_MAP[statusRaw] || "Unknown";
-          if (status === "Unknown") continue;
+        const processNextChunk = () => {
+          try {
+            const end = Math.min(currentIndex + CHUNK_SIZE, totalRows);
+            for (let i = currentIndex; i < end; i++) {
+              const row = rawRows[i];
+              const rawAwb = row[awbIdx];
+              const awb = isValidAWB(rawAwb);
+              if (!awb) continue;
 
-          const remark = remarkIdx !== -1 ? String(row[remarkIdx]).trim() : "No Remark";
-          
-          parsedRows.push({
-            id: crypto.randomUUID(),
-            awb,
-            client: clientIdx !== -1 ? String(row[clientIdx]) : "Unknown",
-            orderId: orderIdx !== -1 ? normalizeAWB(row[orderIdx]) : "",
-            status,
-            remark: remark || "No Remark",
-            returnAddress: addressIdx !== -1 ? String(row[addressIdx]).trim() : "",
-            isIntact: /reject|intact|barcode|content/i.test(remark)
-          });
-        }
-        
-        if (parsedRows.length === 0) throw new Error("No Valid Data Found In EOD Report.");
-        
-        const sessionStats = {
-          total: parsedRows.length,
-          pending: parsedRows.filter(r => r.status === 'Pending').length,
-          dispatched: parsedRows.filter(r => r.status === 'Dispatched').length,
-          rto: parsedRows.filter(r => r.status === 'RTO').length,
-          dto: parsedRows.filter(r => r.status === 'DTO').length,
+              const statusRaw = statusIdx !== -1 ? String(row[statusIdx]).toLowerCase().trim() : "";
+              const status = STATUS_MAP[statusRaw] || "Unknown";
+              if (status === "Unknown") continue;
+
+              const remark = remarkIdx !== -1 ? String(row[remarkIdx]).trim() : "No Remark";
+              
+              parsedRows.push({
+                id: crypto.randomUUID(),
+                awb,
+                client: clientIdx !== -1 ? String(row[clientIdx]) : "Unknown",
+                orderId: orderIdx !== -1 ? normalizeAWB(row[orderIdx]) : "",
+                status,
+                remark: remark || "No Remark",
+                returnAddress: addressIdx !== -1 ? String(row[addressIdx]).trim() : "",
+                isIntact: /reject|intact|barcode|content/i.test(remark)
+              });
+            }
+            currentIndex = end;
+            setUploadProgress({ current: end - 1, total: totalRows - 1 });
+
+            if (currentIndex < totalRows) {
+              setTimeout(processNextChunk, 0);
+            } else {
+              if (parsedRows.length === 0) throw new Error("No Valid Data Found In EOD Report.");
+              
+              const sessionStats = {
+                total: parsedRows.length,
+                pending: parsedRows.filter(r => r.status === 'Pending').length,
+                dispatched: parsedRows.filter(r => r.status === 'Dispatched').length,
+                rto: parsedRows.filter(r => r.status === 'RTO').length,
+                dto: parsedRows.filter(r => r.status === 'DTO').length,
+              };
+
+              const newSessionId = crypto.randomUUID();
+              const creationTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+              
+              const newSession: Session = { 
+                id: newSessionId, 
+                feName: setupData.feName, 
+                dspId: setupData.dspId, 
+                date: formatDate(setupData.date), 
+                time: creationTime,
+                data: parsedRows, 
+                timestamp: Date.now(),
+                stats: sessionStats
+              };
+
+              setSessions(prev => {
+                const filtered = prev.filter(s => s.dspId !== setupData.dspId || s.feName !== setupData.feName);
+                return [newSession, ...filtered];
+              });
+              
+              setSelectedSessionId(newSessionId);
+              showToast(`Imported ${parsedRows.length} Rows Successfully!`, "ok");
+              setIsProcessing(false);
+              setUploadProgress(null);
+            }
+          } catch (e: any) {
+            showToast(e.message || "Error processing chunk", "err");
+            setIsProcessing(false);
+            setUploadProgress(null);
+          }
         };
 
-        const newSessionId = crypto.randomUUID();
-        const creationTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-        
-        const newSession: Session = { 
-          id: newSessionId, 
-          feName: setupData.feName, 
-          dspId: setupData.dspId, 
-          date: formatDate(setupData.date), 
-          time: creationTime,
-          data: parsedRows, 
-          timestamp: Date.now(),
-          stats: sessionStats
-        };
+        processNextChunk();
 
-        setSessions(prev => {
-          const filtered = prev.filter(s => s.dspId !== setupData.dspId || s.feName !== setupData.feName);
-          return [newSession, ...filtered];
-        });
-        
-        setSelectedSessionId(newSessionId);
-        showToast(`Imported ${parsedRows.length} Rows Locally!`, "ok");
-      } catch (err: any) { showToast(err.message || "Failed To Import File", "err"); } finally { setIsProcessing(false); }
+      } catch (err: any) { 
+        showToast(err.message || "Failed To Import File", "err"); 
+        setIsProcessing(false); 
+        setUploadProgress(null);
+      }
+    };
+    reader.onerror = () => {
+      showToast("Error reading file", "err");
+      setIsProcessing(false);
+      setUploadProgress(null);
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
@@ -503,19 +473,32 @@ function PODToolContent() {
       'Remark': r.remark,
       'FE Name': currentSession?.feName
     }));
-    const success = await copyDataToClipboard(exportRows, headers);
-    if (success) showToast(`Copied ${rowsToCopy.length} Rows To Clipboard`, "ok");
-  }, [copyDataToClipboard, showToast, currentSession]);
+    
+    const plainText = exportRows.map(r => headers.map(h => String((r as any)[h] || "").trim()).join("\t")).join("\n");
+    try {
+      await navigator.clipboard.writeText(plainText);
+      showToast(`Copied ${rowsToCopy.length} Rows To Clipboard`, "ok");
+    } catch (e) {}
+  }, [showToast, currentSession]);
+
+  const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
+    if (!rowsToCopy.length) return;
+    const text = rowsToCopy.map(r => normalizeAWB(r.awb)).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(`Copied ${rowsToCopy.length} AWB Numbers`, "ok");
+    } catch (err) { showToast("Failed To Copy AWBs", "err"); }
+  };
 
   const downloadExcel = (rowsToDownload: any[]) => {
     if (!rowsToDownload.length) return;
     const header = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
     const excelData = rowsToDownload.map((r, i) => [
       formatDate(currentSession?.date), 
-      { v: i === 0 ? String(currentSession?.dspId) : "", t: 's' }, 
-      { v: String(normalizeAWB(r.awb)), t: 's' }, 
+      i === 0 ? String(currentSession?.dspId) : "", 
+      String(normalizeAWB(r.awb)), 
       r.client, 
-      { v: String(r.orderId), t: 's' }, 
+      String(r.orderId), 
       r.remark, 
       currentSession?.feName
     ]);
@@ -532,124 +515,6 @@ function PODToolContent() {
       setUndoStack([]);
     }
     showToast("Session Deleted", "ok");
-  };
-
-  const handleOTPFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!selectedSessionId || !currentSession) return;
-    setIsProcessing(true);
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const data = new Uint8Array(evt.target?.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: 'array', raw: true });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rawRows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-        
-        const sessionMap = new Map<string, PODRow>();
-        currentSession.data.forEach(r => sessionMap.set(normalizeAWB(r.awb), r));
-        
-        const headerRow = rawRows[0].map(h => String(h).toLowerCase().replace(/[\s_-]/g, ""));
-        const awbIdx = headerRow.findIndex(h => /waybill|awb|awbnumber/.test(h));
-        const statusIdx = headerRow.findIndex(h => /status|currentstatus/.test(h));
-
-        if (awbIdx === -1) throw new Error("Could not find Waybill column in OTP report.");
-
-        const tempOtpData: OTPRow[] = [];
-        let matchedCount = 0;
-        
-        for (let i = 1; i < rawRows.length; i++) {
-          const row = rawRows[i];
-          const awb = normalizeAWB(row[awbIdx]);
-          if (!awb || awb.length < 8) continue;
-          
-          const sessionRow = sessionMap.get(awb);
-          if (!sessionRow) continue;
-          matchedCount++;
-
-          const otpStatusRaw = statusIdx !== -1 ? String(row[statusIdx]).toLowerCase().trim() : "";
-          let otpStatus = 'Unknown';
-          if (otpStatusRaw.includes('dispatched') || otpStatusRaw.includes('dispatch')) otpStatus = 'Dispatched';
-          else if (otpStatusRaw.includes('rto')) otpStatus = 'RTO';
-          else if (otpStatusRaw.includes('dto')) otpStatus = 'DTO';
-          else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
-
-          const csvStatus = sessionRow.status;
-          const isRTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'RTO';
-          const isDTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'DTO';
-          const isPendingNotClosed = otpStatus === 'Dispatched' && csvStatus === 'Pending';
-
-          tempOtpData.push({
-            id: crypto.randomUUID(),
-            awb, 
-            client: sessionRow.client, 
-            otpStatus, 
-            sessionStatus: csvStatus, 
-            returnAddress: sessionRow.returnAddress || "",
-            isNotClosed: isRTONotClosed || isDTONotClosed || isPendingNotClosed,
-            notClosedType: isRTONotClosed ? 'RTO' : isDTONotClosed ? 'DTO' : isPendingNotClosed ? 'Pending' : null
-          });
-        }
-
-        if (matchedCount === 0) {
-          showToast("Wrong file — no AWBs match current session.", "err");
-          return;
-        }
-        setOtpData(tempOtpData);
-        showToast(`Imported ${tempOtpData.length} Matched Records!`, "ok");
-      } catch (err: any) { showToast(err.message || "Failed To Process OTP Report", "err"); } finally { setIsProcessing(false); }
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = "";
-  };
-
-  const getOtpBaseFilteredRows = useCallback((status: string) => {
-    let rows = otpData;
-    if (status !== 'All') {
-      if (status === 'Dispatched') {
-        rows = rows.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO'));
-      } else if (status === 'RTO') {
-        rows = rows.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO');
-      } else if (status === 'DTO') {
-        rows = rows.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO');
-      } else if (status === 'Pending') {
-        rows = rows.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending');
-      }
-    }
-    return rows;
-  }, [otpData]);
-
-  const otpFilteredRows = useMemo(() => {
-    let rows = getOtpBaseFilteredRows(otpStatusFilter);
-    if (otpClientFilter !== 'All Clients') {
-      rows = rows.filter(r => r.client === otpClientFilter);
-    }
-    return rows;
-  }, [getOtpBaseFilteredRows, otpStatusFilter, otpClientFilter]);
-
-  const otpStats = useMemo(() => ({
-    total: otpData.length,
-    dispatched: otpData.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')).length,
-    rto: otpData.filter(r => r.otpStatus === 'RTO' || r.notClosedType === 'RTO').length,
-    dto: otpData.filter(r => r.otpStatus === 'DTO' || r.notClosedType === 'DTO').length,
-    pending: otpData.filter(r => r.otpStatus === 'Pending' || r.notClosedType === 'Pending').length,
-  }), [otpData]);
-
-  const downloadOTPExcel = () => {
-    if (!otpFilteredRows.length) return;
-    const header = ['AWB Number', 'Client Name', 'OTP Status', 'Session Status', 'Return Address'];
-    const excelData = otpFilteredRows.map(r => [
-      { v: String(r.awb), t: 's' },
-      r.client,
-      r.otpStatus,
-      r.sessionStatus,
-      r.returnAddress
-    ]);
-    const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "OTP_Report");
-    XLSX.writeFile(wb, `OTP_Verification_${currentSession?.dspId || 'Export'}.xlsx`);
   };
 
   const handleSessionClick = (s: Session) => {
@@ -715,7 +580,7 @@ function PODToolContent() {
                 <div className="space-y-3">
                   <FileSpreadsheet className={cn("w-6 h-6 mx-auto", isProcessing ? "text-blue-600 animate-spin" : "text-slate-400")} />
                   <p className="text-sm font-black text-slate-600 tracking-tight">
-                    {isProcessing ? "Processing File..." : (!setupData.feName || !setupData.dspId) ? "Enter DSP ID And FE Name To Upload" : "Import Daily EOD Report"}
+                    {isProcessing ? (uploadProgress ? `Processing... ${uploadProgress.current} of ${uploadProgress.total}` : "Reading File...") : (!setupData.feName || !setupData.dspId) ? "Enter DSP ID And FE Name To Upload" : "Import Daily EOD Report"}
                   </p>
                 </div>
               </div>
@@ -726,33 +591,27 @@ function PODToolContent() {
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-black text-slate-700 tracking-tight">Recent Sessions</h3>
                   <button 
-                    onClick={() => { setSessions([]); localStorage.removeItem('pod_sessions'); setSelectedSessionId(null); setUndoStack([]); }} 
+                    onClick={() => { setSessions([]); setSelectedSessionId(null); setUndoStack([]); }} 
                     className="text-[11px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-widest"
                   >
                     CLEAR ALL SESSIONS
                   </button>
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
-                  {sessions.map(s => {
-                    const sStats = s.stats || {
-                      total: s.data.length,
-                      pending: s.data.filter(r => r.status === 'Pending').length,
-                      rto: s.data.filter(r => r.status === 'RTO').length,
-                      dto: s.data.filter(r => r.status === 'DTO').length,
-                      dispatched: s.data.filter(r => r.status === 'Dispatched').length,
-                    };
-                    return (
-                      <div key={s.id} onClick={() => handleSessionClick(s)} className={cn("relative p-4 border-[1.5px] rounded-2xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white", selectedSessionId === s.id ? "border-blue-500 ring-2 ring-blue-500/10" : "hover:border-blue-300 border-slate-100")}>
-                        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
-                        <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="absolute right-3 top-3 text-slate-300 hover:text-rose-500 transition-colors p-1">
-                          <X className="w-4 h-4" />
-                        </button>
-                        <p className="text-[15px] font-bold text-slate-900 mb-0.5 tracking-tight">{s.feName}</p>
-                        <p className="text-[11px] text-slate-400 font-bold mb-3 uppercase tracking-wider">{s.dspId} — {s.date} — {s.time || ""}</p>
-                        {renderSessionBadges(sStats)}
+                  {sessions.map(s => (
+                    <div key={s.id} onClick={() => handleSessionClick(s)} className={cn("relative p-4 border-[1.5px] rounded-2xl cursor-pointer transition-all shadow-sm overflow-hidden bg-white", selectedSessionId === s.id ? "border-blue-500 ring-2 ring-blue-500/10" : "hover:border-blue-300 border-slate-100")}>
+                      <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
+                      <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="absolute right-3 top-3 text-slate-300 hover:text-rose-500 transition-colors p-1">
+                        <X className="w-4 h-4" />
+                      </button>
+                      <p className="text-[15px] font-bold text-slate-900 mb-0.5 tracking-tight">{s.feName}</p>
+                      <p className="text-[11px] text-slate-400 font-bold mb-3 uppercase tracking-wider">{s.dspId} — {s.date} — {s.time || ""}</p>
+                      <div className="flex flex-wrap gap-[5px]">
+                        <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100 uppercase">{s.stats?.total} PKT</span>
+                        {s.stats?.pending && s.stats.pending > 0 && <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-[4px] border border-amber-100 uppercase">{s.stats.pending} PENDING</span>}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -1051,7 +910,6 @@ function PODToolContent() {
                       <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase">{currentSession.dspId} — {currentSession.date} — {currentSession.time || ""}</p>
                     </div>
                   </div>
-                  {renderSessionBadges(stats)}
                 </>
               ) : (
                 <div className="py-2 text-slate-400 font-bold text-sm">Select a session to start OTP check</div>
@@ -1063,10 +921,68 @@ function PODToolContent() {
                 <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-blue-600 shadow-sm mx-auto border"><Download className="w-8 h-8" /></div>
                 <div>
                   <h2 className="text-xl font-black text-slate-900">Upload Delhivery OTP Report</h2>
-                  <p className="text-[12px] font-bold text-slate-400 uppercase tracking-widest">Upload The Default Delhivery Export File For This FE Session.</p>
                 </div>
                 <div className="relative cursor-pointer group">
-                  <input type="file" onChange={handleOTPFileUpload} disabled={!selectedSessionId || isProcessing} className="absolute inset-0 opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
+                  <input type="file" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file || !currentSession) return;
+                    setIsProcessing(true);
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                      try {
+                        const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+                        const wb = XLSX.read(data, { type: 'array', raw: true });
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const rawRows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+                        
+                        const sessionMap = new Map<string, PODRow>();
+                        currentSession.data.forEach(r => sessionMap.set(normalizeAWB(r.awb), r));
+                        
+                        const headerRow = rawRows[0].map(h => String(h).toLowerCase().replace(/[\s_-]/g, ""));
+                        const awbIdx = headerRow.findIndex(h => /waybill|awb|awbnumber/.test(h));
+                        const statusIdx = headerRow.findIndex(h => /status|currentstatus/.test(h));
+
+                        if (awbIdx === -1) throw new Error("Could not find Waybill column in OTP report.");
+
+                        const tempOtpData: OTPRow[] = [];
+                        for (let i = 1; i < rawRows.length; i++) {
+                          const row = rawRows[i];
+                          const awb = normalizeAWB(row[awbIdx]);
+                          if (!awb || awb.length < 8) continue;
+                          
+                          const sessionRow = sessionMap.get(awb);
+                          if (!sessionRow) continue;
+
+                          const otpStatusRaw = statusIdx !== -1 ? String(row[statusIdx]).toLowerCase().trim() : "";
+                          let otpStatus = 'Unknown';
+                          if (otpStatusRaw.includes('dispatched') || otpStatusRaw.includes('dispatch')) otpStatus = 'Dispatched';
+                          else if (otpStatusRaw.includes('rto')) otpStatus = 'RTO';
+                          else if (otpStatusRaw.includes('dto')) otpStatus = 'DTO';
+                          else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
+
+                          const csvStatus = sessionRow.status;
+                          const isRTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'RTO';
+                          const isDTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'DTO';
+                          const isPendingNotClosed = otpStatus === 'Dispatched' && csvStatus === 'Pending';
+
+                          tempOtpData.push({
+                            id: crypto.randomUUID(),
+                            awb, 
+                            client: sessionRow.client, 
+                            otpStatus, 
+                            sessionStatus: csvStatus, 
+                            returnAddress: sessionRow.returnAddress || "",
+                            isNotClosed: isRTONotClosed || isDTONotClosed || isPendingNotClosed,
+                            notClosedType: isRTONotClosed ? 'RTO' : isDTONotClosed ? 'DTO' : isPendingNotClosed ? 'Pending' : null
+                          });
+                        }
+                        setOtpData(tempOtpData);
+                        showToast(`Imported ${tempOtpData.length} Matched Records!`, "ok");
+                      } catch (err: any) { showToast(err.message || "Failed To Process OTP Report", "err"); } finally { setIsProcessing(false); }
+                    };
+                    reader.readAsArrayBuffer(file);
+                    e.target.value = "";
+                  }} disabled={!selectedSessionId || isProcessing} className="absolute inset-0 opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
                   <div className={cn("h-14 bg-white border-2 border-slate-200 rounded-2xl flex items-center justify-center font-black transition-all uppercase tracking-widest", (!selectedSessionId || isProcessing) ? "opacity-50 text-slate-300" : "text-slate-600 group-hover:border-blue-500")}>
                     {isProcessing ? "Processing..." : !selectedSessionId ? "Select Session First" : "Select File"}
                   </div>
@@ -1075,94 +991,34 @@ function PODToolContent() {
             </div>
 
             {otpData.length > 0 && (
-              <div className="space-y-6">
-                <div className="bg-white rounded-xl border shadow-sm flex divide-x overflow-hidden">
-                  {[
-                    {id: 'All', label: 'All', val: otpStats.total, color: 'text-slate-900', bgColor: 'bg-[#EFF6FF]', borderColor: 'bg-blue-500'},
-                    {id: 'Dispatched', label: 'Dispatched', val: otpStats.dispatched, color: 'text-rose-600', bgColor: 'bg-[#FFF5F5]', borderColor: 'bg-rose-500'},
-                    {id: 'Pending', label: 'Pending', val: otpStats.pending, color: 'text-amber-600', bgColor: 'bg-[#FFFBEB]', borderColor: 'bg-amber-500'},
-                    {id: 'RTO', label: 'RTO', val: otpStats.rto, color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500'},
-                    {id: 'DTO', label: 'DTO', val: otpStats.dto, color: 'text-emerald-600', bgColor: 'bg-[#F0FDF4]', borderColor: 'bg-emerald-500'}
-                  ].map(t => (
-                    <button key={`otp-tab-${t.id}`} onClick={() => {
-                      setOtpStatusFilter(t.id);
-                      setOtpClientFilter("All Clients");
-                    }} className={cn("flex-1 py-6 flex flex-col items-center group h-[110px] transition-all relative", otpStatusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
-                      <span className={cn("text-[36px] font-black leading-none mb-1", t.color)}>{t.val}</span>
-                      <span className={cn("text-[13px] font-black tracking-widest uppercase", otpStatusFilter === t.id ? t.color : "text-slate-400")}>{t.label}</span>
-                      {otpStatusFilter === t.id && <div className={cn("absolute bottom-0 w-full h-[4px]", t.borderColor)} />}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex items-center gap-4 mb-2">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Client Filter</label>
-                    <select
-                      value={otpClientFilter}
-                      onChange={(e) => setOtpClientFilter(e.target.value)}
-                      className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[200px] shadow-sm"
-                    >
-                      <option value="All Clients">All Clients</option>
-                      {Array.from(new Set(getOtpBaseFilteredRows(otpStatusFilter).map(r => r.client))).sort().map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex-1" />
-                  <button onClick={downloadOTPExcel} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black flex items-center gap-2 uppercase">
-                    <Download className="w-4 h-4" /> Download OTP Report
-                  </button>
-                </div>
-
-                <div className="bg-white rounded-2xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-center border-collapse table-fixed">
-                      <thead className="bg-[#0f172a] text-white h-11">
-                        <tr key="otp-main-header">
-                          <th style={{width: '32px'}} className="px-2"><input type="checkbox" /></th>
-                          <th style={{width: '150px'}} className="text-[11px] font-bold tracking-widest uppercase">Waybill</th>
-                          <th style={{width: '200px'}} className="text-[11px] font-bold tracking-widest uppercase">Client Name</th>
-                          <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">OTP Status</th>
-                          <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">Session Status</th>
-                          <th style={{width: '350px'}} className="text-[11px] font-bold tracking-widest text-left px-4 uppercase">Return Address</th>
+              <div className="bg-white rounded-2xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-center border-collapse table-fixed">
+                    <thead className="bg-[#0f172a] text-white h-11">
+                      <tr key="otp-main-header">
+                        <th style={{width: '150px'}} className="text-[11px] font-bold tracking-widest uppercase">Waybill</th>
+                        <th style={{width: '200px'}} className="text-[11px] font-bold tracking-widest uppercase">Client Name</th>
+                        <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">OTP Status</th>
+                        <th style={{width: '180px'}} className="text-[11px] font-bold tracking-widest uppercase">Session Status</th>
+                        <th style={{width: '350px'}} className="text-[11px] font-bold tracking-widest text-left px-4 uppercase">Return Address</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {otpData.map((row: any) => (
+                        <tr key={`otp-row-${row.id}`} className={cn("border-b", row.isNotClosed ? "bg-amber-50/30 border-l-[3px] border-l-amber-500" : "bg-white")}>
+                          <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
+                          <td className="px-4 py-2 text-[13px] font-black tracking-tight">{row.client}</td>
+                          <td className="px-4 py-2">
+                            <span className={cn("px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm uppercase", row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : "bg-emerald-600 text-white border-emerald-500")}>{row.otpStatus}</span>
+                          </td>
+                          <td className="px-4 py-2">
+                            <span className={cn("px-2 py-0.5 rounded text-[10px] font-black border uppercase", row.sessionStatus === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" : row.sessionStatus === 'RTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-700 border-slate-200")}>{row.sessionStatus}</span>
+                          </td>
+                          <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[350px] font-medium leading-relaxed">{row.returnAddress}</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {Object.entries(otpFilteredRows.reduce((acc: any, row) => {
-                          if (!acc[row.client]) acc[row.client] = [];
-                          acc[row.client].push(row);
-                          return acc;
-                        }, {})).sort((a: any, b: any) => b[1].length - a[1].length).map(([client, rows]: any) => (
-                          <React.Fragment key={`otp-frag-${client}`}>
-                            <tr className="bg-slate-800 text-white h-9">
-                              <td colSpan={6} className="text-left px-4">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
-                                  <button onClick={() => handleCopyAWBOnly(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 font-bold uppercase">Copy AWBs</button>
-                                </div>
-                              </td>
-                            </tr>
-                            {rows.map((row: any) => (
-                              <tr key={`otp-row-${row.id}`} className={cn("border-b", row.isNotClosed ? "bg-amber-50/30 border-l-[3px] border-l-amber-500" : "bg-white")}>
-                                <td className="px-2 py-2"><input type="checkbox" /></td>
-                                <td className="px-4 py-2 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
-                                <td className="px-4 py-2 text-[13px] font-black tracking-tight">{row.client}</td>
-                                <td className="px-4 py-2">
-                                  <div className="flex flex-col items-center gap-1.5 py-1">
-                                    <span className={cn("px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm uppercase", row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : "bg-emerald-600 text-white border-emerald-500")}>{row.otpStatus}</span>
-                                    {row.isNotClosed && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black border border-amber-300 whitespace-normal leading-tight text-center uppercase">Not closed on device</span>}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-2">
-                                  <span className={cn("px-2 py-0.5 rounded text-[10px] font-black border uppercase", row.sessionStatus === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" : row.sessionStatus === 'RTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-700 border-slate-200")}>{row.sessionStatus}</span>
-                                </td>
-                                <td className="px-4 py-2 text-[12px] whitespace-normal break-words text-left min-w-[350px] font-medium leading-relaxed">{row.returnAddress}</td>
-                              </tr>
-                            ))}
-                          </React.Fragment>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}

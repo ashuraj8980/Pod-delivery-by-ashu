@@ -13,7 +13,9 @@ import {
   Search,
   X,
   Download,
-  Copy
+  Copy,
+  Upload,
+  FileDown
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -24,10 +26,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { getData, saveData, deleteData } from "@/lib/storage";
 
 /**
  * @fileOverview Professional Historical Dashboard
- * Optimized for large-scale storage handling and batch saving.
+ * Updated to use IndexedDB for large storage.
  */
 
 interface PODRow {
@@ -83,6 +86,26 @@ export default function Dashboard() {
   const [modalSearch, setModalSearch] = useState("");
   const [modalStatusFilter, setModalStatusFilter] = useState("All");
 
+  const loadData = useCallback(async () => {
+    try {
+      const saved = await getData('pod_monthly_records');
+      if (saved && typeof saved === 'object') {
+        setMonthlyRecords(saved);
+        const months = Object.keys(saved).sort().reverse();
+        if (months.length > 0 && !selectedMonth) {
+          setSelectedMonth(months[0]);
+        }
+      }
+
+      const pending = await getData('pod_sessions');
+      if (Array.isArray(pending)) {
+        setPendingSessionsCount(pending.length);
+      } else {
+        setPendingSessionsCount(0);
+      }
+    } catch (e) {}
+  }, [selectedMonth]);
+
   useEffect(() => {
     setHasMounted(true);
     setCurrentTime(new Date());
@@ -92,31 +115,7 @@ export default function Dashboard() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
-
-  const loadData = () => {
-    try {
-      const saved = localStorage.getItem('pod_monthly_records');
-      if (saved && saved.trim() !== "") {
-        const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === 'object') {
-          setMonthlyRecords(parsed);
-          const months = Object.keys(parsed).sort().reverse();
-          if (months.length > 0 && !selectedMonth) {
-            setSelectedMonth(months[0]);
-          }
-        }
-      }
-
-      const pending = localStorage.getItem('pod_sessions');
-      if (pending && pending.trim() !== "") {
-        const parsedPending = JSON.parse(pending);
-        setPendingSessionsCount(Array.isArray(parsedPending) ? parsedPending.length : 0);
-      } else {
-        setPendingSessionsCount(0);
-      }
-    } catch (e) {}
-  };
+  }, [loadData]);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err' = 'ok') => {
     if (typeof document === 'undefined') return;
@@ -132,22 +131,14 @@ export default function Dashboard() {
     }, 3000);
   }, []);
 
-  const handleSaveAllSessions = () => {
+  const handleSaveAllSessions = async () => {
     try {
-      const saved = localStorage.getItem('pod_sessions');
-      if (!saved || saved.trim() === "") {
-        showToast("No pending sessions to save", "err");
-        return;
-      }
-      
-      const sessions = JSON.parse(saved);
+      const sessions = await getData('pod_sessions');
       if (!Array.isArray(sessions) || sessions.length === 0) {
         showToast("No pending sessions to save", "err");
         return;
       }
 
-      // OPTIMIZATION: Deep clone can be memory intensive for huge archives. 
-      // We'll update the records object carefully.
       const updatedMonthly = { ...monthlyRecords };
       const now = new Date();
       const fallbackTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -172,7 +163,6 @@ export default function Dashboard() {
         if (!updatedMonthly[yearMonth]) updatedMonthly[yearMonth] = {};
         if (!updatedMonthly[yearMonth][fullDateKey]) updatedMonthly[yearMonth][fullDateKey] = [];
 
-        // Prune data to save space in localStorage (avoiding redundant feName/dspId per row)
         const prunedData = session.data.map((r: any) => ({
           id: r.id,
           awb: r.awb,
@@ -198,27 +188,72 @@ export default function Dashboard() {
         updatedMonthly[yearMonth][fullDateKey] = [newRecord, ...filtered];
       });
 
-      // Attempt to save to localStorage
-      try {
-        localStorage.setItem('pod_monthly_records', JSON.stringify(updatedMonthly));
-        localStorage.removeItem('pod_sessions');
-        
-        setMonthlyRecords(updatedMonthly);
-        setPendingSessionsCount(0);
-        showToast("All sessions saved to archive!");
-        
-        const months = Object.keys(updatedMonthly).sort().reverse();
-        if (months.length > 0 && !selectedMonth) setSelectedMonth(months[0]);
-      } catch (e: any) {
-        if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-          showToast("Storage Full! Please delete old months first.", "err");
-        } else {
-          throw e;
-        }
-      }
+      await saveData('pod_monthly_records', updatedMonthly);
+      await deleteData('pod_sessions');
+      
+      setMonthlyRecords(updatedMonthly);
+      setPendingSessionsCount(0);
+      showToast("All sessions saved to archive!");
+      
+      const months = Object.keys(updatedMonthly).sort().reverse();
+      if (months.length > 0 && !selectedMonth) setSelectedMonth(months[0]);
     } catch (error) {
       showToast("Error processing save operation.", "err");
     }
+  };
+
+  const handleExportAll = async () => {
+    try {
+      const sessions = await getData('pod_sessions') || [];
+      const monthlyRecords = await getData('pod_monthly_records') || {};
+      
+      const backup = {
+        version: 1,
+        exportDate: new Date().toISOString(),
+        sessions,
+        monthlyRecords
+      };
+      
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `POD_Backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast("Backup exported successfully!");
+    } catch (e) {
+      showToast("Export failed", "err");
+    }
+  };
+
+  const handleImportAll = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const confirmImport = confirm("This will replace all existing data. Continue?");
+    if (!confirmImport) { e.target.value = ""; return; }
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = JSON.parse(evt.target?.result as string);
+        if (data.version && data.sessions && data.monthlyRecords) {
+          await saveData('pod_sessions', data.sessions);
+          await saveData('pod_monthly_records', data.monthlyRecords);
+          showToast(`Imported ${data.sessions.length} sessions and monthly archive!`, "ok");
+          loadData();
+        } else {
+          throw new Error("Invalid backup format");
+        }
+      } catch (err) {
+        showToast("Import failed: Invalid file structure", "err");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
   };
 
   const handleCopyAWBs = async (rows: PODRow[]) => {
@@ -341,6 +376,18 @@ export default function Dashboard() {
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{formatTimeStr(currentTime)}</p>
             </div>
             
+            <div className="flex items-center gap-2 border-l border-white/10 pl-4">
+              <button onClick={handleExportAll} className="p-2 text-slate-400 hover:text-white transition-colors" title="Export All Data">
+                <FileDown className="w-5 h-5" />
+              </button>
+              <div className="relative">
+                <input type="file" accept=".json" onChange={handleImportAll} className="absolute inset-0 opacity-0 cursor-pointer" title="Import Data" />
+                <button className="p-2 text-slate-400 hover:text-white transition-colors">
+                  <Upload className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
             {pendingSessionsCount > 0 && (
               <button 
                 onClick={handleSaveAllSessions}
