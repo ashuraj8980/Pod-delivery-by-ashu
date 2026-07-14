@@ -910,7 +910,14 @@ function PODToolContent() {
                     <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg"><User className="w-6 h-6" /></div>
                     <div>
                       <p className="text-lg font-black text-slate-900 leading-tight">{currentSession.feName}</p>
-                      <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase">{currentSession.dspId} — {currentSession.date} — {currentSession.time || ""}</p>
+                      <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-1">{currentSession.dspId} — {currentSession.date} — {currentSession.time || ""}</p>
+                      <div className="flex flex-wrap gap-[5px]">
+                        <span className="text-[10px] font-bold bg-slate-50 text-slate-600 px-2 py-0.5 rounded-[4px] border border-slate-100 uppercase">{currentSession.stats?.total || 0} PKT</span>
+                        {currentSession.stats?.pending !== undefined && currentSession.stats.pending > 0 && <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-[4px] border border-amber-100 uppercase">{currentSession.stats.pending} PENDING</span>}
+                        {currentSession.stats?.dispatched !== undefined && currentSession.stats.dispatched > 0 && <span className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-[4px] border border-rose-100 uppercase">{currentSession.stats.dispatched} DISPATCHED</span>}
+                        {currentSession.stats?.rto !== undefined && currentSession.stats.rto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{currentSession.stats.rto} RTO</span>}
+                        {currentSession.stats?.dto !== undefined && currentSession.stats.dto > 0 && <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] border border-emerald-100 uppercase">{currentSession.stats.dto} DTO</span>}
+                      </div>
                     </div>
                   </div>
                 </>
