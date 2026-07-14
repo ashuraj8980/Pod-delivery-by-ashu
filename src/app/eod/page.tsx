@@ -136,7 +136,6 @@ function PODToolContent() {
   
   const [selectedRemarkChips, setSelectedRemarkChips] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string>("All Clients");
-  const [otpClientFilter, setOtpClientFilter] = useState<string>("All Clients");
   
   const [showAllPending, setShowAllPending] = useState(false);
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
@@ -150,7 +149,6 @@ function PODToolContent() {
   const [replacerMeta, setReplacerMeta] = useState<{headers: string[], remarkKey: string} | null>(null);
 
   const [otpData, setOtpData] = useState<OTPRow[]>([]);
-  const [otpStatusFilter, setOtpStatusFilter] = useState<string>("All");
 
   const sessionsRef = useRef(sessions);
   useEffect(() => {
@@ -192,7 +190,7 @@ function PODToolContent() {
       dispatched: currentSession.data.filter(r => r.status === 'Dispatched').length,
       rto: currentSession.data.filter(r => r.status === 'RTO').length,
       dto: currentSession.data.filter(r => r.status === 'DTO').length,
-      highValue: currentSession.data.filter(r => r.amount >= 4000).length,
+      highValue: currentSession.data.filter(r => (r.amount ?? 0) >= 4000).length,
     };
   }, [currentSession]);
 
@@ -360,7 +358,7 @@ function PODToolContent() {
             dispatched: newData.filter(r => r.status === 'Dispatched').length,
             rto: newData.filter(r => r.status === 'RTO').length,
             dto: newData.filter(r => r.status === 'DTO').length,
-            highValue: newData.filter(r => r.amount >= 4000).length,
+            highValue: newData.filter(r => (r.amount ?? 0) >= 4000).length,
           }
         };
       }
@@ -387,7 +385,7 @@ function PODToolContent() {
             dispatched: previousData.filter(r => r.status === 'Dispatched').length,
             rto: previousData.filter(r => r.status === 'RTO').length,
             dto: previousData.filter(r => r.status === 'DTO').length,
-            highValue: previousData.filter(r => r.amount >= 4000).length,
+            highValue: previousData.filter(r => (r.amount ?? 0) >= 4000).length,
           }
         };
       }
@@ -415,7 +413,7 @@ function PODToolContent() {
             dispatched: newData.filter(r => r.status === 'Dispatched').length,
             rto: newData.filter(r => r.status === 'RTO').length,
             dto: newData.filter(r => r.status === 'DTO').length,
-            highValue: newData.filter(r => r.amount >= 4000).length,
+            highValue: newData.filter(r => (r.amount ?? 0) >= 4000).length,
           }
         };
       }
@@ -429,7 +427,7 @@ function PODToolContent() {
     if (!currentSession) return [];
     let rows = currentSession.data;
     if (statusFilter === 'HighValue') {
-      rows = rows.filter(r => r.amount >= 4000);
+      rows = rows.filter(r => (r.amount ?? 0) >= 4000);
     } else if (statusFilter !== 'All') {
       rows = rows.filter(r => r.status === statusFilter);
     }
@@ -440,7 +438,7 @@ function PODToolContent() {
     if (!currentSession) return [];
     let rows = currentSession.data;
     if (statusFilter === 'HighValue') {
-      rows = rows.filter(r => r.amount >= 4000);
+      rows = rows.filter(r => (r.amount ?? 0) >= 4000);
     } else if (statusFilter !== 'All') {
       rows = rows.filter(r => r.status === statusFilter);
     }
@@ -486,7 +484,7 @@ function PODToolContent() {
       'Client': r.client,
       'Order ID': r.orderId,
       'Remark': r.remark,
-      'Amount': r.amount,
+      'Amount': r.amount ?? 0,
       'FE Name': currentSession?.feName
     }));
     
@@ -516,7 +514,7 @@ function PODToolContent() {
       r.client, 
       String(r.orderId), 
       r.remark, 
-      r.amount,
+      r.amount ?? 0,
       currentSession?.feName
     ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
@@ -808,9 +806,9 @@ function PODToolContent() {
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-3">
                                     <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
-                                    {rows.some((r: any) => r.amount >= 4000) && (
+                                    {rows.some((r: any) => (r.amount ?? 0) >= 4000) && (
                                       <span className="text-[9px] bg-rose-600 text-white px-2 py-0.5 rounded font-black uppercase flex items-center gap-1">
-                                        <AlertCircle className="w-3 h-3" /> {rows.filter((r: any) => r.amount >= 4000).length} High Value
+                                        <AlertCircle className="w-3 h-3" /> {rows.filter((r: any) => (r.amount ?? 0) >= 4000).length} High Value
                                       </span>
                                     )}
                                   </div>
@@ -819,7 +817,7 @@ function PODToolContent() {
                               </td>
                             </tr>
                             {rows.map((row: any) => (
-                              <tr key={`row-${row.id}`} className={cn("border-b hover:bg-blue-50/40", selectedRowIds.has(row.id) && "bg-blue-50/50", row.amount >= 4000 && "bg-rose-50/30")}>
+                              <tr key={`row-${row.id}`} className={cn("border-b hover:bg-blue-50/40", selectedRowIds.has(row.id) && "bg-blue-50/50", (row.amount ?? 0) >= 4000 && "bg-rose-50/30")}>
                                 <td className="px-2 py-2">
                                   <input type="checkbox" checked={selectedRowIds.has(row.id)} onChange={() => {
                                     setSelectedRowIds(prev => {
@@ -841,9 +839,9 @@ function PODToolContent() {
                                 <td className="px-2 py-2 text-[13px] font-bold font-mono text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
                                 <td className="px-2 py-2 text-[13px] font-semibold text-slate-800">{row.client}</td>
                                 <td className="px-2 py-2 text-[13px] font-medium text-slate-500 whitespace-normal break-words">{row.orderId}</td>
-                                <td className={cn("px-2 py-2 text-[13px] font-black", row.amount >= 4000 ? "text-rose-600" : "text-slate-700")}>
+                                <td className={cn("px-2 py-2 text-[13px] font-black", (row.amount ?? 0) >= 4000 ? "text-rose-600" : "text-slate-700")}>
                                   <span className="flex items-center justify-center gap-0.5">
-                                    <IndianRupee className="w-3 h-3" /> {row.amount.toLocaleString()}
+                                    <IndianRupee className="w-3 h-3" /> {(row.amount ?? 0).toLocaleString()}
                                   </span>
                                 </td>
                                 <td className="px-2 py-2">
