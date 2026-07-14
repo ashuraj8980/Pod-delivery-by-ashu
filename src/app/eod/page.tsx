@@ -26,7 +26,7 @@ import { getData, saveData } from "@/lib/storage";
 
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
- * Optimized for heavy Excel files with High Value (4000+) shipment tracking.
+ * Optimized for heavy Excel files with High Value (4000+) Pending shipment tracking.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -194,7 +194,7 @@ function PODToolContent() {
       dispatched: currentSession.data.filter(r => r.status === 'Dispatched').length,
       rto: currentSession.data.filter(r => r.status === 'RTO').length,
       dto: currentSession.data.filter(r => r.status === 'DTO').length,
-      highValue: currentSession.data.filter(r => (r.amount ?? 0) >= 4000).length,
+      highValue: currentSession.data.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length,
     };
   }, [currentSession]);
 
@@ -342,7 +342,7 @@ function PODToolContent() {
                 dispatched: parsedRows.filter(r => r.status === 'Dispatched').length,
                 rto: parsedRows.filter(r => r.status === 'RTO').length,
                 dto: parsedRows.filter(r => r.status === 'DTO').length,
-                highValue: parsedRows.filter(r => r.amount >= 4000).length,
+                highValue: parsedRows.filter(r => r.amount >= 4000 && r.status === 'Pending').length,
               };
 
               const newSessionId = crypto.randomUUID();
@@ -411,7 +411,7 @@ function PODToolContent() {
             dispatched: newData.filter(r => r.status === 'Dispatched').length,
             rto: newData.filter(r => r.status === 'RTO').length,
             dto: newData.filter(r => r.status === 'DTO').length,
-            highValue: newData.filter(r => (r.amount ?? 0) >= 4000).length,
+            highValue: newData.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length,
           }
         };
       }
@@ -438,7 +438,7 @@ function PODToolContent() {
             dispatched: previousData.filter(r => r.status === 'Dispatched').length,
             rto: previousData.filter(r => r.status === 'RTO').length,
             dto: previousData.filter(r => r.status === 'DTO').length,
-            highValue: previousData.filter(r => (r.amount ?? 0) >= 4000).length,
+            highValue: previousData.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length,
           }
         };
       }
@@ -466,7 +466,7 @@ function PODToolContent() {
             dispatched: newData.filter(r => r.status === 'Dispatched').length,
             rto: newData.filter(r => r.status === 'RTO').length,
             dto: newData.filter(r => r.status === 'DTO').length,
-            highValue: newData.filter(r => (r.amount ?? 0) >= 4000).length,
+            highValue: newData.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length,
           }
         };
       }
@@ -480,7 +480,7 @@ function PODToolContent() {
     if (!currentSession) return [];
     let rows = currentSession.data;
     if (statusFilter === 'HighValue') {
-      rows = rows.filter(r => (r.amount ?? 0) >= 4000);
+      rows = rows.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending');
     } else if (statusFilter !== 'All') {
       rows = rows.filter(r => r.status === statusFilter);
     }
@@ -491,7 +491,7 @@ function PODToolContent() {
     if (!currentSession) return [];
     let rows = currentSession.data;
     if (statusFilter === 'HighValue') {
-      rows = rows.filter(r => (r.amount ?? 0) >= 4000);
+      rows = rows.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending');
     } else if (statusFilter !== 'All') {
       rows = rows.filter(r => r.status === statusFilter);
     }
@@ -859,9 +859,9 @@ function PODToolContent() {
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-3">
                                     <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
-                                    {rows.some((r: any) => (r.amount ?? 0) >= 4000) && (
+                                    {rows.some((r: any) => (r.amount ?? 0) >= 4000 && r.status === 'Pending') && (
                                       <span className="text-[9px] bg-rose-600 text-white px-2 py-0.5 rounded font-black uppercase flex items-center gap-1">
-                                        <AlertCircle className="w-3 h-3" /> {rows.filter((r: any) => (r.amount ?? 0) >= 4000).length} High Value
+                                        <AlertCircle className="w-3 h-3" /> {rows.filter((r: any) => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length} High Value Pending
                                       </span>
                                     )}
                                   </div>
