@@ -193,25 +193,26 @@ function PODToolContent() {
       dispatched: currentSession.data.filter(r => r.status === 'Dispatched').length,
       rto: currentSession.data.filter(r => r.status === 'RTO').length,
       dto: currentSession.data.filter(r => r.status === 'DTO').length,
-      highValue: currentSession.data.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length,
+      highValue: currentSession.data.filter(r => r.status === 'Pending' && (r.amount ?? 0) >= 4000).length,
     };
   }, [currentSession]);
 
   const otpStats = useMemo(() => {
-    // Logic: Tabs count follows Session EOD CSV status exactly as requested.
-    const dispatched = otpData.filter(r => r.sessionStatus === 'Dispatched').length;
-    const pending = otpData.filter(r => r.sessionStatus === 'Pending').length;
+    // Logic: Tabs count follows Session EOD CSV status exactly to match the EOD session card.
     const rto = otpData.filter(r => r.sessionStatus === 'RTO').length;
     const dto = otpData.filter(r => r.sessionStatus === 'DTO').length;
+    const pending = otpData.filter(r => r.sessionStatus === 'Pending').length;
+    // Dispatched in OTP but RTO/DTO in CSV (Not Closed)
+    const dispatched = otpData.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')).length;
 
     return { total: otpData.length, dispatched, pending, rto, dto };
   }, [otpData]);
 
   const filteredOtpRows = useMemo(() => {
     let rows = otpData;
-    // Tab filtering follows Session EOD CSV status exactly as requested.
     if (otpStatusFilter === 'Dispatched') {
-      rows = rows.filter(r => r.sessionStatus === 'Dispatched');
+      // Show shipments that are Dispatched in OTP but RTO/DTO in CSV
+      rows = rows.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO'));
     } else if (otpStatusFilter === 'Pending') {
       rows = rows.filter(r => r.sessionStatus === 'Pending');
     } else if (otpStatusFilter === 'RTO') {
@@ -325,7 +326,7 @@ function PODToolContent() {
                 dispatched: parsedRows.filter(r => r.status === 'Dispatched').length,
                 rto: parsedRows.filter(r => r.status === 'RTO').length,
                 dto: parsedRows.filter(r => r.status === 'DTO').length,
-                highValue: parsedRows.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length,
+                highValue: parsedRows.filter(r => r.status === 'Pending' && (r.amount ?? 0) >= 4000).length,
               };
 
               const newSessionId = crypto.randomUUID();
@@ -395,7 +396,7 @@ function PODToolContent() {
             dispatched: newData.filter(r => r.status === 'Dispatched').length,
             rto: newData.filter(r => r.status === 'RTO').length,
             dto: newData.filter(r => r.status === 'DTO').length,
-            highValue: newData.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length,
+            highValue: newData.filter(r => r.status === 'Pending' && (r.amount ?? 0) >= 4000).length,
           }
         };
       }
@@ -422,7 +423,7 @@ function PODToolContent() {
             dispatched: previousData.filter(r => r.status === 'Dispatched').length,
             rto: previousData.filter(r => r.status === 'RTO').length,
             dto: previousData.filter(r => r.status === 'DTO').length,
-            highValue: previousData.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length,
+            highValue: previousData.filter(r => r.status === 'Pending' && (r.amount ?? 0) >= 4000).length,
           }
         };
       }
@@ -450,7 +451,7 @@ function PODToolContent() {
             dispatched: newData.filter(r => r.status === 'Dispatched').length,
             rto: newData.filter(r => r.status === 'RTO').length,
             dto: newData.filter(r => r.status === 'DTO').length,
-            highValue: newData.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length,
+            highValue: newData.filter(r => r.status === 'Pending' && (r.amount ?? 0) >= 4000).length,
           }
         };
       }
@@ -464,7 +465,7 @@ function PODToolContent() {
     if (!currentSession) return [];
     let rows = currentSession.data;
     if (statusFilter === 'HighValue') {
-      rows = rows.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending');
+      rows = rows.filter(r => r.status === 'Pending' && (r.amount ?? 0) >= 4000);
     } else if (statusFilter !== 'All') {
       rows = rows.filter(r => r.status === statusFilter);
     }
@@ -475,7 +476,7 @@ function PODToolContent() {
     if (!currentSession) return [];
     let rows = currentSession.data;
     if (statusFilter === 'HighValue') {
-      rows = rows.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending');
+      rows = rows.filter(r => r.status === 'Pending' && (r.amount ?? 0) >= 4000);
     } else if (statusFilter !== 'All') {
       rows = rows.filter(r => r.status === statusFilter);
     }
@@ -845,9 +846,9 @@ function PODToolContent() {
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-3">
                                     <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
-                                    {rows.some((r: any) => (r.amount ?? 0) >= 4000 && r.status === 'Pending') && (
+                                    {rows.some((r: any) => r.status === 'Pending' && (r.amount ?? 0) >= 4000) && (
                                       <span className="text-[9px] bg-rose-600 text-white px-2 py-0.5 rounded font-black uppercase flex items-center gap-1">
-                                        <AlertCircle className="w-3 h-3" /> {rows.filter((r: any) => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length} High Value Pending
+                                        <AlertCircle className="w-3 h-3" /> {rows.filter((r: any) => r.status === 'Pending' && (r.amount ?? 0) >= 4000).length} High Value Pending
                                       </span>
                                     )}
                                   </div>
@@ -856,7 +857,7 @@ function PODToolContent() {
                               </td>
                             </tr>
                             {rows.map((row: any) => (
-                              <tr key={`row-${row.id}`} className={cn("border-b hover:bg-blue-50/40", selectedRowIds.has(row.id) && "bg-blue-50/50", (row.amount ?? 0) >= 4000 && "bg-rose-50/30")}>
+                              <tr key={`row-${row.id}`} className={cn("border-b hover:bg-blue-50/40", selectedRowIds.has(row.id) && "bg-blue-50/50", row.status === 'Pending' && (row.amount ?? 0) >= 4000 && "bg-rose-50/30")}>
                                 <td className="px-2 py-2">
                                   <input type="checkbox" checked={selectedRowIds.has(row.id)} onChange={() => {
                                     setSelectedRowIds(prev => {
@@ -878,7 +879,7 @@ function PODToolContent() {
                                 <td className="px-2 py-2 text-[13px] font-bold font-mono text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
                                 <td className="px-2 py-2 text-[13px] font-semibold text-slate-800">{row.client}</td>
                                 <td className="px-2 py-2 text-[13px] font-medium text-slate-500 whitespace-normal break-words">{row.orderId}</td>
-                                <td className={cn("px-2 py-2 text-[13px] font-black", (row.amount ?? 0) >= 4000 ? "text-rose-600" : "text-slate-700")}>
+                                <td className={cn("px-2 py-2 text-[13px] font-black", row.status === 'Pending' && (row.amount ?? 0) >= 4000 ? "text-rose-600" : "text-slate-700")}>
                                   <span className="flex items-center justify-center gap-0.5">
                                     <IndianRupee className="w-3 h-3" /> {(row.amount ?? 0).toLocaleString()}
                                   </span>
@@ -1037,6 +1038,7 @@ function PODToolContent() {
                           else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
 
                           const csvStatus = sessionRow.status;
+                          // Not closed detection logic: OTP is Dispatched, but CSV is RTO/DTO/Pending
                           const isNotClosed = otpStatus === 'Dispatched' && csvStatus !== 'Dispatched';
 
                           tempOtpData.push({
