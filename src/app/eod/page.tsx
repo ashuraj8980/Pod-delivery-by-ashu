@@ -17,7 +17,7 @@ import {
   IndianRupee,
   CheckCircle2
 } from "lucide-react";
-import Link from "link";
+import Link from "next/link";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 import { useSearchParams } from "next/navigation";
@@ -198,7 +198,7 @@ function PODToolContent() {
   }, [currentSession]);
 
   const otpStats = useMemo(() => {
-    // Counts now follow EOD Session Status to match the session card summary.
+    // Logic: Tabs count follows Session EOD CSV status exactly as requested.
     const dispatched = otpData.filter(r => r.sessionStatus === 'Dispatched').length;
     const pending = otpData.filter(r => r.sessionStatus === 'Pending').length;
     const rto = otpData.filter(r => r.sessionStatus === 'RTO').length;
@@ -209,7 +209,7 @@ function PODToolContent() {
 
   const filteredOtpRows = useMemo(() => {
     let rows = otpData;
-    // Tab filtering is now based on Session Status as per user request.
+    // Tab filtering follows Session EOD CSV status exactly as requested.
     if (otpStatusFilter === 'Dispatched') {
       rows = rows.filter(r => r.sessionStatus === 'Dispatched');
     } else if (otpStatusFilter === 'Pending') {
@@ -325,7 +325,7 @@ function PODToolContent() {
                 dispatched: parsedRows.filter(r => r.status === 'Dispatched').length,
                 rto: parsedRows.filter(r => r.status === 'RTO').length,
                 dto: parsedRows.filter(r => r.status === 'DTO').length,
-                highValue: parsedRows.filter(r => r.amount >= 4000 && r.status === 'Pending').length,
+                highValue: parsedRows.filter(r => (r.amount ?? 0) >= 4000 && r.status === 'Pending').length,
               };
 
               const newSessionId = crypto.randomUUID();
@@ -971,7 +971,6 @@ function PODToolContent() {
 
         {activeTab === "otp" && (
           <div className="space-y-6">
-            {/* SESSION INFO CARD */}
             <div className="bg-white border-[1.5px] border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between relative overflow-hidden">
               <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
               {currentSession ? (
@@ -995,7 +994,6 @@ function PODToolContent() {
               )}
             </div>
 
-            {/* UPLOAD ZONE */}
             <div className="bg-white rounded-2xl border-[1.5px] border-dashed border-slate-300 p-8 text-center space-y-4 bg-slate-50/50">
               <div className="max-w-xl mx-auto space-y-4">
                 <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-blue-600 shadow-sm mx-auto border"><Download className="w-7 h-7" /></div>
@@ -1039,9 +1037,7 @@ function PODToolContent() {
                           else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
 
                           const csvStatus = sessionRow.status;
-                          const isRTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'RTO';
-                          const isDTONotClosed = otpStatus === 'Dispatched' && csvStatus === 'DTO';
-                          const isPendingNotClosed = otpStatus === 'Dispatched' && csvStatus === 'Pending';
+                          const isNotClosed = otpStatus === 'Dispatched' && csvStatus !== 'Dispatched';
 
                           tempOtpData.push({
                             id: crypto.randomUUID(),
@@ -1050,8 +1046,8 @@ function PODToolContent() {
                             otpStatus, 
                             sessionStatus: csvStatus, 
                             returnAddress: sessionRow.returnAddress || "",
-                            isNotClosed: isRTONotClosed || isDTONotClosed || isPendingNotClosed,
-                            notClosedType: isRTONotClosed ? 'RTO' : isDTONotClosed ? 'DTO' : isPendingNotClosed ? 'Pending' : null
+                            isNotClosed,
+                            notClosedType: isNotClosed ? (csvStatus as any) : null
                           });
                         }
                         setOtpData(tempOtpData);
@@ -1070,7 +1066,6 @@ function PODToolContent() {
 
             {otpData.length > 0 && (
               <>
-                {/* STATUS TABS */}
                 <div className="bg-white rounded-xl border shadow-sm flex divide-x overflow-hidden mt-6">
                   {[
                     {id: 'All', label: 'All', color: 'text-slate-900', bgColor: 'bg-[#EFF6FF]', borderColor: 'bg-blue-500', val: otpStats.total},
@@ -1109,7 +1104,6 @@ function PODToolContent() {
                   </div>
                 </div>
 
-                {/* TABLE WITH GROUPING */}
                 <div className="bg-white rounded-2xl border-[1.5px] border-slate-200 shadow-2xl overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-center border-collapse table-fixed">
@@ -1146,13 +1140,12 @@ function PODToolContent() {
                               )}
                               {rows.map((row: any) => {
                                 const isFTPL = row.client.toUpperCase().includes('FTPL');
-                                const isNotClosed = row.otpStatus === 'Dispatched' && row.sessionStatus !== 'Dispatched';
+                                const isNotClosed = row.isNotClosed;
 
                                 return (
                                   <tr key={`otp-row-${row.id}`} className={cn(
                                     "border-b transition-colors", 
-                                    isNotClosed && (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO') ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
-                                    isNotClosed && row.sessionStatus === 'Pending' ? "bg-[#FFFDE7] border-l-[3px] border-l-amber-500" :
+                                    isNotClosed ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
                                     row.sessionStatus === 'Dispatched' && isFTPL ? "bg-[#FFF5F5] border-l-[2px] border-l-red-500" :
                                     row.sessionStatus === 'Dispatched' ? "bg-white border-l-[2px] border-l-red-500" :
                                     (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO') && isFTPL ? "bg-emerald-50/50 border-l-[2px] border-l-emerald-500" :
