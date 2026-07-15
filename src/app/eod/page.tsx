@@ -31,10 +31,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
- * Fixed: OTP Tab counts and placement logic to match EOD Session Card exactly.
- * Fixed: Mismatch shipments (OTP Dispatched vs CSV RTO/DTO) stay in RTO/DTO tabs with "Not Closed" alert.
- * Fixed: Excel paste formatting with mso-number-format and automatic borders.
- * Fixed: Copy Table excludes headers and amount.
+ * Fixed: OTP Tab counts match EOD Session Card exactly.
+ * Fixed: Placement logic where OTP status "Dispatched" but Session status "RTO/DTO/Pending" stays in respective tabs with "Not Closed" alert.
+ * Fixed: Copy Table excludes headers and amount, adds automatic borders in Excel.
+ * Fixed: Client filter multi-select with counts.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -207,13 +207,13 @@ function PODToolContent() {
   const otpStats = useMemo(() => {
     if (!currentSession) return { total: 0, dispatched: 0, pending: 0, rto: 0, dto: 0 };
     
-    // Core Counts MUST match EOD Session Card
+    // Exact counts from EOD Session Card
     const rto = currentSession.data.filter(r => r.status === 'RTO').length;
     const dto = currentSession.data.filter(r => r.status === 'DTO').length;
     const pending = currentSession.data.filter(r => r.status === 'Pending').length;
     const total = currentSession.data.length;
 
-    // Dispatched Tab = Action items where OTP says Dispatched but CSV says RTO or DTO
+    // Dispatched tab shows mismatched (OTP Dispatched but CSV RTO/DTO)
     const dispatched = otpData.filter(r => 
       r.otpStatus === 'Dispatched' && (r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')
     ).length;
@@ -224,16 +224,12 @@ function PODToolContent() {
   const filteredOtpRows = useMemo(() => {
     let rows = otpData;
     if (otpStatusFilter === 'Dispatched') {
-      // Dispatched Tab: OTP says Dispatched but CSV says RTO or DTO (Device Mismatch)
       rows = rows.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO'));
     } else if (otpStatusFilter === 'Pending') {
-      // Pending Tab: Everything CSV says Pending
       rows = rows.filter(r => r.sessionStatus === 'Pending');
     } else if (otpStatusFilter === 'RTO') {
-      // RTO Tab: Everything CSV says RTO
       rows = rows.filter(r => r.sessionStatus === 'RTO');
     } else if (otpStatusFilter === 'DTO') {
-      // DTO Tab: Everything CSV says DTO
       rows = rows.filter(r => r.sessionStatus === 'DTO');
     }
     
@@ -541,8 +537,7 @@ function PODToolContent() {
     
     const isOtpTab = activeTab === 'otp';
     
-    // Construct HTML Table for Excel with borders but WITHOUT Amount and WITHOUT headers as requested
-    // Added style="mso-number-format:'\@'" to numeric columns to prevent scientific notation in Excel
+    // Construct HTML Table for Excel with borders but WITHOUT Amount and WITHOUT headers
     let htmlTable = '<table border="1"><tbody>';
     
     if (isOtpTab) {
@@ -570,7 +565,7 @@ function PODToolContent() {
     }
     htmlTable += '</tbody></table>';
 
-    // Plain text version (kept for regular text editors)
+    // Plain text version
     let plainText = "";
     if (isOtpTab) {
       plainText = rowsToCopy.map(r => [
@@ -1261,74 +1256,55 @@ function PODToolContent() {
                           if (!acc[row.client]) acc[row.client] = [];
                           acc[row.client].push(row);
                           return acc;
-                        }, {})).map(([client, rows]: any) => {
-                          const isDispatchedTab = otpStatusFilter === 'Dispatched';
+                        }, {})).map(([client, rows]: any) => (
+                          <React.Fragment key={`otp-group-${client}`}>
+                            {rows.map((row: any) => {
+                              const isFTPL = row.client.toUpperCase().includes('FTPL');
+                              const isNotClosed = row.otpStatus === 'Dispatched' && (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO' || row.sessionStatus === 'Pending');
 
-                          return (
-                            <React.Fragment key={`otp-group-${client}`}>
-                              {isDispatchedTab && (
-                                <tr className="bg-slate-800 text-white h-9">
-                                  <td colSpan={5} className="text-left px-4">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-3">
-                                        <span className="text-[10px] font-black tracking-[0.1em] text-amber-400">{client} — {rows.length} Pkt</span>
-                                      </div>
-                                      <button onClick={() => handleCopyAWBOnly(rows)} className="text-[9px] border border-white/20 px-2 py-0.5 rounded hover:bg-white/10 font-bold uppercase">Copy AWBs</button>
+                              return (
+                                <tr key={`otp-row-${row.id}`} className={cn(
+                                  "border-b transition-colors", 
+                                  isNotClosed ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
+                                  row.otpStatus === 'Dispatched' && isFTPL ? "bg-[#FFF5F5] border-l-[2px] border-l-red-500" :
+                                  row.otpStatus === 'Dispatched' ? "bg-white border-l-[2px] border-l-red-500" :
+                                  "bg-white"
+                                )}>
+                                  <td className="px-4 py-3 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
+                                  <td className={cn("px-4 py-3 text-[13px] font-black tracking-tight", (row.otpStatus === 'Dispatched' && isFTPL) ? "text-rose-600" : "text-slate-800")}>{row.client}</td>
+                                  <td className="px-4 py-3">
+                                    <div className="flex flex-col items-center gap-1">
+                                      <span className={cn(
+                                        "px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm uppercase", 
+                                        row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : 
+                                        row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : 
+                                        "bg-emerald-600 text-white border-emerald-500"
+                                      )}>
+                                        {row.otpStatus}
+                                      </span>
+                                      {isNotClosed && (
+                                        <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase">
+                                          <AlertCircle className="w-3 h-3" /> {row.sessionStatus} — Not Closed on Device
+                                        </span>
+                                      )}
                                     </div>
                                   </td>
+                                  <td className="px-4 py-3">
+                                    <span className={cn(
+                                      "px-2 py-0.5 rounded text-[10px] font-black border uppercase", 
+                                      row.sessionStatus === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" : 
+                                      row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : 
+                                      "bg-slate-50 text-slate-700 border-slate-200"
+                                    )}>
+                                      {row.sessionStatus}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-[12px] whitespace-normal break-words text-left min-w-[350px] font-medium leading-relaxed">{row.returnAddress}</td>
                                 </tr>
-                              )}
-                              {rows.map((row: any) => {
-                                const isFTPL = row.client.toUpperCase().includes('FTPL');
-                                // Mismatch detection: OTP says Dispatched but Session says something else
-                                const isNotClosed = row.otpStatus === 'Dispatched' && (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO' || row.sessionStatus === 'Pending');
-
-                                return (
-                                  <tr key={`otp-row-${row.id}`} className={cn(
-                                    "border-b transition-colors", 
-                                    isNotClosed ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
-                                    row.otpStatus === 'Dispatched' && isFTPL ? "bg-[#FFF5F5] border-l-[2px] border-l-red-500" :
-                                    row.otpStatus === 'Dispatched' ? "bg-white border-l-[2px] border-l-red-500" :
-                                    (row.otpStatus === 'RTO' || row.otpStatus === 'DTO') && isFTPL ? "bg-emerald-50/50 border-l-[2px] border-l-emerald-500" :
-                                    (row.otpStatus === 'RTO' || row.otpStatus === 'DTO') ? "bg-white border-l-[2px] border-l-emerald-500" :
-                                    "bg-white"
-                                  )}>
-                                    <td className="px-4 py-3 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
-                                    <td className={cn("px-4 py-3 text-[13px] font-black tracking-tight", (row.otpStatus === 'Dispatched' && isFTPL) ? "text-rose-600" : "text-slate-800")}>{row.client}</td>
-                                    <td className="px-4 py-3">
-                                      <div className="flex flex-col items-center gap-1">
-                                        <span className={cn(
-                                          "px-2.5 py-0.5 rounded text-[10px] font-black border shadow-sm uppercase", 
-                                          row.otpStatus === 'Dispatched' ? "bg-rose-600 text-white border-rose-500" : 
-                                          row.otpStatus === 'Pending' ? "bg-amber-500 text-white border-amber-400" : 
-                                          "bg-emerald-600 text-white border-emerald-500"
-                                        )}>
-                                          {row.otpStatus}
-                                        </span>
-                                        {isNotClosed && (
-                                          <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase">
-                                            <AlertCircle className="w-3 h-3" /> {row.sessionStatus} — Not Closed on Device
-                                          </span>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      <span className={cn(
-                                        "px-2 py-0.5 rounded text-[10px] font-black border uppercase", 
-                                        row.sessionStatus === 'Pending' ? "bg-amber-50 text-amber-700 border-amber-200" : 
-                                        row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : 
-                                        "bg-slate-50 text-slate-700 border-slate-200"
-                                      )}>
-                                        {row.sessionStatus}
-                                      </span>
-                                    </td>
-                                    <td className="px-4 py-3 text-[12px] whitespace-normal break-words text-left min-w-[350px] font-medium leading-relaxed">{row.returnAddress}</td>
-                                  </tr>
-                                );
-                              })}
-                            </React.Fragment>
-                          );
-                        })}
+                              );
+                            })}
+                          </React.Fragment>
+                        ))}
                       </tbody>
                     </table>
                   </div>
