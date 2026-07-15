@@ -31,10 +31,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
- * Optimized for heavy Excel files with High Value (4000+) Pending shipment tracking.
- * Fixed: Scientific notation on Excel paste using mso-number-format.
- * Fixed: OTP Tab counts and placement logic to match CSV card exactly.
- * Fixed: Copy Table excludes headers and amount, and applies Excel borders.
+ * Fixed: OTP Tab counts and placement logic to match EOD Session Card exactly.
+ * Fixed: Mismatch shipments (OTP Dispatched vs CSV RTO/DTO) stay in RTO/DTO tabs with "Not Closed" alert.
+ * Fixed: Excel paste formatting with mso-number-format and automatic borders.
+ * Fixed: Copy Table excludes headers and amount.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -207,39 +207,33 @@ function PODToolContent() {
   const otpStats = useMemo(() => {
     if (!currentSession) return { total: 0, dispatched: 0, pending: 0, rto: 0, dto: 0 };
     
-    // RTO, DTO, PENDING counts MUST match the EOD session card exactly
+    // Core Counts MUST match EOD Session Card
     const rto = currentSession.data.filter(r => r.status === 'RTO').length;
     const dto = currentSession.data.filter(r => r.status === 'DTO').length;
     const pending = currentSession.data.filter(r => r.status === 'Pending').length;
+    const total = currentSession.data.length;
 
-    // Dispatched count = Shipments showing as Dispatched in OTP file, 
-    // that are either Dispatched, RTO, or DTO in the EOD session
+    // Dispatched Tab = Action items where OTP says Dispatched but CSV says RTO or DTO
     const dispatched = otpData.filter(r => 
-      r.otpStatus === 'Dispatched' && (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')
+      r.otpStatus === 'Dispatched' && (r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')
     ).length;
 
-    return { 
-      total: currentSession.data.length, 
-      dispatched, 
-      pending, 
-      rto, 
-      dto 
-    };
+    return { total, dispatched, pending, rto, dto };
   }, [currentSession, otpData]);
 
   const filteredOtpRows = useMemo(() => {
     let rows = otpData;
     if (otpStatusFilter === 'Dispatched') {
-      // Dispatched Tab: OTP is Dispatched AND (CSV is Dispatched OR RTO OR DTO)
-      rows = rows.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO'));
+      // Dispatched Tab: OTP says Dispatched but CSV says RTO or DTO (Device Mismatch)
+      rows = rows.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO'));
     } else if (otpStatusFilter === 'Pending') {
-      // Pending Tab: CSV says Pending
+      // Pending Tab: Everything CSV says Pending
       rows = rows.filter(r => r.sessionStatus === 'Pending');
     } else if (otpStatusFilter === 'RTO') {
-      // RTO Tab: CSV says RTO
+      // RTO Tab: Everything CSV says RTO
       rows = rows.filter(r => r.sessionStatus === 'RTO');
     } else if (otpStatusFilter === 'DTO') {
-      // DTO Tab: CSV says DTO
+      // DTO Tab: Everything CSV says DTO
       rows = rows.filter(r => r.sessionStatus === 'DTO');
     }
     
@@ -1160,40 +1154,42 @@ function PODToolContent() {
                         const ws = wb.Sheets[wb.SheetNames[0]];
                         const rawRows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
                         
-                        const sessionMap = new Map<string, PODRow>();
-                        currentSession.data.forEach(r => sessionMap.set(normalizeAWB(r.awb), r));
-                        
                         const headerRow = rawRows[0].map(h => String(h).toLowerCase().replace(/[\s_-]/g, ""));
                         const awbIdx = headerRow.findIndex(h => /waybill|awb|awbnumber/.test(h));
                         const statusIdx = headerRow.findIndex(h => /status|currentstatus/.test(h));
 
                         if (awbIdx === -1) throw new Error("Could not find Waybill column in OTP report.");
 
-                        const tempOtpData: OTPRow[] = [];
+                        const otpFileMap = new Map<string, any[]>();
                         for (let i = 1; i < rawRows.length; i++) {
-                          const row = rawRows[i];
-                          const awb = normalizeAWB(row[awbIdx]);
-                          if (!awb || awb.length < 8) continue;
-                          
-                          const sessionRow = sessionMap.get(awb);
-                          if (!sessionRow) continue;
+                          const awb = normalizeAWB(rawRows[i][awbIdx]);
+                          if (awb) otpFileMap.set(awb, rawRows[i]);
+                        }
 
-                          const otpStatusRaw = String(row[statusIdx]).toLowerCase().trim();
-                          let otpStatus = 'Unknown';
-                          if (otpStatusRaw.includes('dispatched') || otpStatusRaw.includes('dispatch')) otpStatus = 'Dispatched';
-                          else if (otpStatusRaw.includes('rto')) otpStatus = 'RTO';
-                          else if (otpStatusRaw.includes('dto')) otpStatus = 'DTO';
-                          else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
+                        const tempOtpData: OTPRow[] = [];
+                        currentSession.data.forEach(sessionRow => {
+                          const awb = normalizeAWB(sessionRow.awb);
+                          const otpRow = otpFileMap.get(awb);
+                          
+                          let otpStatus = 'Pending';
+                          if (otpRow) {
+                            const raw = String(otpRow[statusIdx]).toLowerCase().trim();
+                            if (raw.includes('dispatched') || raw.includes('dispatch')) otpStatus = 'Dispatched';
+                            else if (raw.includes('rto')) otpStatus = 'RTO';
+                            else if (raw.includes('dto')) otpStatus = 'DTO';
+                            else if (raw.includes('pending')) otpStatus = 'Pending';
+                          }
 
                           tempOtpData.push({
                             id: crypto.randomUUID(),
-                            awb, 
-                            client: sessionRow.client, 
-                            otpStatus, 
-                            sessionStatus: sessionRow.status, 
+                            awb,
+                            client: sessionRow.client,
+                            otpStatus: otpStatus,
+                            sessionStatus: sessionRow.status,
                             returnAddress: sessionRow.returnAddress || ""
                           });
-                        }
+                        });
+
                         setOtpData(tempOtpData);
                         showToast(`Imported ${tempOtpData.length} Matched Records!`, "ok");
                       } catch (err: any) { showToast(err.message || "Failed To Process OTP Report", "err"); } finally { setIsProcessing(false); }
@@ -1284,13 +1280,13 @@ function PODToolContent() {
                               )}
                               {rows.map((row: any) => {
                                 const isFTPL = row.client.toUpperCase().includes('FTPL');
+                                // Mismatch detection: OTP says Dispatched but Session says something else
                                 const isNotClosed = row.otpStatus === 'Dispatched' && (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO' || row.sessionStatus === 'Pending');
 
                                 return (
                                   <tr key={`otp-row-${row.id}`} className={cn(
                                     "border-b transition-colors", 
                                     isNotClosed ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
-                                    otpStatusFilter === 'Pending' && row.otpStatus === 'Dispatched' ? "bg-[#FFFDE7] border-l-[3px] border-l-amber-500" :
                                     row.otpStatus === 'Dispatched' && isFTPL ? "bg-[#FFF5F5] border-l-[2px] border-l-red-500" :
                                     row.otpStatus === 'Dispatched' ? "bg-white border-l-[2px] border-l-red-500" :
                                     (row.otpStatus === 'RTO' || row.otpStatus === 'DTO') && isFTPL ? "bg-emerald-50/50 border-l-[2px] border-l-emerald-500" :
