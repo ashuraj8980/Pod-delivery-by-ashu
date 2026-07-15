@@ -15,13 +15,21 @@ import {
   RotateCcw,
   Search,
   IndianRupee,
-  CheckCircle2
+  CheckCircle2,
+  ChevronDown,
+  Check
 } from "lucide-react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 import { useSearchParams } from "next/navigation";
 import { getData, saveData } from "@/lib/storage";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
@@ -136,7 +144,7 @@ function PODToolContent() {
   const [searchTerm, setSearchTerm] = useState("");
   
   const [selectedRemarkChips, setSelectedRemarkChips] = useState<string[]>([]);
-  const [clientFilter, setClientFilter] = useState<string>("All Clients");
+  const [selectedClientFilters, setSelectedClientFilters] = useState<string[]>([]);
   
   const [showAllPending, setShowAllPending] = useState(false);
   const [setupData, setSetupData] = useState({ feName: "", dspId: "", date: "" });
@@ -151,7 +159,7 @@ function PODToolContent() {
 
   const [otpData, setOtpData] = useState<OTPRow[]>([]);
   const [otpStatusFilter, setOtpStatusFilter] = useState<string>("All");
-  const [otpClientFilter, setOtpClientFilter] = useState<string>("All Clients");
+  const [otpSelectedClientFilters, setOtpSelectedClientFilters] = useState<string[]>([]);
 
   const sessionsRef = useRef(sessions);
   useEffect(() => {
@@ -198,21 +206,18 @@ function PODToolContent() {
   }, [currentSession]);
 
   const otpStats = useMemo(() => {
-    // Logic: Tabs count follows Session EOD CSV status exactly to match the EOD session card.
-    const rto = otpData.filter(r => r.sessionStatus === 'RTO').length;
-    const dto = otpData.filter(r => r.sessionStatus === 'DTO').length;
-    const pending = otpData.filter(r => r.sessionStatus === 'Pending').length;
-    // Dispatched in OTP but RTO/DTO in CSV (Not Closed)
-    const dispatched = otpData.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')).length;
-
+    if (!currentSession) return { total: 0, dispatched: 0, pending: 0, rto: 0, dto: 0 };
+    const rto = currentSession.stats?.rto || 0;
+    const dto = currentSession.stats?.dto || 0;
+    const pending = currentSession.stats?.pending || 0;
+    const dispatched = currentSession.stats?.dispatched || 0;
     return { total: otpData.length, dispatched, pending, rto, dto };
-  }, [otpData]);
+  }, [currentSession, otpData]);
 
   const filteredOtpRows = useMemo(() => {
     let rows = otpData;
     if (otpStatusFilter === 'Dispatched') {
-      // Show shipments that are Dispatched in OTP but RTO/DTO in CSV
-      rows = rows.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO'));
+      rows = rows.filter(r => r.otpStatus === 'Dispatched' && r.sessionStatus === 'Dispatched');
     } else if (otpStatusFilter === 'Pending') {
       rows = rows.filter(r => r.sessionStatus === 'Pending');
     } else if (otpStatusFilter === 'RTO') {
@@ -221,15 +226,19 @@ function PODToolContent() {
       rows = rows.filter(r => r.sessionStatus === 'DTO');
     }
     
-    if (otpClientFilter !== 'All Clients') {
-      rows = rows.filter(r => r.client === otpClientFilter);
+    if (otpSelectedClientFilters.length > 0) {
+      rows = rows.filter(r => otpSelectedClientFilters.includes(r.client));
     }
     return rows;
-  }, [otpData, otpStatusFilter, otpClientFilter]);
+  }, [otpData, otpStatusFilter, otpSelectedClientFilters]);
 
-  const uniqueOtpClients = useMemo(() => {
-    return Array.from(new Set(filteredOtpRows.map(r => r.client))).sort();
-  }, [filteredOtpRows]);
+  const uniqueOtpClientsWithCounts = useMemo(() => {
+    const clients: Record<string, number> = {};
+    otpData.forEach(r => {
+      clients[r.client] = (clients[r.client] || 0) + 1;
+    });
+    return Object.entries(clients).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [otpData]);
 
   const showToast = useCallback((msg: string, type: 'ok' | 'err') => {
     if (typeof document === 'undefined') return;
@@ -461,7 +470,7 @@ function PODToolContent() {
     setSelectedRowIds(new Set());
   };
 
-  const uniqueClients = useMemo(() => {
+  const uniqueClientsWithCounts = useMemo(() => {
     if (!currentSession) return [];
     let rows = currentSession.data;
     if (statusFilter === 'HighValue') {
@@ -469,7 +478,11 @@ function PODToolContent() {
     } else if (statusFilter !== 'All') {
       rows = rows.filter(r => r.status === statusFilter);
     }
-    return Array.from(new Set(rows.map(r => r.client))).sort();
+    const counts: Record<string, number> = {};
+    rows.forEach(r => {
+      counts[r.client] = (counts[r.client] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0]));
   }, [currentSession, statusFilter]);
 
   const filteredRows = useMemo(() => {
@@ -483,8 +496,8 @@ function PODToolContent() {
     if (statusFilter === 'Pending' && !showAllPending && selectedRemarkChips.length > 0) {
       rows = rows.filter(r => selectedRemarkChips.includes(r.remark));
     }
-    if (clientFilter !== 'All Clients') {
-      rows = rows.filter(r => r.client === clientFilter);
+    if (selectedClientFilters.length > 0) {
+      rows = rows.filter(r => selectedClientFilters.includes(r.client));
     }
     if (searchTerm.trim() !== "") {
       const s = searchTerm.toLowerCase().trim();
@@ -495,7 +508,7 @@ function PODToolContent() {
       );
     }
     return rows;
-  }, [currentSession, statusFilter, selectedRemarkChips, clientFilter, showAllPending, searchTerm]);
+  }, [currentSession, statusFilter, selectedRemarkChips, selectedClientFilters, showAllPending, searchTerm]);
 
   const isAllSelected = filteredRows.length > 0 && filteredRows.every(r => selectedRowIds.has(r.id));
   const isSomeSelected = filteredRows.some(r => selectedRowIds.has(r.id)) && !isAllSelected;
@@ -514,7 +527,8 @@ function PODToolContent() {
 
   const handleCopyTable = useCallback(async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
-    const headers = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'Amount', 'FE Name'];
+    // Removed Amount from headers as requested
+    const headers = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
     const exportRows = rowsToCopy.map((r, i) => ({
       'Date': formatDate(currentSession?.date),
       'DSP ID': i === 0 ? currentSession?.dspId : "",
@@ -522,15 +536,35 @@ function PODToolContent() {
       'Client': r.client,
       'Order ID': r.orderId,
       'Remark': r.remark,
-      'Amount': r.amount ?? 0,
       'FE Name': currentSession?.feName
     }));
     
     const plainText = exportRows.map(r => headers.map(h => String((r as any)[h] || "").trim()).join("\t")).join("\n");
+    
+    // Construct HTML Table for Excel borders as requested
+    const htmlTable = `
+      <table border="1">
+        <thead>
+          <tr style="background-color: #f1f5f9;">${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+        </thead>
+        <tbody>
+          ${exportRows.map(r => `<tr>${headers.map(h => `<td>${(r as any)[h]}</td>`).join('')}</tr>`).join('')}
+        </tbody>
+      </table>
+    `;
+
     try {
-      await navigator.clipboard.writeText(plainText);
+      const clipboardItem = new ClipboardItem({
+        'text/plain': new Blob([plainText], { type: 'text/plain' }),
+        'text/html': new Blob([htmlTable], { type: 'text/html' })
+      });
+      await navigator.clipboard.write([clipboardItem]);
       showToast(`Copied ${rowsToCopy.length} Rows To Clipboard`, "ok");
-    } catch (e) {}
+    } catch (e) {
+      // Fallback for older browsers
+      await navigator.clipboard.writeText(plainText);
+      showToast(`Copied ${rowsToCopy.length} Rows (Text only)`, "ok");
+    }
   }, [showToast, currentSession]);
 
   const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
@@ -577,7 +611,8 @@ function PODToolContent() {
     setStatusFilter("All");
     setSearchTerm("");
     setSelectedRemarkChips([]);
-    setClientFilter("All Clients");
+    setSelectedClientFilters([]);
+    setOtpSelectedClientFilters([]);
     setShowAllPending(false);
     setUndoStack([]); 
     let isoDate = "";
@@ -589,6 +624,57 @@ function PODToolContent() {
   };
 
   if (!isMounted) return null;
+
+  const MultiSelectFilter = ({ 
+    options, 
+    selected, 
+    onToggle, 
+    onClear,
+    label 
+  }: { 
+    options: [string, number][], 
+    selected: string[], 
+    onToggle: (val: string) => void,
+    onClear: () => void,
+    label: string
+  }) => (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button className="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[240px] shadow-sm">
+            <span className="truncate">
+              {selected.length === 0 ? "All Clients" : `${selected.length} Client(s) Selected`}
+            </span>
+            <ChevronDown className="w-4 h-4 text-slate-400 ml-2 shrink-0" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[280px] p-0" align="start">
+          <div className="p-2 border-b bg-slate-50 flex items-center justify-between">
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Select Clients</span>
+            {selected.length > 0 && (
+              <button onClick={onClear} className="text-[10px] font-bold text-blue-600 hover:underline">Clear All</button>
+            )}
+          </div>
+          <div className="max-h-[300px] overflow-y-auto custom-scrollbar p-1">
+            {options.map(([client, count]) => (
+              <div 
+                key={client} 
+                onClick={() => onToggle(client)}
+                className="flex items-center gap-3 px-3 py-2 hover:bg-slate-100 rounded-md cursor-pointer transition-colors"
+              >
+                <Checkbox checked={selected.includes(client)} />
+                <div className="flex-1 flex items-center justify-between min-w-0">
+                  <span className="text-[13px] font-bold text-slate-700 truncate">{client}</span>
+                  <span className="text-[11px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded ml-2 shrink-0">{count}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
@@ -689,7 +775,7 @@ function PODToolContent() {
                     <button key={t.id} onClick={() => { 
                       setStatusFilter(t.id); 
                       setSelectedRemarkChips([]); 
-                      setClientFilter("All Clients");
+                      setSelectedClientFilters([]);
                       setShowAllPending(false); 
                     }} className={cn("flex-1 py-6 flex flex-col items-center group h-[100px] transition-all relative", statusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
                       <span className={cn("text-[32px] font-extrabold leading-none mb-1", t.color)}>{t.val}</span>
@@ -743,17 +829,17 @@ function PODToolContent() {
                 )}
 
                 <div className="flex flex-wrap items-center gap-4 mb-2">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Client Filter</label>
-                    <select
-                      value={clientFilter}
-                      onChange={(e) => setClientFilter(e.target.value)}
-                      className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[200px] shadow-sm"
-                    >
-                      <option value="All Clients">All Clients</option>
-                      {uniqueClients.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
+                  <MultiSelectFilter 
+                    label="Client Filter"
+                    options={uniqueClientsWithCounts}
+                    selected={selectedClientFilters}
+                    onToggle={(val) => {
+                      setSelectedClientFilters(prev => 
+                        prev.includes(val) ? prev.filter(c => c !== val) : [...prev, val]
+                      );
+                    }}
+                    onClear={() => setSelectedClientFilters([])}
+                  />
                   
                   <div className="flex flex-col gap-1.5 flex-1 min-w-[300px]">
                     <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Search Session</label>
@@ -1038,7 +1124,6 @@ function PODToolContent() {
                           else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
 
                           const csvStatus = sessionRow.status;
-                          // Not closed detection logic: OTP is Dispatched, but CSV is RTO/DTO/Pending
                           const isNotClosed = otpStatus === 'Dispatched' && csvStatus !== 'Dispatched';
 
                           tempOtpData.push({
@@ -1078,7 +1163,7 @@ function PODToolContent() {
                   ].map(t => (
                     <button key={t.id} onClick={() => { 
                       setOtpStatusFilter(t.id); 
-                      setOtpClientFilter("All Clients");
+                      setOtpSelectedClientFilters([]);
                     }} className={cn("flex-1 py-5 flex flex-col items-center group h-[90px] transition-all relative", otpStatusFilter === t.id ? t.bgColor : "hover:bg-slate-50/30")}>
                       <span className={cn("text-[28px] font-extrabold leading-none mb-1", t.color)}>{t.val}</span>
                       <span className="text-[12px] font-black uppercase tracking-widest">{t.label}</span>
@@ -1088,17 +1173,17 @@ function PODToolContent() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4 mb-2">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Client Filter</label>
-                    <select
-                      value={otpClientFilter}
-                      onChange={(e) => setOtpClientFilter(e.target.value)}
-                      className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold bg-white outline-none focus:border-blue-500 w-[200px] shadow-sm"
-                    >
-                      <option value="All Clients">All Clients</option>
-                      {uniqueOtpClients.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
+                  <MultiSelectFilter 
+                    label="Client Filter"
+                    options={uniqueOtpClientsWithCounts}
+                    selected={otpSelectedClientFilters}
+                    onToggle={(val) => {
+                      setOtpSelectedClientFilters(prev => 
+                        prev.includes(val) ? prev.filter(c => c !== val) : [...prev, val]
+                      );
+                    }}
+                    onClear={() => setOtpSelectedClientFilters([])}
+                  />
                   <div className="flex-1" />
                   <div className="flex gap-2">
                     <button onClick={() => downloadExcel(filteredOtpRows)} className="h-9 px-5 bg-emerald-600 text-white rounded-lg text-[12px] font-black uppercase">Download Excel</button>
