@@ -33,6 +33,8 @@ import { Checkbox } from "@/components/ui/checkbox";
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
  * Optimized for heavy Excel files with High Value (4000+) Pending shipment tracking.
  * Fixed: Scientific notation on Excel paste using mso-number-format.
+ * Fixed: OTP Tab counts and placement logic to match CSV card exactly.
+ * Fixed: Copy Table excludes headers and amount, and applies Excel borders.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -112,8 +114,6 @@ interface OTPRow {
   otpStatus: string;
   sessionStatus: string;
   returnAddress: string;
-  isNotClosed: boolean;
-  notClosedReason?: string;
 }
 
 interface Session {
@@ -207,44 +207,40 @@ function PODToolContent() {
   const otpStats = useMemo(() => {
     if (!currentSession) return { total: 0, dispatched: 0, pending: 0, rto: 0, dto: 0 };
     
-    // Tab Counts following the provided rules:
-    // Dispatched = OTP Dispatched where CSV is Dispatched + OTP Dispatched where CSV is RTO + OTP Dispatched where CSV is DTO
+    // RTO, DTO, PENDING counts MUST match the EOD session card exactly
+    const rto = currentSession.data.filter(r => r.status === 'RTO').length;
+    const dto = currentSession.data.filter(r => r.status === 'DTO').length;
+    const pending = currentSession.data.filter(r => r.status === 'Pending').length;
+
+    // Dispatched count = Shipments showing as Dispatched in OTP file, 
+    // that are either Dispatched, RTO, or DTO in the EOD session
     const dispatched = otpData.filter(r => 
       r.otpStatus === 'Dispatched' && (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')
     ).length;
 
-    // Pending = OTP Pending + OTP Dispatched where CSV is Pending
-    const pending = otpData.filter(r => 
-      r.otpStatus === 'Pending' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending')
-    ).length;
-
-    // RTO = OTP RTO only
-    const rto = otpData.filter(r => r.otpStatus === 'RTO').length;
-
-    // DTO = OTP DTO only
-    const dto = otpData.filter(r => r.otpStatus === 'DTO').length;
-
     return { 
-      total: otpData.length, 
+      total: currentSession.data.length, 
       dispatched, 
       pending, 
       rto, 
       dto 
     };
-  }, [otpData]);
+  }, [currentSession, otpData]);
 
   const filteredOtpRows = useMemo(() => {
     let rows = otpData;
     if (otpStatusFilter === 'Dispatched') {
-      // Dispatched Tab: OTP Dispatched AND (CSV Dispatched OR RTO OR DTO)
+      // Dispatched Tab: OTP is Dispatched AND (CSV is Dispatched OR RTO OR DTO)
       rows = rows.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO'));
     } else if (otpStatusFilter === 'Pending') {
-      // Pending Tab: OTP Pending OR (OTP Dispatched AND CSV Pending)
-      rows = rows.filter(r => r.otpStatus === 'Pending' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending'));
+      // Pending Tab: CSV says Pending
+      rows = rows.filter(r => r.sessionStatus === 'Pending');
     } else if (otpStatusFilter === 'RTO') {
-      rows = rows.filter(r => r.otpStatus === 'RTO');
+      // RTO Tab: CSV says RTO
+      rows = rows.filter(r => r.sessionStatus === 'RTO');
     } else if (otpStatusFilter === 'DTO') {
-      rows = rows.filter(r => r.otpStatus === 'DTO');
+      // DTO Tab: CSV says DTO
+      rows = rows.filter(r => r.sessionStatus === 'DTO');
     }
     
     if (otpSelectedClientFilters.length > 0) {
@@ -285,6 +281,7 @@ function PODToolContent() {
     setIsProcessing(true);
     setUploadProgress(null);
     setUndoStack([]); 
+    setOtpData([]);
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -379,7 +376,6 @@ function PODToolContent() {
               });
               
               setSelectedSessionId(newSessionId);
-              setOtpData([]); 
               showToast(`Imported ${parsedRows.length} Rows Successfully!`, "ok");
               setIsProcessing(false);
               setUploadProgress(null);
@@ -549,36 +545,58 @@ function PODToolContent() {
   const handleCopyTable = useCallback(async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
     
+    const isOtpTab = activeTab === 'otp';
+    
     // Construct HTML Table for Excel with borders but WITHOUT Amount and WITHOUT headers as requested
     // Added style="mso-number-format:'\@'" to numeric columns to prevent scientific notation in Excel
-    const htmlTable = `
-      <table border="1">
-        <tbody>
-          ${rowsToCopy.map((r, i) => `
-            <tr>
-              <td>${formatDate(currentSession?.date)}</td>
-              <td>${i === 0 ? String(currentSession?.dspId) : ""}</td>
-              <td style="mso-number-format:'\\@'">${normalizeAWB(r.awb)}</td>
-              <td>${r.client}</td>
-              <td style="mso-number-format:'\\@'">${r.orderId}</td>
-              <td>${r.remark}</td>
-              <td>${currentSession?.feName}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    `;
+    let htmlTable = '<table border="1"><tbody>';
+    
+    if (isOtpTab) {
+      htmlTable += rowsToCopy.map((r) => `
+        <tr>
+          <td style="mso-number-format:'\\@'">${normalizeAWB(r.awb)}</td>
+          <td>${r.client}</td>
+          <td>${r.otpStatus}</td>
+          <td>${r.sessionStatus}</td>
+          <td>${r.returnAddress}</td>
+        </tr>
+      `).join('');
+    } else {
+      htmlTable += rowsToCopy.map((r, i) => `
+        <tr>
+          <td>${formatDate(currentSession?.date)}</td>
+          <td>${i === 0 ? String(currentSession?.dspId) : ""}</td>
+          <td style="mso-number-format:'\\@'">${normalizeAWB(r.awb)}</td>
+          <td>${r.client}</td>
+          <td style="mso-number-format:'\\@'">${r.orderId}</td>
+          <td>${r.remark}</td>
+          <td>${currentSession?.feName}</td>
+        </tr>
+      `).join('');
+    }
+    htmlTable += '</tbody></table>';
 
-    // Plain text version (kept with headers for regular text editors)
-    const plainText = rowsToCopy.map((r, i) => [
-      formatDate(currentSession?.date),
-      i === 0 ? currentSession?.dspId : "",
-      normalizeAWB(r.awb),
-      r.client,
-      r.orderId,
-      r.remark,
-      currentSession?.feName
-    ].join("\t")).join("\n");
+    // Plain text version (kept for regular text editors)
+    let plainText = "";
+    if (isOtpTab) {
+      plainText = rowsToCopy.map(r => [
+        normalizeAWB(r.awb),
+        r.client,
+        r.otpStatus,
+        r.sessionStatus,
+        r.returnAddress
+      ].join("\t")).join("\n");
+    } else {
+      plainText = rowsToCopy.map((r, i) => [
+        formatDate(currentSession?.date),
+        i === 0 ? currentSession?.dspId : "",
+        normalizeAWB(r.awb),
+        r.client,
+        r.orderId,
+        r.remark,
+        currentSession?.feName
+      ].join("\t")).join("\n");
+    }
 
     try {
       const clipboardItem = new ClipboardItem({
@@ -591,7 +609,7 @@ function PODToolContent() {
       await navigator.clipboard.writeText(plainText);
       showToast(`Copied ${rowsToCopy.length} Rows (Text only)`, "ok");
     }
-  }, [showToast, currentSession]);
+  }, [showToast, currentSession, activeTab]);
 
   const handleCopyAWBOnly = async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
@@ -604,17 +622,32 @@ function PODToolContent() {
 
   const downloadExcel = (rowsToDownload: any[]) => {
     if (!rowsToDownload.length) return;
-    const header = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'Amount', 'FE Name'];
-    const excelData = rowsToDownload.map((r, i) => [
-      formatDate(currentSession?.date), 
-      i === 0 ? String(currentSession?.dspId) : "", 
-      String(normalizeAWB(r.awb)), 
-      r.client, 
-      String(r.orderId), 
-      r.remark, 
-      r.amount ?? 0,
-      currentSession?.feName
-    ]);
+    const isOtpTab = activeTab === 'otp';
+    let header = [];
+    let excelData = [];
+
+    if (isOtpTab) {
+      header = ['Waybill Number', 'Client', 'OTP Status', 'Session Status', 'Address'];
+      excelData = rowsToDownload.map((r) => [
+        { v: String(normalizeAWB(r.awb)), t: 's' }, 
+        r.client, 
+        r.otpStatus, 
+        r.sessionStatus, 
+        r.returnAddress
+      ]);
+    } else {
+      header = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'Amount', 'FE Name'];
+      excelData = rowsToDownload.map((r, i) => [
+        formatDate(currentSession?.date), 
+        i === 0 ? String(currentSession?.dspId) : "", 
+        { v: String(normalizeAWB(r.awb)), t: 's' }, 
+        r.client, 
+        { v: String(r.orderId), t: 's' }, 
+        r.remark, 
+        r.amount ?? 0,
+        currentSession?.feName
+      ]);
+    }
     const ws = XLSX.utils.aoa_to_sheet([header, ...excelData]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Report");
@@ -721,7 +754,10 @@ function PODToolContent() {
         </div>
         <div className="flex gap-8 h-full">
           {['eod', 'remark', 'otp'].map(id => (
-            <button key={id} onClick={() => setActiveTab(id as any)} className={cn("h-full px-1 text-[13px] font-semibold transition-all relative border-b-2", activeTab === id ? "text-white border-blue-500" : "text-slate-400 border-transparent hover:text-white")}>
+            <button key={id} onClick={() => {
+              setActiveTab(id as any);
+              if (id === 'otp') setOtpData([]);
+            }} className={cn("h-full px-1 text-[13px] font-semibold transition-all relative border-b-2", activeTab === id ? "text-white border-blue-500" : "text-slate-400 border-transparent hover:text-white")}>
               {id === 'eod' ? 'Daily EOD Rejection' : id === 'remark' ? 'EOD Rejection Remark' : 'OTP Dispatch Check'}
             </button>
           ))}
@@ -1149,28 +1185,13 @@ function PODToolContent() {
                           else if (otpStatusRaw.includes('dto')) otpStatus = 'DTO';
                           else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
 
-                          const csvStatus = sessionRow.status;
-                          
-                          // Rule: Not Closed detection based on OTP status and CSV session status
-                          let isNotClosed = false;
-                          let notClosedReason = "";
-                          
-                          if (otpStatus === 'Dispatched') {
-                            if (csvStatus === 'RTO' || csvStatus === 'DTO' || csvStatus === 'Pending') {
-                              isNotClosed = true;
-                              notClosedReason = `${csvStatus} — Not Closed on Device`;
-                            }
-                          }
-
                           tempOtpData.push({
                             id: crypto.randomUUID(),
                             awb, 
                             client: sessionRow.client, 
                             otpStatus, 
-                            sessionStatus: csvStatus, 
-                            returnAddress: sessionRow.returnAddress || "",
-                            isNotClosed,
-                            notClosedReason
+                            sessionStatus: sessionRow.status, 
+                            returnAddress: sessionRow.returnAddress || ""
                           });
                         }
                         setOtpData(tempOtpData);
@@ -1263,13 +1284,13 @@ function PODToolContent() {
                               )}
                               {rows.map((row: any) => {
                                 const isFTPL = row.client.toUpperCase().includes('FTPL');
-                                const isNotClosed = row.isNotClosed;
+                                const isNotClosed = row.otpStatus === 'Dispatched' && (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO' || row.sessionStatus === 'Pending');
 
                                 return (
                                   <tr key={`otp-row-${row.id}`} className={cn(
                                     "border-b transition-colors", 
                                     isNotClosed ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
-                                    otpStatusFilter === 'Pending' && row.isNotClosed ? "bg-[#FFFDE7] border-l-[3px] border-l-amber-500" :
+                                    otpStatusFilter === 'Pending' && row.otpStatus === 'Dispatched' ? "bg-[#FFFDE7] border-l-[3px] border-l-amber-500" :
                                     row.otpStatus === 'Dispatched' && isFTPL ? "bg-[#FFF5F5] border-l-[2px] border-l-red-500" :
                                     row.otpStatus === 'Dispatched' ? "bg-white border-l-[2px] border-l-red-500" :
                                     (row.otpStatus === 'RTO' || row.otpStatus === 'DTO') && isFTPL ? "bg-emerald-50/50 border-l-[2px] border-l-emerald-500" :
@@ -1290,7 +1311,7 @@ function PODToolContent() {
                                         </span>
                                         {isNotClosed && (
                                           <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase">
-                                            <AlertCircle className="w-3 h-3" /> {row.notClosedReason}
+                                            <AlertCircle className="w-3 h-3" /> {row.sessionStatus} — Not Closed on Device
                                           </span>
                                         )}
                                       </div>
