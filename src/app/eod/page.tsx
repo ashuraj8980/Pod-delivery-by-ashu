@@ -32,6 +32,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
  * Optimized for heavy Excel files with High Value (4000+) Pending shipment tracking.
+ * Fixed: Scientific notation on Excel paste using mso-number-format.
  */
 
 const REMARK_MAPPING: Record<string, string> = {
@@ -112,6 +113,7 @@ interface OTPRow {
   sessionStatus: string;
   returnAddress: string;
   isNotClosed: boolean;
+  notClosedReason?: string;
 }
 
 interface Session {
@@ -204,40 +206,45 @@ function PODToolContent() {
 
   const otpStats = useMemo(() => {
     if (!currentSession) return { total: 0, dispatched: 0, pending: 0, rto: 0, dto: 0 };
-    // Rule: RTO/DTO/Pending counts must match EOD session exactly
-    const rto = currentSession.stats?.rto || 0;
-    const dto = currentSession.stats?.dto || 0;
-    const pending = currentSession.stats?.pending || 0;
     
-    // Dispatched count = OTP Dispatched where CSV is RTO or DTO or Dispatched
-    const dispatchedRows = otpData.filter(r => 
-      r.otpStatus === 'Dispatched' && 
-      (r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO' || r.sessionStatus === 'Dispatched')
-    );
-    
+    // Tab Counts following the provided rules:
+    // Dispatched = OTP Dispatched where CSV is Dispatched + OTP Dispatched where CSV is RTO + OTP Dispatched where CSV is DTO
+    const dispatched = otpData.filter(r => 
+      r.otpStatus === 'Dispatched' && (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO')
+    ).length;
+
+    // Pending = OTP Pending + OTP Dispatched where CSV is Pending
+    const pending = otpData.filter(r => 
+      r.otpStatus === 'Pending' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending')
+    ).length;
+
+    // RTO = OTP RTO only
+    const rto = otpData.filter(r => r.otpStatus === 'RTO').length;
+
+    // DTO = OTP DTO only
+    const dto = otpData.filter(r => r.otpStatus === 'DTO').length;
+
     return { 
-      total: currentSession.data.length, 
-      dispatched: dispatchedRows.length, 
+      total: otpData.length, 
+      dispatched, 
       pending, 
       rto, 
       dto 
     };
-  }, [currentSession, otpData]);
+  }, [otpData]);
 
   const filteredOtpRows = useMemo(() => {
     let rows = otpData;
     if (otpStatusFilter === 'Dispatched') {
-      // Rule: Show in Dispatched tab if OTP is Dispatched AND CSV is Dispatched OR RTO OR DTO
+      // Dispatched Tab: OTP Dispatched AND (CSV Dispatched OR RTO OR DTO)
       rows = rows.filter(r => r.otpStatus === 'Dispatched' && (r.sessionStatus === 'Dispatched' || r.sessionStatus === 'RTO' || r.sessionStatus === 'DTO'));
     } else if (otpStatusFilter === 'Pending') {
-      // Rule: Show in Pending tab if OTP is Pending OR (OTP is Dispatched AND CSV is Pending)
-      rows = rows.filter(r => r.sessionStatus === 'Pending');
+      // Pending Tab: OTP Pending OR (OTP Dispatched AND CSV Pending)
+      rows = rows.filter(r => r.otpStatus === 'Pending' || (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending'));
     } else if (otpStatusFilter === 'RTO') {
-      // Rule: Show in RTO tab if CSV is RTO
-      rows = rows.filter(r => r.sessionStatus === 'RTO');
+      rows = rows.filter(r => r.otpStatus === 'RTO');
     } else if (otpStatusFilter === 'DTO') {
-      // Rule: Show in DTO tab if CSV is DTO
-      rows = rows.filter(r => r.sessionStatus === 'DTO');
+      rows = rows.filter(r => r.otpStatus === 'DTO');
     }
     
     if (otpSelectedClientFilters.length > 0) {
@@ -542,10 +549,8 @@ function PODToolContent() {
   const handleCopyTable = useCallback(async (rowsToCopy: any[]) => {
     if (!rowsToCopy.length) return;
     
-    // Header array for plain text only (not used for Excel paste format)
-    const headers = ['Date', 'DSP ID', 'Waybill Number', 'Client', 'Order ID', 'Remark', 'FE Name'];
-    
     // Construct HTML Table for Excel with borders but WITHOUT Amount and WITHOUT headers as requested
+    // Added style="mso-number-format:'\@'" to numeric columns to prevent scientific notation in Excel
     const htmlTable = `
       <table border="1">
         <tbody>
@@ -553,9 +558,9 @@ function PODToolContent() {
             <tr>
               <td>${formatDate(currentSession?.date)}</td>
               <td>${i === 0 ? String(currentSession?.dspId) : ""}</td>
-              <td>${normalizeAWB(r.awb)}</td>
+              <td style="mso-number-format:'\\@'">${normalizeAWB(r.awb)}</td>
               <td>${r.client}</td>
-              <td>${r.orderId}</td>
+              <td style="mso-number-format:'\\@'">${r.orderId}</td>
               <td>${r.remark}</td>
               <td>${currentSession?.feName}</td>
             </tr>
@@ -1145,8 +1150,17 @@ function PODToolContent() {
                           else if (otpStatusRaw.includes('pending')) otpStatus = 'Pending';
 
                           const csvStatus = sessionRow.status;
-                          // Rule: Not Closed = OTP Dispatched but CSV is Pending, RTO, or DTO
-                          const isNotClosed = otpStatus === 'Dispatched' && (csvStatus === 'Pending' || csvStatus === 'RTO' || csvStatus === 'DTO');
+                          
+                          // Rule: Not Closed detection based on OTP status and CSV session status
+                          let isNotClosed = false;
+                          let notClosedReason = "";
+                          
+                          if (otpStatus === 'Dispatched') {
+                            if (csvStatus === 'RTO' || csvStatus === 'DTO' || csvStatus === 'Pending') {
+                              isNotClosed = true;
+                              notClosedReason = `${csvStatus} — Not Closed on Device`;
+                            }
+                          }
 
                           tempOtpData.push({
                             id: crypto.randomUUID(),
@@ -1155,7 +1169,8 @@ function PODToolContent() {
                             otpStatus, 
                             sessionStatus: csvStatus, 
                             returnAddress: sessionRow.returnAddress || "",
-                            isNotClosed
+                            isNotClosed,
+                            notClosedReason
                           });
                         }
                         setOtpData(tempOtpData);
@@ -1255,14 +1270,14 @@ function PODToolContent() {
                                     "border-b transition-colors", 
                                     isNotClosed ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
                                     otpStatusFilter === 'Pending' && row.isNotClosed ? "bg-[#FFFDE7] border-l-[3px] border-l-amber-500" :
-                                    row.sessionStatus === 'Dispatched' && isFTPL ? "bg-[#FFF5F5] border-l-[2px] border-l-red-500" :
-                                    row.sessionStatus === 'Dispatched' ? "bg-white border-l-[2px] border-l-red-500" :
-                                    (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO') && isFTPL ? "bg-emerald-50/50 border-l-[2px] border-l-emerald-500" :
-                                    (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO') ? "bg-white border-l-[2px] border-l-emerald-500" :
+                                    row.otpStatus === 'Dispatched' && isFTPL ? "bg-[#FFF5F5] border-l-[2px] border-l-red-500" :
+                                    row.otpStatus === 'Dispatched' ? "bg-white border-l-[2px] border-l-red-500" :
+                                    (row.otpStatus === 'RTO' || row.otpStatus === 'DTO') && isFTPL ? "bg-emerald-50/50 border-l-[2px] border-l-emerald-500" :
+                                    (row.otpStatus === 'RTO' || row.otpStatus === 'DTO') ? "bg-white border-l-[2px] border-l-emerald-500" :
                                     "bg-white"
                                   )}>
                                     <td className="px-4 py-3 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
-                                    <td className={cn("px-4 py-3 text-[13px] font-black tracking-tight", (row.sessionStatus === 'Dispatched' && isFTPL) ? "text-rose-600" : "text-slate-800")}>{row.client}</td>
+                                    <td className={cn("px-4 py-3 text-[13px] font-black tracking-tight", (row.otpStatus === 'Dispatched' && isFTPL) ? "text-rose-600" : "text-slate-800")}>{row.client}</td>
                                     <td className="px-4 py-3">
                                       <div className="flex flex-col items-center gap-1">
                                         <span className={cn(
@@ -1275,7 +1290,7 @@ function PODToolContent() {
                                         </span>
                                         {isNotClosed && (
                                           <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase">
-                                            <AlertCircle className="w-3 h-3" /> {row.sessionStatus} — Not Closed on Device
+                                            <AlertCircle className="w-3 h-3" /> {row.notClosedReason}
                                           </span>
                                         )}
                                       </div>
