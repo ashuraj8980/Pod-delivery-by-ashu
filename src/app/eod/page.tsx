@@ -17,7 +17,7 @@ import {
   IndianRupee,
   CheckCircle2
 } from "lucide-react";
-import Link from "next/link";
+import Link from "link";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 import { useSearchParams } from "next/navigation";
@@ -198,42 +198,26 @@ function PODToolContent() {
   }, [currentSession]);
 
   const otpStats = useMemo(() => {
-    // Dispatched count = OTP Dispatched where CSV is Dispatched + OTP Dispatched where CSV is RTO + OTP Dispatched where CSV is DTO.
-    const dispatched = otpData.filter(r => 
-      (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Dispatched') || 
-      (r.otpStatus === 'Dispatched' && r.sessionStatus === 'RTO') || 
-      (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO')
-    ).length;
-
-    // Pending count = OTP Pending + OTP Dispatched where CSV is Pending.
-    const pending = otpData.filter(r => 
-      r.otpStatus === 'Pending' || 
-      (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending')
-    ).length;
-
-    const rto = otpData.filter(r => r.otpStatus === 'RTO').length;
-    const dto = otpData.filter(r => r.otpStatus === 'DTO').length;
+    // Counts now follow EOD Session Status to match the session card summary.
+    const dispatched = otpData.filter(r => r.sessionStatus === 'Dispatched').length;
+    const pending = otpData.filter(r => r.sessionStatus === 'Pending').length;
+    const rto = otpData.filter(r => r.sessionStatus === 'RTO').length;
+    const dto = otpData.filter(r => r.sessionStatus === 'DTO').length;
 
     return { total: otpData.length, dispatched, pending, rto, dto };
   }, [otpData]);
 
   const filteredOtpRows = useMemo(() => {
     let rows = otpData;
+    // Tab filtering is now based on Session Status as per user request.
     if (otpStatusFilter === 'Dispatched') {
-      rows = rows.filter(r => 
-        (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Dispatched') || 
-        (r.otpStatus === 'Dispatched' && r.sessionStatus === 'RTO') || 
-        (r.otpStatus === 'Dispatched' && r.sessionStatus === 'DTO')
-      );
+      rows = rows.filter(r => r.sessionStatus === 'Dispatched');
     } else if (otpStatusFilter === 'Pending') {
-      rows = rows.filter(r => 
-        r.otpStatus === 'Pending' || 
-        (r.otpStatus === 'Dispatched' && r.sessionStatus === 'Pending')
-      );
+      rows = rows.filter(r => r.sessionStatus === 'Pending');
     } else if (otpStatusFilter === 'RTO') {
-      rows = rows.filter(r => r.otpStatus === 'RTO');
+      rows = rows.filter(r => r.sessionStatus === 'RTO');
     } else if (otpStatusFilter === 'DTO') {
-      rows = rows.filter(r => r.otpStatus === 'DTO');
+      rows = rows.filter(r => r.sessionStatus === 'DTO');
     }
     
     if (otpClientFilter !== 'All Clients') {
@@ -364,7 +348,7 @@ function PODToolContent() {
               });
               
               setSelectedSessionId(newSessionId);
-              setOtpData([]); // Clear old OTP data on new session creation
+              setOtpData([]); 
               showToast(`Imported ${parsedRows.length} Rows Successfully!`, "ok");
               setIsProcessing(false);
               setUploadProgress(null);
@@ -588,7 +572,7 @@ function PODToolContent() {
 
   const handleSessionClick = (s: Session) => {
     setSelectedSessionId(s.id);
-    setOtpData([]); // Clear old OTP data when switching sessions
+    setOtpData([]); 
     setStatusFilter("All");
     setSearchTerm("");
     setSelectedRemarkChips([]);
@@ -1162,23 +1146,21 @@ function PODToolContent() {
                               )}
                               {rows.map((row: any) => {
                                 const isFTPL = row.client.toUpperCase().includes('FTPL');
-                                const isRTOorDTONotClosed = row.otpStatus === 'Dispatched' && (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO');
-                                const isPendingNotClosed = row.otpStatus === 'Dispatched' && row.sessionStatus === 'Pending';
+                                const isNotClosed = row.otpStatus === 'Dispatched' && row.sessionStatus !== 'Dispatched';
 
                                 return (
                                   <tr key={`otp-row-${row.id}`} className={cn(
                                     "border-b transition-colors", 
-                                    otpStatusFilter === 'Dispatched' && isRTOorDTONotClosed ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
-                                    otpStatusFilter === 'Dispatched' && isFTPL ? "bg-[#FFF5F5] border-l-[2px] border-l-red-500" :
-                                    otpStatusFilter === 'Dispatched' ? "bg-white border-l-[2px] border-l-red-500" :
-                                    otpStatusFilter === 'Pending' && isPendingNotClosed ? "bg-[#FFFDE7] border-l-[3px] border-l-amber-500" :
-                                    otpStatusFilter === 'Pending' ? "bg-white border-l-[2px] border-l-amber-500" :
-                                    (otpStatusFilter === 'RTO' || otpStatusFilter === 'DTO') && isFTPL ? "bg-emerald-50/50 border-l-[2px] border-l-emerald-500" :
-                                    (otpStatusFilter === 'RTO' || otpStatusFilter === 'DTO') ? "bg-white border-l-[2px] border-l-emerald-500" :
+                                    isNotClosed && (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO') ? "bg-[#FFF7ED] border-l-[3px] border-l-amber-500" :
+                                    isNotClosed && row.sessionStatus === 'Pending' ? "bg-[#FFFDE7] border-l-[3px] border-l-amber-500" :
+                                    row.sessionStatus === 'Dispatched' && isFTPL ? "bg-[#FFF5F5] border-l-[2px] border-l-red-500" :
+                                    row.sessionStatus === 'Dispatched' ? "bg-white border-l-[2px] border-l-red-500" :
+                                    (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO') && isFTPL ? "bg-emerald-50/50 border-l-[2px] border-l-emerald-500" :
+                                    (row.sessionStatus === 'RTO' || row.sessionStatus === 'DTO') ? "bg-white border-l-[2px] border-l-emerald-500" :
                                     "bg-white"
                                   )}>
                                     <td className="px-4 py-3 text-[13px] font-mono font-black text-blue-700 cursor-pointer hover:underline" onClick={() => { navigator.clipboard.writeText(normalizeAWB(row.awb)); showToast("Waybill Copied", "ok"); }}>{normalizeAWB(row.awb)}</td>
-                                    <td className={cn("px-4 py-3 text-[13px] font-black tracking-tight", (otpStatusFilter === 'Dispatched' && isFTPL) ? "text-rose-600" : "text-slate-800")}>{row.client}</td>
+                                    <td className={cn("px-4 py-3 text-[13px] font-black tracking-tight", (row.sessionStatus === 'Dispatched' && isFTPL) ? "text-rose-600" : "text-slate-800")}>{row.client}</td>
                                     <td className="px-4 py-3">
                                       <div className="flex flex-col items-center gap-1">
                                         <span className={cn(
@@ -1189,7 +1171,7 @@ function PODToolContent() {
                                         )}>
                                           {row.otpStatus}
                                         </span>
-                                        {((otpStatusFilter === 'Dispatched' && isRTOorDTONotClosed) || (otpStatusFilter === 'Pending' && isPendingNotClosed)) && (
+                                        {isNotClosed && (
                                           <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase">
                                             <AlertCircle className="w-3 h-3" /> {row.sessionStatus} — Not Closed on Device
                                           </span>
