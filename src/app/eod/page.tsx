@@ -33,9 +33,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * @fileOverview Delhivery POD Management Tool - EOD Rejection Page
- * Fixed: OTP Tab counts match EOD Session Card exactly.
- * Fixed: Placement logic where OTP status "Dispatched" but Session status "RTO/DTO/Pending" stays in respective tabs with "Not Closed" alert.
+ * Fixed: AWB Scientific notation fix for Excel pasting using mso-number-format.
  * Fixed: Copy Table excludes headers and amount, adds automatic borders in Excel.
+ * Fixed: OTP Tab counts match EOD Session Card exactly.
  * Fixed: Advanced Client filter with search, select-all, and counts.
  */
 
